@@ -5,18 +5,47 @@
 
 namespace search {
 
-// Simple material evaluation
-// Queens are worth more than pawns
+// Piece-square tables for positional evaluation
+// Bonus for pawn advancement (row 0-7, where 7 is promotion rank for white)
+constexpr int PAWN_ROW_BONUS[8] = {0, 0, 2, 5, 10, 20, 35, 0};  // Row 7 = queen, handled separately
+
+// Center squares are slightly better for queens
+constexpr Bb CENTER_MASK = 0x00666600u;  // Squares 9,10,13,14,17,18,21,22
+
+// Material + positional evaluation
 int material_eval(const Board& board) {
   constexpr int PAWN_VALUE = 100;
   constexpr int QUEEN_VALUE = 300;
+  constexpr int CENTER_BONUS = 5;
 
-  int white_material = std::popcount(board.whitePawns()) * PAWN_VALUE +
-                       std::popcount(board.whiteQueens()) * QUEEN_VALUE;
-  int black_material = std::popcount(board.blackPawns()) * PAWN_VALUE +
-                       std::popcount(board.blackQueens()) * QUEEN_VALUE;
+  int score = 0;
 
-  return white_material - black_material;
+  // Material
+  score += std::popcount(board.whitePawns()) * PAWN_VALUE;
+  score += std::popcount(board.whiteQueens()) * QUEEN_VALUE;
+  score -= std::popcount(board.blackPawns()) * PAWN_VALUE;
+  score -= std::popcount(board.blackQueens()) * QUEEN_VALUE;
+
+  // Pawn advancement bonus (white pawns want to go to higher rows)
+  for (Bb pawns = board.whitePawns(); pawns; pawns &= pawns - 1) {
+    int sq = std::countr_zero(pawns);
+    int row = sq / 4;
+    score += PAWN_ROW_BONUS[row];
+  }
+
+  // Black pawns want to go to lower rows (from their perspective after flip)
+  // But board is stored with white to move, so black pawns on low rows are advanced
+  for (Bb pawns = board.blackPawns(); pawns; pawns &= pawns - 1) {
+    int sq = std::countr_zero(pawns);
+    int row = sq / 4;
+    score -= PAWN_ROW_BONUS[7 - row];  // Flip row for black
+  }
+
+  // Queen centralization
+  score += std::popcount(board.whiteQueens() & CENTER_MASK) * CENTER_BONUS;
+  score -= std::popcount(board.blackQueens() & CENTER_MASK) * CENTER_BONUS;
+
+  return score;
 }
 
 Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit)
