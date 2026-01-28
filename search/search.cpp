@@ -1,0 +1,271 @@
+#include "search.h"
+#include <algorithm>
+#include <bit>
+#include <iostream>
+
+namespace search {
+
+// Simple material evaluation
+// Queens are worth more than pawns
+int material_eval(const Board& board) {
+  constexpr int PAWN_VALUE = 100;
+  constexpr int QUEEN_VALUE = 300;
+
+  int white_material = std::popcount(board.whitePawns()) * PAWN_VALUE +
+                       std::popcount(board.whiteQueens()) * QUEEN_VALUE;
+  int black_material = std::popcount(board.blackPawns()) * PAWN_VALUE +
+                       std::popcount(board.blackQueens()) * QUEEN_VALUE;
+
+  return white_material - black_material;
+}
+
+Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit)
+    : tt_(64), eval_(material_eval), tb_piece_limit_(tb_piece_limit) {
+  if (!tb_directory.empty()) {
+    tb_manager_ = std::make_unique<CompressedTablebaseManager>(tb_directory);
+  }
+}
+
+Searcher::~Searcher() = default;
+
+bool Searcher::probe_tb(const Board& board, int& score) {
+  if (!tb_manager_) return false;
+
+  int piece_count = std::popcount(board.allPieces());
+  if (piece_count > tb_piece_limit_) return false;
+
+  Value result = tb_manager_->lookup_wdl(board);
+  if (result == Value::UNKNOWN) return false;
+
+  stats_.tb_hits++;
+
+  switch (result) {
+    case Value::WIN:
+      score = SCORE_TB_WIN;
+      break;
+    case Value::LOSS:
+      score = SCORE_TB_LOSS;
+      break;
+    case Value::DRAW:
+      score = SCORE_DRAW;
+      break;
+    default:
+      return false;
+  }
+  return true;
+}
+
+void Searcher::order_moves(std::vector<Move>& moves, const Board& /*board*/, const Move& tt_move) {
+  // Simple move ordering:
+  // 1. TT move first (if valid)
+  // 2. Captures before quiet moves (captures are mandatory, but within same length)
+
+  auto score_move = [&](const Move& m) -> int {
+    if (m == tt_move) return 10000;  // TT move first
+    if (m.isCapture()) return 1000 + std::popcount(m.captures);  // More captures = better
+    return 0;
+  };
+
+  std::stable_sort(moves.begin(), moves.end(), [&](const Move& a, const Move& b) {
+    return score_move(a) > score_move(b);
+  });
+}
+
+int Searcher::quiescence(const Board& board, int alpha, int beta, int ply) {
+  stats_.qnodes++;
+  stats_.sel_depth = std::max(stats_.sel_depth, ply);
+
+  // Check for tablebase hit
+  int tb_score;
+  if (probe_tb(board, tb_score)) {
+    return tb_score;
+  }
+
+  // Generate moves
+  std::vector<Move> moves;
+  generateMoves(board, moves);
+
+  // Terminal node - no moves means loss (we're stalemated/captured out)
+  if (moves.empty()) {
+    return mated_score(ply);
+  }
+
+  // If no captures available, this is a quiet position - evaluate
+  if (!moves[0].isCapture()) {
+    return eval_(board);
+  }
+
+  // We have captures - must continue searching
+  // In Spanish checkers, captures are mandatory, so we search all of them
+
+  int best_score = -SCORE_INFINITE;
+
+  for (const Move& move : moves) {
+    Board child = makeMove(board, move);
+    int score = -quiescence(child, -beta, -alpha, ply + 1);
+
+    if (score > best_score) {
+      best_score = score;
+      if (score > alpha) {
+        alpha = score;
+        if (alpha >= beta) {
+          break;  // Beta cutoff
+        }
+      }
+    }
+  }
+
+  return best_score;
+}
+
+int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int ply) {
+  stats_.nodes++;
+
+  // Check for tablebase hit (before TT to get exact values)
+  int tb_score;
+  if (probe_tb(board, tb_score)) {
+    return tb_score;
+  }
+
+  // Probe transposition table
+  std::uint64_t key = board.hash();
+  TTEntry tt_entry;
+  Move tt_move;
+
+  if (tt_.probe(key, tt_entry)) {
+    stats_.tt_hits++;
+    tt_move = tt_entry.best_move;
+
+    // Can we use the TT score?
+    if (tt_entry.depth >= depth) {
+      int tt_score = tt_entry.score;
+
+      switch (tt_entry.flag) {
+        case TTFlag::EXACT:
+          stats_.tt_cutoffs++;
+          return tt_score;
+        case TTFlag::LOWER_BOUND:
+          if (tt_score >= beta) {
+            stats_.tt_cutoffs++;
+            return tt_score;
+          }
+          alpha = std::max(alpha, tt_score);
+          break;
+        case TTFlag::UPPER_BOUND:
+          if (tt_score <= alpha) {
+            stats_.tt_cutoffs++;
+            return tt_score;
+          }
+          beta = std::min(beta, tt_score);
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  // Generate moves
+  std::vector<Move> moves;
+  generateMoves(board, moves);
+
+  // Terminal node - no moves means loss
+  if (moves.empty()) {
+    return mated_score(ply);
+  }
+
+  // Leaf node or captures available - go to quiescence
+  // We only use static eval when position is quiet (no captures)
+  if (depth <= 0) {
+    if (moves[0].isCapture()) {
+      // Captures available - continue with quiescence
+      return quiescence(board, alpha, beta, ply);
+    } else {
+      // Quiet position - evaluate
+      return eval_(board);
+    }
+  }
+
+  // Order moves for better pruning
+  order_moves(moves, board, tt_move);
+
+  int best_score = -SCORE_INFINITE;
+  Move best_move;
+  TTFlag flag = TTFlag::UPPER_BOUND;
+
+  for (const Move& move : moves) {
+    Board child = makeMove(board, move);
+    int score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
+
+    if (score > best_score) {
+      best_score = score;
+      best_move = move;
+
+      if (score > alpha) {
+        alpha = score;
+        flag = TTFlag::EXACT;
+
+        if (alpha >= beta) {
+          flag = TTFlag::LOWER_BOUND;
+          break;  // Beta cutoff
+        }
+      }
+    }
+  }
+
+  // Store in transposition table
+  tt_.store(key, best_score, depth, flag, best_move);
+
+  return best_score;
+}
+
+SearchResult Searcher::search(const Board& board, int depth) {
+  stats_ = SearchStats{};
+
+  SearchResult result;
+  result.depth = depth;
+
+  // Generate root moves
+  std::vector<Move> moves;
+  generateMoves(board, moves);
+
+  if (moves.empty()) {
+    result.score = mated_score(0);
+    return result;
+  }
+
+  int alpha = -SCORE_INFINITE;
+  int beta = SCORE_INFINITE;
+
+  for (const Move& move : moves) {
+    Board child = makeMove(board, move);
+    int score = -negamax(child, depth - 1, -beta, -alpha, 1);
+
+    if (score > alpha) {
+      alpha = score;
+      result.best_move = move;
+      result.score = score;
+    }
+  }
+
+  result.nodes = stats_.nodes + stats_.qnodes;
+  result.tb_hits = stats_.tb_hits;
+  return result;
+}
+
+SearchResult Searcher::search_iterative(const Board& board, int max_depth) {
+  SearchResult result;
+
+  for (int depth = 1; depth <= max_depth; ++depth) {
+    result = search(board, depth);
+    result.depth = depth;
+
+    // Early exit if we found a forced mate
+    if (is_mate_score(result.score)) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+} // namespace search
