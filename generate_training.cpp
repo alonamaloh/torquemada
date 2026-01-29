@@ -175,6 +175,7 @@ void write_hdf5(const std::string& filename, const std::vector<TrainingPosition>
 int main(int argc, char** argv) {
   std::string tb_dir = "/home/alvaro/claude/damas";
   std::string output_file = "training_data.h5";
+  std::string nn_model = "";  // empty = random eval
   int search_depth = 8;
   int random_plies = 10;
   std::size_t target_positions = 1000;
@@ -193,8 +194,11 @@ int main(int argc, char** argv) {
                 << "  --tb-path PATH      Tablebase directory (default: /home/alvaro/claude/damas)\n"
                 << "  --output FILE       Output HDF5 file (default: training_data.h5)\n"
                 << "  --positions N       Target number of positions (default: 1000)\n"
-                << "  --threads N         Number of threads (default: max available)\n";
+                << "  --threads N         Number of threads (default: max available)\n"
+                << "  --model FILE        Neural network model for evaluation (default: random)\n";
       return 0;
+    } else if (arg == "--model" && i + 1 < argc) {
+      nn_model = argv[++i];
     } else if (arg == "--depth" && i + 1 < argc) {
       search_depth = std::atoi(argv[++i]);
     } else if (arg == "--random-plies" && i + 1 < argc) {
@@ -223,6 +227,7 @@ int main(int argc, char** argv) {
   std::cout << "RNG base seed: " << base_seed << "\n";
   std::cout << "Random opening plies: " << random_plies << "\n";
   std::cout << "Search depth: " << search_depth << "\n";
+  std::cout << "Evaluation: " << (nn_model.empty() ? "random" : nn_model) << "\n";
   std::cout << "Tablebases: " << tb_dir << "\n";
   std::cout << "Output: " << output_file << "\n";
   std::cout << "Target positions: " << target_positions << "\n\n";
@@ -246,9 +251,9 @@ int main(int argc, char** argv) {
     int tid = omp_get_thread_num();
 
     // Each thread gets its own RNG and searcher, but shares DTM manager
-    // Use small TT (8MB) since games are short and eval is random
+    // Use small TT (8MB) since games are short
     RandomBits rng(base_seed + tid * 0x9e3779b97f4a7c15ULL);
-    search::Searcher searcher(tb_dir, 7, 6, "");
+    search::Searcher searcher(tb_dir, 7, 6, nn_model);
     searcher.set_tt_size(8);
 
     auto& local_positions = thread_positions[tid];
