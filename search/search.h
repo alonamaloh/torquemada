@@ -47,11 +47,9 @@ struct SearchResult {
 // Search statistics
 struct SearchStats {
   std::uint64_t nodes = 0;
-  std::uint64_t qnodes = 0;      // Quiescence nodes
   std::uint64_t tb_hits = 0;
   std::uint64_t tt_hits = 0;
   std::uint64_t tt_cutoffs = 0;
-  int sel_depth = 0;             // Selective depth (quiescence)
 };
 
 // Evaluation function type
@@ -97,10 +95,8 @@ public:
 private:
   // Negamax alpha-beta search
   // Returns score from the perspective of the side to move (white, since board is always flipped)
+  // Continues searching beyond depth 0 if captures are available (quiescence)
   int negamax(const Board& board, int depth, int alpha, int beta, int ply);
-
-  // Quiescence search - resolve captures
-  int quiescence(const Board& board, int alpha, int beta, int ply);
 
   // Probe tablebase if available
   // Returns true if position was found, sets score (adjusted for ply)

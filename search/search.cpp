@@ -142,53 +142,6 @@ void Searcher::order_moves(std::vector<Move>& moves, const Board& /*board*/, con
   });
 }
 
-int Searcher::quiescence(const Board& board, int alpha, int beta, int ply) {
-  stats_.qnodes++;
-  stats_.sel_depth = std::max(stats_.sel_depth, ply);
-
-  // Check for tablebase hit
-  int tb_score;
-  if (probe_tb(board, ply, tb_score)) {
-    return tb_score;
-  }
-
-  // Generate moves
-  std::vector<Move> moves;
-  generateMoves(board, moves);
-
-  // Terminal node - no moves means loss (we're stalemated/captured out)
-  if (moves.empty()) {
-    return mated_score(ply);
-  }
-
-  // If no captures available, this is a quiet position - evaluate
-  if (!moves[0].isCapture()) {
-    return eval_(board);
-  }
-
-  // We have captures - must continue searching
-  // In Spanish checkers, captures are mandatory, so we search all of them
-
-  int best_score = -SCORE_INFINITE;
-
-  for (const Move& move : moves) {
-    Board child = makeMove(board, move);
-    int score = -quiescence(child, -beta, -alpha, ply + 1);
-
-    if (score > best_score) {
-      best_score = score;
-      if (score > alpha) {
-        alpha = score;
-        if (alpha >= beta) {
-          break;  // Beta cutoff
-        }
-      }
-    }
-  }
-
-  return best_score;
-}
-
 int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int ply) {
   stats_.nodes++;
 
@@ -244,16 +197,11 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     return mated_score(ply);
   }
 
-  // Leaf node or captures available - go to quiescence
-  // We only use static eval when position is quiet (no captures)
-  if (depth <= 0) {
-    if (moves[0].isCapture()) {
-      // Captures available - continue with quiescence
-      return quiescence(board, alpha, beta, ply);
-    } else {
-      // Quiet position - evaluate
-      return eval_(board);
-    }
+  // Leaf node: only evaluate when depth <= 0 AND no captures available
+  // If captures exist, continue searching (quiescence)
+  bool has_captures = moves[0].isCapture();
+  if (depth <= 0 && !has_captures) {
+    return eval_(board);
   }
 
   // Order moves for better pruning
@@ -341,7 +289,7 @@ SearchResult Searcher::search(const Board& board, int depth) {
     }
   }
 
-  result.nodes = stats_.nodes + stats_.qnodes;
+  result.nodes = stats_.nodes;
   result.tb_hits = stats_.tb_hits;
   return result;
 }
