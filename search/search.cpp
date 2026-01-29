@@ -48,6 +48,24 @@ int material_eval(const Board& board) {
   return score;
 }
 
+// Hash-based evaluation: reproducible pseudo-random score derived from position hash
+// Returns a score in the range [-500, +500] based on the hash
+int hash_eval(const Board& board) {
+  std::uint64_t h = board.hash();
+
+  // Mix the hash to get good distribution
+  h ^= h >> 33;
+  h *= 0xff51afd7ed558ccdULL;
+  h ^= h >> 33;
+  h *= 0xc4ceb9fe1a85ec53ULL;
+  h ^= h >> 33;
+
+  // Convert to signed score in range [-500, +500]
+  // Use the lower 32 bits, treat as signed, then scale
+  std::int32_t raw = static_cast<std::int32_t>(h & 0xFFFFFFFFu);
+  return raw % 501;  // Range [-500, +500]
+}
+
 Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit)
     : tt_(64), eval_(material_eval), tb_piece_limit_(tb_piece_limit) {
   if (!tb_directory.empty()) {
@@ -242,7 +260,15 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   }
 
   // Store in transposition table
-  tt_.store(key, best_score, depth, flag, best_move);
+  // For special scores (mate/TB), only store bounds, not exact values,
+  // because these scores are relative to the root and may not be valid
+  // when accessed from a different search path
+  TTFlag store_flag = flag;
+  if (is_special_score(best_score) && flag == TTFlag::EXACT) {
+    // Convert exact to the appropriate bound
+    store_flag = (best_score > 0) ? TTFlag::LOWER_BOUND : TTFlag::UPPER_BOUND;
+  }
+  tt_.store(key, best_score, depth, store_flag, best_move);
 
   return best_score;
 }

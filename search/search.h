@@ -12,19 +12,25 @@
 namespace search {
 
 // Score constants
-constexpr int SCORE_INFINITE = 30000;
-constexpr int SCORE_MATE = 20000;
-constexpr int SCORE_TB_WIN = 10000;   // Tablebase win
-constexpr int SCORE_TB_LOSS = -10000; // Tablebase loss
+constexpr int SCORE_INFINITE = 32000;
+constexpr int SCORE_MATE = 30000;      // Mate at root = 30000, mate in N ply = 30000 - N
+constexpr int SCORE_TB_WIN = 29000;    // Tablebase win
+constexpr int SCORE_TB_LOSS = -29000;  // Tablebase loss
+constexpr int SCORE_SPECIAL = 28000;   // Scores with |score| > this need special TT handling
 constexpr int SCORE_DRAW = 0;
 
 // Adjust mate score for ply distance (so we prefer shorter mates)
 inline int mate_score(int ply) { return SCORE_MATE - ply; }
 inline int mated_score(int ply) { return -SCORE_MATE + ply; }
 
-// Check if score is a known win/loss
+// Check if score is a "special" score (mate or TB) that needs careful TT handling
+inline bool is_special_score(int score) {
+  return score > SCORE_SPECIAL || score < -SCORE_SPECIAL;
+}
+
+// Check if score indicates a forced mate
 inline bool is_mate_score(int score) {
-  return score > SCORE_MATE - 500 || score < -SCORE_MATE + 500;
+  return score > SCORE_TB_WIN || score < -SCORE_TB_WIN;
 }
 
 // Search result
@@ -52,8 +58,11 @@ struct SearchStats {
 // Takes a board (white to move) and returns a score from white's perspective
 using EvalFunc = std::function<int(const Board&)>;
 
-// Simple material evaluation (for initial testing)
+// Material + positional evaluation
 int material_eval(const Board& board);
+
+// Hash-based evaluation (reproducible pseudo-random, for training data generation)
+int hash_eval(const Board& board);
 
 // Searcher class - the main search engine
 class Searcher {

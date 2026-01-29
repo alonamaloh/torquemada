@@ -78,9 +78,12 @@ void print_board(const Board& board, bool white_perspective, int move_number) {
 // Verbose searcher that prints info after each depth
 class VerboseSearcher {
 public:
-  VerboseSearcher(const std::string& tb_dir, int tb_limit)
+  VerboseSearcher(const std::string& tb_dir, int tb_limit, bool use_hash_eval = false)
       : searcher_(tb_dir, tb_limit) {
     searcher_.set_tt_size(128);
+    if (use_hash_eval) {
+      searcher_.set_eval(search::hash_eval);
+    }
   }
 
   search::SearchResult search(const Board& board, int max_depth) {
@@ -132,6 +135,7 @@ int main(int argc, char** argv) {
   int tb_limit = 7;
   int max_depth = 8;
   int max_moves = 100;
+  bool use_hash_eval = false;
 
   // Parse arguments
   for (int i = 1; i < argc; ++i) {
@@ -142,15 +146,18 @@ int main(int argc, char** argv) {
       max_moves = std::atoi(argv[++i]);
     } else if (arg == "--no-tb") {
       tb_dir = "";
+    } else if (arg == "--hash-eval") {
+      use_hash_eval = true;
     }
   }
 
   std::cout << "=== Torquemada Self-Play Game ===\n";
   std::cout << "Search depth: " << max_depth << "\n";
   std::cout << "Tablebases: " << (tb_dir.empty() ? "disabled" : tb_dir) << "\n";
+  std::cout << "Evaluation: " << (use_hash_eval ? "hash-based" : "material+positional") << "\n";
   std::cout << "\n";
 
-  VerboseSearcher searcher(tb_dir, tb_limit);
+  VerboseSearcher searcher(tb_dir, tb_limit, use_hash_eval);
 
   Board board;  // Initial position
   std::vector<std::string> move_list;
