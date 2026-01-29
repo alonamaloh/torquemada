@@ -86,8 +86,8 @@ std::string moveToStringPerspective(const FullMove& fullMove, bool blackPerspect
 // Verbose searcher that prints info after each depth
 class VerboseSearcher {
 public:
-  VerboseSearcher(const std::string& tb_dir, int tb_limit)
-      : searcher_(tb_dir, tb_limit) {
+  VerboseSearcher(const std::string& tb_dir, int tb_limit, const std::string& nn_model = "")
+      : searcher_(tb_dir, tb_limit, 6, nn_model) {
     searcher_.set_tt_size(128);
   }
 
@@ -148,6 +148,7 @@ private:
 
 int main(int argc, char** argv) {
   std::string tb_dir = "/home/alvaro/claude/damas";
+  std::string nn_model = "";
   int tb_limit = 7;
   int max_depth = 8;
 
@@ -160,16 +161,18 @@ int main(int argc, char** argv) {
       tb_dir = "";
     } else if (arg == "--dtm-path" && i + 1 < argc) {
       tb_dir = argv[++i];
+    } else if (arg == "--model" && i + 1 < argc) {
+      nn_model = argv[++i];
     }
   }
 
   std::cout << "=== Torquemada Self-Play Game ===\n";
   std::cout << "Search depth: " << max_depth << "\n";
   std::cout << "Tablebases: " << (tb_dir.empty() ? "disabled" : tb_dir) << "\n";
-  std::cout << "Evaluation: random\n";
+  std::cout << "Evaluation: " << (nn_model.empty() ? "random" : nn_model) << "\n";
   std::cout << "\n";
 
-  VerboseSearcher searcher(tb_dir, tb_limit);
+  VerboseSearcher searcher(tb_dir, tb_limit, nn_model);
 
   // Initialize DTM manager for endgame display
   if (!tb_dir.empty()) {

@@ -236,7 +236,7 @@ int main(int argc, char** argv) {
     // Each thread gets its own RNG and searcher, but shares DTM manager
     // Use small TT (8MB) since games are short and eval is random
     RandomBits rng(base_seed + tid * 0x9e3779b97f4a7c15ULL);
-    search::Searcher searcher(tb_dir, 7, 6);
+    search::Searcher searcher(tb_dir, 7, 6, "");
     searcher.set_tt_size(8);
 
     auto& local_positions = thread_positions[tid];

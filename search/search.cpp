@@ -22,12 +22,20 @@ int random_eval(const Board& board) {
   return static_cast<int>(raw % 10001);
 }
 
-Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_piece_limit)
+Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_piece_limit,
+                   const std::string& nn_model_path)
     : tt_(64), eval_(random_eval), tb_piece_limit_(tb_piece_limit),
       dtm_piece_limit_(dtm_piece_limit) {
   if (!tb_directory.empty()) {
     tb_manager_ = std::make_unique<CompressedTablebaseManager>(tb_directory);
     dtm_manager_ = std::make_unique<tablebase::DTMTablebaseManager>(tb_directory);
+  }
+
+  // Load neural network if path provided
+  if (!nn_model_path.empty()) {
+    nn_model_ = std::make_unique<nn::MLP>(nn_model_path);
+    // Use neural network for evaluation
+    eval_ = [this](const Board& board) { return nn_model_->evaluate(board); };
   }
 }
 

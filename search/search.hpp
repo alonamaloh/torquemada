@@ -2,6 +2,7 @@
 
 #include "../core/board.hpp"
 #include "../core/movegen.hpp"
+#include "../nn/mlp.hpp"
 #include "../tablebase/tb_probe.hpp"
 #include "tt.hpp"
 #include <cstdint>
@@ -63,12 +64,13 @@ int random_eval(const Board& board);
 // Searcher class - the main search engine
 class Searcher {
 public:
-  // Construct with optional tablebase manager
+  // Construct with optional tablebase manager and neural network model
   // tb_directory: path to directory containing cwdl_*.bin and dtm_*.bin files
   // tb_piece_limit: use WDL tablebases for positions with this many pieces or fewer
   // dtm_piece_limit: use DTM optimal play for positions with this many pieces or fewer
+  // nn_model_path: path to neural network model (.bin file), empty for random eval
   explicit Searcher(const std::string& tb_directory = "", int tb_piece_limit = 7,
-                    int dtm_piece_limit = 6);
+                    int dtm_piece_limit = 6, const std::string& nn_model_path = "");
 
   ~Searcher();
 
@@ -115,6 +117,9 @@ private:
   std::unique_ptr<tablebase::DTMTablebaseManager> dtm_manager_;
   int tb_piece_limit_;
   int dtm_piece_limit_;  // Use DTM optimal play when <= this many pieces
+
+  // Neural network evaluation
+  std::unique_ptr<nn::MLP> nn_model_;
 };
 
 } // namespace search
