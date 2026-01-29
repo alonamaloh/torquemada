@@ -51,7 +51,7 @@ int material_eval(const Board& board) {
 // Hash-based evaluation: reproducible pseudo-random score derived from position hash
 // Returns a score in the range [-500, +500] based on the hash
 int hash_eval(const Board& board) {
-  std::uint64_t h = board.hash();
+  std::uint64_t h = board.hash() + 1;
 
   // Mix the hash to get good distribution
   h ^= h >> 33;
@@ -66,14 +66,33 @@ int hash_eval(const Board& board) {
   return raw % 501;  // Range [-500, +500]
 }
 
-Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit)
-    : tt_(64), eval_(material_eval), tb_piece_limit_(tb_piece_limit) {
+Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_piece_limit)
+    : tt_(64), eval_(material_eval), tb_piece_limit_(tb_piece_limit),
+      dtm_piece_limit_(dtm_piece_limit) {
   if (!tb_directory.empty()) {
     tb_manager_ = std::make_unique<CompressedTablebaseManager>(tb_directory);
+    dtm_manager_ = std::make_unique<tablebase::DTMTablebaseManager>(tb_directory);
   }
 }
 
 Searcher::~Searcher() = default;
+
+int Searcher::dtm_to_score(tablebase::DTM dtm, int ply) {
+  if (dtm == tablebase::DTM_UNKNOWN) {
+    return 0;  // Shouldn't happen
+  }
+  if (dtm == tablebase::DTM_DRAW) {
+    return SCORE_DRAW;
+  }
+  if (dtm > 0) {
+    // Win in dtm moves - convert to mate-like score
+    // DTM is in "moves" (winning side's moves), score uses plies from root
+    return SCORE_MATE - ply - (2 * dtm - 1);
+  } else {
+    // Loss in -dtm moves
+    return -SCORE_MATE + ply + (2 * (-dtm));
+  }
+}
 
 bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   if (!tb_manager_) return false;
@@ -283,6 +302,21 @@ SearchResult Searcher::search(const Board& board, int depth) {
 
   SearchResult result;
   result.depth = depth;
+
+  // Check if we should use DTM optimal play (≤ dtm_piece_limit pieces)
+  int piece_count = std::popcount(board.allPieces());
+  if (dtm_manager_ && piece_count <= dtm_piece_limit_) {
+    Move best_move;
+    tablebase::DTM best_dtm;
+    if (dtm_manager_->find_best_move(board, best_move, best_dtm)) {
+      result.best_move = best_move;
+      result.score = dtm_to_score(best_dtm, 0);
+      result.nodes = 1;
+      stats_.tb_hits++;
+      result.tb_hits = 1;
+      return result;
+    }
+  }
 
   // Generate root moves
   std::vector<Move> moves;

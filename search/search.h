@@ -68,9 +68,11 @@ int hash_eval(const Board& board);
 class Searcher {
 public:
   // Construct with optional tablebase manager
-  // tb_directory: path to directory containing cwdl_*.bin files
-  // tb_piece_limit: use tablebases for positions with this many pieces or fewer
-  explicit Searcher(const std::string& tb_directory = "", int tb_piece_limit = 7);
+  // tb_directory: path to directory containing cwdl_*.bin and dtm_*.bin files
+  // tb_piece_limit: use WDL tablebases for positions with this many pieces or fewer
+  // dtm_piece_limit: use DTM optimal play for positions with this many pieces or fewer
+  explicit Searcher(const std::string& tb_directory = "", int tb_piece_limit = 7,
+                    int dtm_piece_limit = 6);
 
   ~Searcher();
 
@@ -107,13 +109,18 @@ private:
   // Order moves for better pruning
   void order_moves(std::vector<Move>& moves, const Board& board, const Move& tt_move);
 
+  // Convert DTM to search score
+  int dtm_to_score(tablebase::DTM dtm, int ply);
+
   TranspositionTable tt_;
   EvalFunc eval_;
   SearchStats stats_;
 
   // Tablebase support
   std::unique_ptr<CompressedTablebaseManager> tb_manager_;
+  std::unique_ptr<tablebase::DTMTablebaseManager> dtm_manager_;
   int tb_piece_limit_;
+  int dtm_piece_limit_;  // Use DTM optimal play when <= this many pieces
 };
 
 } // namespace search
