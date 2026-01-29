@@ -1,15 +1,31 @@
 #include "core/board.hpp"
 #include "core/movegen.hpp"
+#include "core/random.hpp"
 #include "search/search.hpp"
+#include <chrono>
 #include <iostream>
 #include <iomanip>
 #include <string>
 #include <bit>
 
-// Play a single game between two searchers
-// Returns: +1 if white wins, -1 if black wins, 0 if draw
-int play_game(search::Searcher& white, search::Searcher& black, int depth, bool verbose) {
+// Generate a random opening position after N plies
+Board generate_opening(RandomBits& rng, int random_plies) {
     Board board;
+    for (int ply = 0; ply < random_plies; ++ply) {
+        std::vector<Move> moves;
+        generateMoves(board, moves);
+        if (moves.empty()) break;
+        std::uint64_t idx = rng() % moves.size();
+        board = makeMove(board, moves[idx]);
+    }
+    return board;
+}
+
+// Play a single game between two searchers from a given position
+// Returns: +1 if white wins, -1 if black wins, 0 if draw
+int play_game(const Board& start, search::Searcher& white, search::Searcher& black,
+              int depth, bool verbose) {
+    Board board = start;
     int ply = 0;
 
     while (true) {
@@ -60,8 +76,9 @@ int main(int argc, char** argv) {
     std::string model1_path;
     std::string model2_path;
     std::string tb_dir = "/home/alvaro/claude/damas";
-    int num_games = 100;
+    int num_pairs = 50;  // 50 pairs = 100 games
     int depth = 6;
+    int random_plies = 10;
     bool verbose = false;
 
     // Parse arguments
@@ -71,18 +88,21 @@ int main(int argc, char** argv) {
             std::cout << "Usage: " << argv[0] << " <model1.bin> <model2.bin> [options]\n"
                       << "Play a match between two neural network models\n\n"
                       << "Arguments:\n"
-                      << "  model1.bin          First model (plays white in odd games)\n"
-                      << "  model2.bin          Second model (plays white in even games)\n\n"
+                      << "  model1.bin          First model\n"
+                      << "  model2.bin          Second model\n\n"
                       << "Options:\n"
                       << "  -h, --help          Show this help message\n"
-                      << "  --games N           Number of games (default: 100)\n"
+                      << "  --pairs N           Number of game pairs (default: 50 = 100 games)\n"
                       << "  --depth N           Search depth (default: 6)\n"
+                      << "  --random-plies N    Random opening moves (default: 10)\n"
                       << "  --tb-path PATH      Tablebase directory\n"
                       << "  --no-tb             Disable tablebases\n"
                       << "  --verbose           Print game results\n";
             return 0;
-        } else if (arg == "--games" && i + 1 < argc) {
-            num_games = std::atoi(argv[++i]);
+        } else if (arg == "--pairs" && i + 1 < argc) {
+            num_pairs = std::atoi(argv[++i]);
+        } else if (arg == "--random-plies" && i + 1 < argc) {
+            random_plies = std::atoi(argv[++i]);
         } else if (arg == "--depth" && i + 1 < argc) {
             depth = std::atoi(argv[++i]);
         } else if (arg == "--tb-path" && i + 1 < argc) {
@@ -107,9 +127,17 @@ int main(int argc, char** argv) {
     std::cout << "=== Neural Network Match ===\n";
     std::cout << "Model 1: " << model1_path << "\n";
     std::cout << "Model 2: " << model2_path << "\n";
-    std::cout << "Games: " << num_games << "\n";
+    std::cout << "Game pairs: " << num_pairs << " (" << (num_pairs * 2) << " games)\n";
+    std::cout << "Random opening plies: " << random_plies << "\n";
     std::cout << "Depth: " << depth << "\n";
     std::cout << "Tablebases: " << (tb_dir.empty() ? "disabled" : tb_dir) << "\n\n";
+
+    // Initialize RNG
+    auto now = std::chrono::high_resolution_clock::now();
+    auto seed = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            now.time_since_epoch()).count());
+    RandomBits rng(seed);
 
     // Create searchers
     search::Searcher searcher1(tb_dir, 7, 6, model1_path);
@@ -121,50 +149,57 @@ int main(int argc, char** argv) {
     int model1_wins = 0, model2_wins = 0, draws = 0;
     int model1_white_wins = 0, model1_black_wins = 0;
     int model2_white_wins = 0, model2_black_wins = 0;
+    int total_games = num_pairs * 2;
 
-    for (int game = 0; game < num_games; ++game) {
-        // Alternate colors: model1 is white in odd games (1, 3, 5...)
-        bool model1_is_white = (game % 2 == 0);
+    for (int pair = 0; pair < num_pairs; ++pair) {
+        // Generate random opening
+        Board opening = generate_opening(rng, random_plies);
 
-        search::Searcher& white = model1_is_white ? searcher1 : searcher2;
-        search::Searcher& black = model1_is_white ? searcher2 : searcher1;
+        // Play two games with same opening, swapping colors
+        for (int swap = 0; swap < 2; ++swap) {
+            bool model1_is_white = (swap == 0);
+            int game_num = pair * 2 + swap + 1;
 
-        // Clear TT between games
-        searcher1.clear_tt();
-        searcher2.clear_tt();
+            search::Searcher& white = model1_is_white ? searcher1 : searcher2;
+            search::Searcher& black = model1_is_white ? searcher2 : searcher1;
 
-        int result = play_game(white, black, depth, verbose);
+            // Clear TT between games
+            searcher1.clear_tt();
+            searcher2.clear_tt();
 
-        // Update statistics
-        if (result == +1) {
-            // White wins
-            if (model1_is_white) {
-                model1_wins++;
-                model1_white_wins++;
+            int result = play_game(opening, white, black, depth, verbose);
+
+            // Update statistics
+            if (result == +1) {
+                // White wins
+                if (model1_is_white) {
+                    model1_wins++;
+                    model1_white_wins++;
+                } else {
+                    model2_wins++;
+                    model2_white_wins++;
+                }
+            } else if (result == -1) {
+                // Black wins
+                if (model1_is_white) {
+                    model2_wins++;
+                    model2_black_wins++;
+                } else {
+                    model1_wins++;
+                    model1_black_wins++;
+                }
             } else {
-                model2_wins++;
-                model2_white_wins++;
+                draws++;
             }
-        } else if (result == -1) {
-            // Black wins
-            if (model1_is_white) {
-                model2_wins++;
-                model2_black_wins++;
-            } else {
-                model1_wins++;
-                model1_black_wins++;
-            }
-        } else {
-            draws++;
+
+            // Progress after each game
+            const char* result_str = (result == +1) ? "1-0" : (result == -1) ? "0-1" : "1/2";
+            std::cout << "Game " << std::setw(3) << game_num << "/" << total_games
+                      << "  " << (model1_is_white ? "M1" : "M2") << " vs "
+                      << (model1_is_white ? "M2" : "M1") << "  " << result_str
+                      << "  |  Score: " << model1_wins << "-" << model2_wins
+                      << " =" << draws << "\n";
         }
-
-        // Progress after each game
-        const char* result_str = (result == +1) ? "1-0" : (result == -1) ? "0-1" : "1/2";
-        std::cout << "Game " << std::setw(3) << (game + 1) << "/" << num_games
-                  << "  " << (model1_is_white ? "M1" : "M2") << " vs "
-                  << (model1_is_white ? "M2" : "M1") << "  " << result_str
-                  << "  |  Score: " << model1_wins << "-" << model2_wins
-                  << " =" << draws << "\n";
     }
 
     // Final results
@@ -177,7 +212,7 @@ int main(int argc, char** argv) {
 
     double model1_score = model1_wins + 0.5 * draws;
     double model2_score = model2_wins + 0.5 * draws;
-    double total = num_games;
+    double total = total_games;
 
     std::cout << "\nScore: " << std::fixed << std::setprecision(1)
               << model1_score << " - " << model2_score
