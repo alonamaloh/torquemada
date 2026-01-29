@@ -2,6 +2,10 @@ CXX = g++
 CXXFLAGS = -std=c++20 -O3 -march=native -Wall -Wextra -mbmi2 -mavx2 -fopenmp
 LDFLAGS = -fopenmp
 
+# HDF5 flags
+HDF5_CFLAGS = -I/usr/include/hdf5/serial
+HDF5_LDFLAGS = -L/usr/lib/x86_64-linux-gnu/hdf5/serial -lhdf5_cpp -lhdf5
+
 # Directories
 SRCDIR = .
 CORE = core
@@ -38,7 +42,7 @@ $(BINDIR)/selfplay: $(ALL_OBJS) $(OBJDIR)/selfplay.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 $(BINDIR)/generate_training: $(ALL_OBJS) $(OBJDIR)/generate_training.o
-	$(CXX) $(LDFLAGS) -o $@ $^
+	$(CXX) $(LDFLAGS) -o $@ $^ $(HDF5_LDFLAGS)
 
 # Object file rules
 $(OBJDIR)/%.o: %.cpp
@@ -55,7 +59,7 @@ $(OBJDIR)/selfplay.o: selfplay.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR)/generate_training.o: generate_training.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) $(HDF5_CFLAGS) -c $< -o $@
 
 clean:
 	rm -rf $(OBJDIR) $(BINDIR)
