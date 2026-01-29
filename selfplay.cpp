@@ -100,7 +100,6 @@ int main(int argc, char** argv) {
   std::string tb_dir = "/home/alvaro/claude/damas";
   int tb_limit = 7;
   int max_depth = 8;
-  int max_moves = 100;
   bool use_hash_eval = false;
 
   // Parse arguments
@@ -108,8 +107,6 @@ int main(int argc, char** argv) {
     std::string arg = argv[i];
     if (arg == "--depth" && i + 1 < argc) {
       max_depth = std::atoi(argv[++i]);
-    } else if (arg == "--moves" && i + 1 < argc) {
-      max_moves = std::atoi(argv[++i]);
     } else if (arg == "--no-tb") {
       tb_dir = "";
     } else if (arg == "--hash-eval") {
@@ -133,7 +130,14 @@ int main(int argc, char** argv) {
   // Show initial position
   std::cout << "Initial position:\n" << board;
 
-  while (move_number < max_moves) {
+  while (true) {
+    // Check for draw by reversible move rule
+    if (board.n_reversible >= 60) {
+      std::cout << "\n*** GAME OVER ***\n";
+      std::cout << "Draw by 60 reversible moves\n";
+      break;
+    }
+
     // Generate moves
     std::vector<Move> moves;
     generateMoves(board, moves);
@@ -146,13 +150,6 @@ int main(int argc, char** argv) {
       } else {
         std::cout << "White wins! (Black has no moves)\n";
       }
-      break;
-    }
-
-    // Check for draw by 25-move rule (50 reversible half-moves)
-    if (board.n_reversible >= 50) {
-      std::cout << "\n*** GAME OVER ***\n";
-      std::cout << "Draw by 50-move rule (25 reversible moves per side)\n";
       break;
     }
 
