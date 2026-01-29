@@ -9,6 +9,7 @@
 #include <iostream>
 #include <mutex>
 #include <omp.h>
+#include <stdexcept>
 #include <unordered_set>
 
 // Forward declarations for optimized 2-value RLE
@@ -1937,26 +1938,35 @@ CompressedTablebase load_compressed_tablebase(const std::string& filename) {
 
   std::ifstream file(filename, std::ios::binary);
   if (!file) {
-    return tb;  // Return empty tablebase on error
+    throw std::runtime_error("Failed to open compressed tablebase file: " + filename);
   }
 
   // Read and verify magic number
   char magic[4];
   file.read(magic, 4);
+  if (!file) {
+    throw std::runtime_error("Failed to read magic from compressed tablebase: " + filename);
+  }
   if (std::memcmp(magic, CWDL_MAGIC, 4) != 0) {
-    return tb;  // Invalid magic
+    throw std::runtime_error("Invalid magic in compressed tablebase: " + filename);
   }
 
   // Read and verify version
   std::uint8_t version;
   file.read(reinterpret_cast<char*>(&version), 1);
+  if (!file) {
+    throw std::runtime_error("Failed to read version from compressed tablebase: " + filename);
+  }
   if (version != CWDL_VERSION) {
-    return tb;  // Unsupported version
+    throw std::runtime_error("Unsupported version " + std::to_string(version) + " in compressed tablebase: " + filename);
   }
 
   // Read material (6 bytes)
   std::uint8_t mat[6];
   file.read(reinterpret_cast<char*>(mat), 6);
+  if (!file) {
+    throw std::runtime_error("Failed to read material from compressed tablebase: " + filename);
+  }
   tb.material.back_white_pawns = mat[0];
   tb.material.back_black_pawns = mat[1];
   tb.material.other_white_pawns = mat[2];
@@ -1966,14 +1976,23 @@ CompressedTablebase load_compressed_tablebase(const std::string& filename) {
 
   // Read num_positions (8 bytes in v2 format)
   file.read(reinterpret_cast<char*>(&tb.num_positions), 8);
+  if (!file) {
+    throw std::runtime_error("Failed to read num_positions from compressed tablebase: " + filename);
+  }
 
   // Read num_blocks
   file.read(reinterpret_cast<char*>(&tb.num_blocks), 4);
+  if (!file) {
+    throw std::runtime_error("Failed to read num_blocks from compressed tablebase: " + filename);
+  }
 
   // Read block offsets
   tb.block_offsets.resize(tb.num_blocks);
   file.read(reinterpret_cast<char*>(tb.block_offsets.data()),
             tb.num_blocks * sizeof(std::uint32_t));
+  if (!file) {
+    throw std::runtime_error("Failed to read block offsets from compressed tablebase: " + filename);
+  }
 
   // Calculate block data size and read it
   // Block data starts after header (4+1+6+8+4 = 23 bytes) + offsets (4*num_blocks)
@@ -1987,8 +2006,7 @@ CompressedTablebase load_compressed_tablebase(const std::string& filename) {
   file.read(reinterpret_cast<char*>(tb.block_data.data()), block_data_size);
 
   if (!file.good() && !file.eof()) {
-    // Read error - return empty tablebase
-    return CompressedTablebase{};
+    throw std::runtime_error("Failed to read block data from compressed tablebase: " + filename);
   }
 
   return tb;

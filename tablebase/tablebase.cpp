@@ -248,26 +248,36 @@ void save_tablebase(const std::vector<Value>& table, const Material& m) {
 }
 
 // Load tablebase from file
+// Throws std::runtime_error if file cannot be opened or read
 std::vector<Value> load_tablebase(const Material& m) {
   std::string filename = tablebase_filename(m);
   std::ifstream file(filename, std::ios::binary);
   if (!file) {
-    return {};  // Not found
+    throw std::runtime_error("Failed to open tablebase file: " + filename);
   }
 
   // Read and verify header
   Material stored_m;
   file.read(reinterpret_cast<char*>(&stored_m), sizeof(Material));
+  if (!file) {
+    throw std::runtime_error("Failed to read material from tablebase file: " + filename);
+  }
   if (!(stored_m == m)) {
     throw std::runtime_error("Material mismatch in tablebase file: " + filename);
   }
 
   std::size_t size;
   file.read(reinterpret_cast<char*>(&size), sizeof(size));
+  if (!file) {
+    throw std::runtime_error("Failed to read size from tablebase file: " + filename);
+  }
 
   // Read packed data
   std::vector<std::uint8_t> packed((size + 3) / 4);
   file.read(reinterpret_cast<char*>(packed.data()), packed.size());
+  if (!file) {
+    throw std::runtime_error("Failed to read data from tablebase file: " + filename);
+  }
 
   // Unpack values
   std::vector<Value> table(size);
@@ -318,29 +328,42 @@ void save_dtm(const std::vector<DTM>& table, const Material& m) {
 }
 
 // Load DTM tablebase from file
+// Throws std::runtime_error if file cannot be opened or read
 std::vector<DTM> load_dtm(const Material& m) {
   std::string filename = dtm_filename(m);
   std::ifstream file(filename, std::ios::binary);
   if (!file) {
-    return {};  // Not found
+    throw std::runtime_error("Failed to open DTM file: " + filename);
   }
 
   // Read and verify header
   std::uint8_t version;
   file.read(reinterpret_cast<char*>(&version), sizeof(version));
+  if (!file) {
+    throw std::runtime_error("Failed to read version from DTM file: " + filename);
+  }
 
   Material stored_m;
   file.read(reinterpret_cast<char*>(&stored_m), sizeof(Material));
+  if (!file) {
+    throw std::runtime_error("Failed to read material from DTM file: " + filename);
+  }
   if (!(stored_m == m)) {
     throw std::runtime_error("Material mismatch in DTM file: " + filename);
   }
 
   std::size_t size;
   file.read(reinterpret_cast<char*>(&size), sizeof(size));
+  if (!file) {
+    throw std::runtime_error("Failed to read size from DTM file: " + filename);
+  }
 
   // Read 1-byte values and sign-extend to DTM
   std::vector<std::int8_t> packed(size);
   file.read(reinterpret_cast<char*>(packed.data()), packed.size());
+  if (!file) {
+    throw std::runtime_error("Failed to read data from DTM file: " + filename);
+  }
 
   std::vector<DTM> table(size);
   for (std::size_t i = 0; i < size; ++i) {

@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 
 namespace tablebase {
 
@@ -133,8 +134,8 @@ public:
         } else if (best_opp_dtm >= 0 && opp_dtm < 0) {
           dominated = false;  // New loses them, current doesn't
         } else if (best_opp_dtm < 0 && opp_dtm < 0) {
-          // Both lose them - prefer faster loss (more negative)
-          dominated = (opp_dtm >= best_opp_dtm);
+          // Both lose them - prefer faster loss (least negative = closer to 0)
+          dominated = (opp_dtm <= best_opp_dtm);
         } else {
           dominated = true;  // Neither loses them (shouldn't happen)
         }
@@ -194,34 +195,47 @@ private:
   }
 
   // Load DTM from our directory
+  // Throws std::runtime_error if file exists but cannot be properly read
   std::vector<DTM> load_dtm_from_dir(const Material& m) const {
     std::string path = dtm_path(m);
     std::ifstream file(path, std::ios::binary);
     if (!file) {
-      return {};
+      throw std::runtime_error("Failed to open DTM file: " + path);
     }
 
     // Read format version
     std::uint8_t version;
     file.read(reinterpret_cast<char*>(&version), 1);
+    if (!file) {
+      throw std::runtime_error("Failed to read version from DTM file: " + path);
+    }
     if (version != 1) {
-      return {};  // Unsupported version
+      throw std::runtime_error("Unsupported DTM file version " + std::to_string(version) + " in: " + path);
     }
 
     // Read and verify material (sizeof(Material) = 24 bytes with int fields)
     Material stored_m;
     file.read(reinterpret_cast<char*>(&stored_m), sizeof(Material));
+    if (!file) {
+      throw std::runtime_error("Failed to read material from DTM file: " + path);
+    }
     if (!(stored_m == m)) {
-      return {};  // Material mismatch
+      throw std::runtime_error("Material mismatch in DTM file: " + path);
     }
 
     // Read number of positions
     std::size_t count;
     file.read(reinterpret_cast<char*>(&count), sizeof(count));
+    if (!file) {
+      throw std::runtime_error("Failed to read count from DTM file: " + path);
+    }
 
     // Read packed DTM values (1 byte each, signed)
     std::vector<std::int8_t> packed(count);
     file.read(reinterpret_cast<char*>(packed.data()), count);
+    if (!file) {
+      throw std::runtime_error("Failed to read data from DTM file: " + path);
+    }
 
     // Convert to DTM
     std::vector<DTM> table(count);
