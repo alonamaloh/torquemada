@@ -101,8 +101,8 @@ private:
   int quiescence(const Board& board, int alpha, int beta, int ply);
 
   // Probe tablebase if available
-  // Returns true if position was found, sets score
-  bool probe_tb(const Board& board, int& score);
+  // Returns true if position was found, sets score (adjusted for ply)
+  bool probe_tb(const Board& board, int ply, int& score);
 
   // Order moves for better pruning
   void order_moves(std::vector<Move>& moves, const Board& board, const Move& tt_move);

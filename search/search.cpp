@@ -75,7 +75,7 @@ Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit)
 
 Searcher::~Searcher() = default;
 
-bool Searcher::probe_tb(const Board& board, int& score) {
+bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   if (!tb_manager_) return false;
 
   int piece_count = std::popcount(board.allPieces());
@@ -86,12 +86,13 @@ bool Searcher::probe_tb(const Board& board, int& score) {
 
   stats_.tb_hits++;
 
+  // Adjust TB score by ply so we prefer shorter paths to wins
   switch (result) {
     case Value::WIN:
-      score = SCORE_TB_WIN;
+      score = SCORE_TB_WIN - ply;
       break;
     case Value::LOSS:
-      score = SCORE_TB_LOSS;
+      score = SCORE_TB_LOSS + ply;
       break;
     case Value::DRAW:
       score = SCORE_DRAW;
@@ -124,7 +125,7 @@ int Searcher::quiescence(const Board& board, int alpha, int beta, int ply) {
 
   // Check for tablebase hit
   int tb_score;
-  if (probe_tb(board, tb_score)) {
+  if (probe_tb(board, ply, tb_score)) {
     return tb_score;
   }
 
@@ -170,7 +171,7 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
 
   // Check for tablebase hit (before TT to get exact values)
   int tb_score;
-  if (probe_tb(board, tb_score)) {
+  if (probe_tb(board, ply, tb_score)) {
     return tb_score;
   }
 
