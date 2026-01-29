@@ -6,6 +6,8 @@
 #include "compression.hpp"
 #include <string>
 #include <memory>
+#include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 #include <filesystem>
 #include <fstream>
@@ -49,23 +51,50 @@ public:
   explicit DTMTablebaseManager(const std::string& directory)
       : directory_(directory) {}
 
-  // Lookup DTM value for a position
+  // Lookup DTM value for a position (thread-safe)
   // Returns DTM_UNKNOWN if tablebase not available
   DTM lookup_dtm(const Board& board) {
     Material m = get_material(board);
 
-    // Try to get or load the tablebase
+    // First try with shared lock (read-only)
+    {
+      std::shared_lock<std::shared_mutex> lock(mutex_);
+      auto it = dtm_cache_.find(m);
+      if (it != dtm_cache_.end()) {
+        if (it->second.empty()) {
+          return DTM_UNKNOWN;
+        }
+        std::size_t idx = board_to_index(board, m);
+        if (idx >= it->second.size()) {
+          return DTM_UNKNOWN;
+        }
+        return it->second[idx];
+      }
+    }
+
+    // Not in cache - need exclusive lock to load
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+
+    // Double-check after acquiring exclusive lock
     auto it = dtm_cache_.find(m);
-    if (it == dtm_cache_.end()) {
-      // Try to load
-      if (!dtm_exists_in_dir(m)) {
-        // Cache empty vector to avoid repeated filesystem checks
-        dtm_cache_[m] = {};
+    if (it != dtm_cache_.end()) {
+      if (it->second.empty()) {
         return DTM_UNKNOWN;
       }
-      dtm_cache_[m] = load_dtm_from_dir(m);
-      it = dtm_cache_.find(m);
+      std::size_t idx = board_to_index(board, m);
+      if (idx >= it->second.size()) {
+        return DTM_UNKNOWN;
+      }
+      return it->second[idx];
     }
+
+    // Load the tablebase
+    if (!dtm_exists_in_dir(m)) {
+      dtm_cache_[m] = {};
+      return DTM_UNKNOWN;
+    }
+    dtm_cache_[m] = load_dtm_from_dir(m);
+    it = dtm_cache_.find(m);
 
     if (it->second.empty()) {
       return DTM_UNKNOWN;
@@ -79,14 +108,16 @@ public:
     return it->second[idx];
   }
 
-  // Check if DTM tablebase is available for a position
+  // Check if DTM tablebase is available for a position (thread-safe)
   bool has_dtm(const Board& board) {
     Material m = get_material(board);
+    std::shared_lock<std::shared_mutex> lock(mutex_);
     auto it = dtm_cache_.find(m);
     if (it != dtm_cache_.end()) {
       return !it->second.empty();
     }
-    return dtm_exists(m);
+    lock.unlock();
+    return dtm_exists_in_dir(m);
   }
 
   // Find best move using DTM tablebase (depth-1 search with DTM lookup)
@@ -173,11 +204,15 @@ public:
     return found;
   }
 
-  void clear() { dtm_cache_.clear(); }
+  void clear() {
+    std::unique_lock<std::shared_mutex> lock(mutex_);
+    dtm_cache_.clear();
+  }
 
 private:
   std::string directory_;
   std::unordered_map<Material, std::vector<DTM>> dtm_cache_;
+  mutable std::shared_mutex mutex_;
 
   // Helper to build full DTM filename with directory
   std::string dtm_path(const Material& m) const {
