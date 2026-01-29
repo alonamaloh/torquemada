@@ -6,11 +6,10 @@
 #include "compression.hpp"
 #include <string>
 #include <memory>
-#include <mutex>
-#include <shared_mutex>
 #include <unordered_map>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
 
@@ -51,31 +50,13 @@ public:
   explicit DTMTablebaseManager(const std::string& directory)
       : directory_(directory) {}
 
-  // Lookup DTM value for a position (thread-safe)
+  // Lookup DTM value for a position
   // Returns DTM_UNKNOWN if tablebase not available
+  // Note: Call preload() before parallel use to avoid locking overhead
   DTM lookup_dtm(const Board& board) {
     Material m = get_material(board);
 
-    // First try with shared lock (read-only)
-    {
-      std::shared_lock<std::shared_mutex> lock(mutex_);
-      auto it = dtm_cache_.find(m);
-      if (it != dtm_cache_.end()) {
-        if (it->second.empty()) {
-          return DTM_UNKNOWN;
-        }
-        std::size_t idx = board_to_index(board, m);
-        if (idx >= it->second.size()) {
-          return DTM_UNKNOWN;
-        }
-        return it->second[idx];
-      }
-    }
-
-    // Not in cache - need exclusive lock to load
-    std::unique_lock<std::shared_mutex> lock(mutex_);
-
-    // Double-check after acquiring exclusive lock
+    // Fast path: no lock if preloaded (cache is read-only after preload)
     auto it = dtm_cache_.find(m);
     if (it != dtm_cache_.end()) {
       if (it->second.empty()) {
@@ -88,7 +69,7 @@ public:
       return it->second[idx];
     }
 
-    // Load the tablebase
+    // Slow path: need to load (not thread-safe, use preload() for parallel)
     if (!dtm_exists_in_dir(m)) {
       dtm_cache_[m] = {};
       return DTM_UNKNOWN;
@@ -108,15 +89,55 @@ public:
     return it->second[idx];
   }
 
-  // Check if DTM tablebase is available for a position (thread-safe)
+  // Preload all DTM tables for up to max_pieces
+  // Call this before parallel use to avoid locking
+  void preload(int max_pieces = 7) {
+    std::cout << "Preloading DTM tables..." << std::flush;
+    int loaded = 0;
+
+    // Enumerate all material configurations up to max_pieces
+    // Material: back_white_pawns, back_black_pawns, other_white_pawns, other_black_pawns, white_queens, black_queens
+    for (int total = 2; total <= max_pieces; ++total) {
+      for (int wq = 0; wq <= total; ++wq) {
+        for (int bq = 0; bq <= total - wq; ++bq) {
+          for (int wp = 0; wp <= total - wq - bq; ++wp) {
+            int bp = total - wq - bq - wp;
+            if (bp < 0) continue;
+
+            // Split pawns into back row and other
+            for (int bwp = 0; bwp <= wp; ++bwp) {
+              int owp = wp - bwp;
+              for (int bbp = 0; bbp <= bp; ++bbp) {
+                int obp = bp - bbp;
+
+                Material m{bwp, bbp, owp, obp, wq, bq};
+
+                // Skip if already cached
+                if (dtm_cache_.count(m)) continue;
+
+                // Try to load
+                if (dtm_exists_in_dir(m)) {
+                  dtm_cache_[m] = load_dtm_from_dir(m);
+                  loaded++;
+                } else {
+                  dtm_cache_[m] = {};  // Mark as not available
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    std::cout << " loaded " << loaded << " tables\n";
+  }
+
+  // Check if DTM tablebase is available for a position
   bool has_dtm(const Board& board) {
     Material m = get_material(board);
-    std::shared_lock<std::shared_mutex> lock(mutex_);
     auto it = dtm_cache_.find(m);
     if (it != dtm_cache_.end()) {
       return !it->second.empty();
     }
-    lock.unlock();
     return dtm_exists_in_dir(m);
   }
 
@@ -205,14 +226,12 @@ public:
   }
 
   void clear() {
-    std::unique_lock<std::shared_mutex> lock(mutex_);
     dtm_cache_.clear();
   }
 
 private:
   std::string directory_;
   std::unordered_map<Material, std::vector<DTM>> dtm_cache_;
-  mutable std::shared_mutex mutex_;
 
   // Helper to build full DTM filename with directory
   std::string dtm_path(const Material& m) const {

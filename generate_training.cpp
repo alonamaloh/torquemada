@@ -220,8 +220,9 @@ int main(int argc, char** argv) {
   std::atomic<int> num_games{0};
   std::atomic<int> white_wins{0}, black_wins{0}, draws{0};
 
-  // Shared DTM manager (thread-safe)
+  // Shared DTM manager - preload all tables before parallel section
   tablebase::DTMTablebaseManager dtm_mgr(tb_dir);
+  dtm_mgr.preload(7);
 
   // Thread-local storage for positions
   std::vector<std::vector<TrainingPosition>> thread_positions(num_threads);
