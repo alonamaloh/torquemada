@@ -158,12 +158,13 @@ int main(int argc, char** argv) {
             draws++;
         }
 
-        // Progress
-        if ((game + 1) % 10 == 0 || game == num_games - 1) {
-            std::cout << "Game " << (game + 1) << "/" << num_games
-                      << ": Model1 " << model1_wins << " - " << model2_wins << " Model2"
-                      << " (" << draws << " draws)\n";
-        }
+        // Progress after each game
+        const char* result_str = (result == +1) ? "1-0" : (result == -1) ? "0-1" : "1/2";
+        std::cout << "Game " << std::setw(3) << (game + 1) << "/" << num_games
+                  << "  " << (model1_is_white ? "M1" : "M2") << " vs "
+                  << (model1_is_white ? "M2" : "M1") << "  " << result_str
+                  << "  |  Score: " << model1_wins << "-" << model2_wins
+                  << " =" << draws << "\n";
     }
 
     // Final results
