@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/board.h"
+#include "../core/board.hpp"
 #include <cstdint>
 #include <vector>
 

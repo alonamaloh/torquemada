@@ -1,5 +1,5 @@
-#include "core/board.h"
-#include "core/movegen.h"
+#include "core/board.hpp"
+#include "core/movegen.hpp"
 #include <iostream>
 #include <chrono>
 

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "board.h"
-#include "movegen.h"
+#include "board.hpp"
+#include "movegen.hpp"
 #include <optional>
 #include <string>
 #include <vector>

@@ -1,4 +1,4 @@
-#include "board.h"
+#include "board.hpp"
 #include <bit>
 
 // Square numbering (32 light squares, standard Spanish checkers convention):

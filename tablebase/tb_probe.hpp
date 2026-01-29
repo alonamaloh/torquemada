@@ -1,9 +1,9 @@
 #pragma once
 
-#include "../core/board.h"
-#include "../core/movegen.h"
-#include "tablebase.h"
-#include "compression.h"
+#include "../core/board.hpp"
+#include "../core/movegen.hpp"
+#include "tablebase.hpp"
+#include "compression.hpp"
 #include <string>
 #include <memory>
 #include <unordered_map>

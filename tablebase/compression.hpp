@@ -1,7 +1,7 @@
 #pragma once
 
-#include "../core/board.h"
-#include "tablebase.h"
+#include "../core/board.hpp"
+#include "tablebase.hpp"
 #include <cstdint>
 #include <vector>
 #include <unordered_map>

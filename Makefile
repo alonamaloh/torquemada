@@ -23,7 +23,7 @@ TB_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(TB_SRCS))
 ALL_OBJS = $(CORE_OBJS) $(SEARCH_OBJS) $(TB_OBJS)
 
 # Targets
-all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/selfplay
+all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/selfplay $(BINDIR)/generate_training
 
 dirs:
 	@mkdir -p $(BINDIR) $(OBJDIR)/$(CORE) $(OBJDIR)/$(SEARCH) $(OBJDIR)/$(TABLEBASE)
@@ -35,6 +35,9 @@ $(BINDIR)/perft: $(CORE_OBJS) $(OBJDIR)/perft.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 $(BINDIR)/selfplay: $(ALL_OBJS) $(OBJDIR)/selfplay.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+$(BINDIR)/generate_training: $(ALL_OBJS) $(OBJDIR)/generate_training.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # Object file rules
@@ -49,6 +52,9 @@ $(OBJDIR)/perft.o: perft.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR)/selfplay.o: selfplay.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/generate_training.o: generate_training.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:

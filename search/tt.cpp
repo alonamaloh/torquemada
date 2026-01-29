@@ -1,4 +1,4 @@
-#include "tt.h"
+#include "tt.hpp"
 #include <bit>
 
 TranspositionTable::TranspositionTable(std::size_t size_mb) {

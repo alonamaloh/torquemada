@@ -1,8 +1,8 @@
-#include "core/board.h"
-#include "core/movegen.h"
-#include "core/notation.h"
-#include "search/search.h"
-#include "tablebase/tb_probe.h"
+#include "core/board.hpp"
+#include "core/movegen.hpp"
+#include "core/notation.hpp"
+#include "search/search.hpp"
+#include "tablebase/tb_probe.hpp"
 #include <iostream>
 #include <iomanip>
 #include <sstream>

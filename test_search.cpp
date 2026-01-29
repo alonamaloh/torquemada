@@ -1,6 +1,6 @@
-#include "core/board.h"
-#include "core/movegen.h"
-#include "search/search.h"
+#include "core/board.hpp"
+#include "core/movegen.hpp"
+#include "search/search.hpp"
 #include <iostream>
 #include <chrono>
 #include <bit>

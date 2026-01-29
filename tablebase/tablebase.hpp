@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../core/board.h"
+#include "../core/board.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <limits>

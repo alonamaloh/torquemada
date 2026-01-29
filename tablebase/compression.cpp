@@ -1,5 +1,5 @@
-#include "compression.h"
-#include "../core/movegen.h"
+#include "compression.hpp"
+#include "../core/movegen.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>

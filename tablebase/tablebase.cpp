@@ -1,4 +1,4 @@
-#include "tablebase.h"
+#include "tablebase.hpp"
 #include <x86intrin.h>
 #include <fstream>
 #include <sstream>
