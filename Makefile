@@ -11,6 +11,7 @@ SRCDIR = .
 CORE = core
 SEARCH = search
 TABLEBASE = tablebase
+NN = nn
 BINDIR = bin
 OBJDIR = obj
 
@@ -18,19 +19,21 @@ OBJDIR = obj
 CORE_SRCS = $(CORE)/board.cpp $(CORE)/movegen.cpp $(CORE)/notation.cpp
 SEARCH_SRCS = $(SEARCH)/search.cpp $(SEARCH)/tt.cpp
 TB_SRCS = $(TABLEBASE)/tablebase.cpp $(TABLEBASE)/compression.cpp
+NN_SRCS = $(NN)/mlp.cpp
 
 # Object files
 CORE_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(CORE_SRCS))
 SEARCH_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(SEARCH_SRCS))
 TB_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(TB_SRCS))
+NN_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(NN_SRCS))
 
-ALL_OBJS = $(CORE_OBJS) $(SEARCH_OBJS) $(TB_OBJS)
+ALL_OBJS = $(CORE_OBJS) $(SEARCH_OBJS) $(TB_OBJS) $(NN_OBJS)
 
 # Targets
-all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/selfplay $(BINDIR)/generate_training
+all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/selfplay $(BINDIR)/generate_training $(BINDIR)/test_nn
 
 dirs:
-	@mkdir -p $(BINDIR) $(OBJDIR)/$(CORE) $(OBJDIR)/$(SEARCH) $(OBJDIR)/$(TABLEBASE)
+	@mkdir -p $(BINDIR) $(OBJDIR)/$(CORE) $(OBJDIR)/$(SEARCH) $(OBJDIR)/$(TABLEBASE) $(OBJDIR)/$(NN)
 
 $(BINDIR)/test_search: $(ALL_OBJS) $(OBJDIR)/test_search.o
 	$(CXX) $(LDFLAGS) -o $@ $^
@@ -43,6 +46,9 @@ $(BINDIR)/selfplay: $(ALL_OBJS) $(OBJDIR)/selfplay.o
 
 $(BINDIR)/generate_training: $(ALL_OBJS) $(OBJDIR)/generate_training.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(HDF5_LDFLAGS)
+
+$(BINDIR)/test_nn: $(CORE_OBJS) $(NN_OBJS) $(OBJDIR)/test_nn.o
+	$(CXX) $(LDFLAGS) -o $@ $^
 
 # Object file rules
 $(OBJDIR)/%.o: %.cpp
@@ -60,6 +66,9 @@ $(OBJDIR)/selfplay.o: selfplay.cpp
 
 $(OBJDIR)/generate_training.o: generate_training.cpp
 	$(CXX) $(CXXFLAGS) $(HDF5_CFLAGS) -c $< -o $@
+
+$(OBJDIR)/test_nn.o: test_nn.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
 	rm -rf $(OBJDIR) $(BINDIR)
