@@ -3,7 +3,7 @@
 #include "core/notation.hpp"
 #include "core/random.hpp"
 #include "search/search.hpp"
-#include "tablebase/tb_probe.hpp"
+#include "tablebase/tablebase.hpp"
 #include <H5Cpp.h>
 #include <omp.h>
 #include <atomic>
@@ -31,7 +31,7 @@ bool is_quiet(const Board& board) {
 // Generate a single game and collect training positions
 // Returns: outcome from white's perspective at game start (+1 win, 0 draw, -1 loss)
 int play_game(RandomBits& rng, search::Searcher& searcher,
-              tablebase::DTMTablebaseManager& dtm_mgr,
+              CompressedTablebaseManager& tb_mgr,
               std::vector<TrainingPosition>& positions,
               int random_plies, int search_depth) {
   Board board;  // Starting position
@@ -69,11 +69,11 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
     // Check for tablebase hit (≤7 pieces)
     int piece_count = std::popcount(board.allPieces());
     if (piece_count <= 7 && board.n_reversible == 0) {
-      tablebase::DTM dtm = dtm_mgr.lookup_dtm(board);
-      if (dtm != tablebase::DTM_UNKNOWN) {
+      Value wdl = tb_mgr.lookup_wdl(board);
+      if (wdl != Value::UNKNOWN) {
         int result;
-        if (dtm > 0) result = +1;
-        else if (dtm < 0) result = -1;
+        if (wdl == Value::WIN) result = +1;
+        else if (wdl == Value::LOSS) result = -1;
         else result = 0;
 
         int outcome = (ply % 2 == 0) ? result : -result;
@@ -237,9 +237,8 @@ int main(int argc, char** argv) {
   std::atomic<int> num_games{0};
   std::atomic<int> white_wins{0}, black_wins{0}, draws{0};
 
-  // Shared DTM manager - preload all tables before parallel section
-  tablebase::DTMTablebaseManager dtm_mgr(tb_dir);
-  dtm_mgr.preload(7);
+  // Shared WDL tablebase manager
+  CompressedTablebaseManager tb_mgr(tb_dir);
 
   // Thread-local storage for positions
   std::vector<std::vector<TrainingPosition>> thread_positions(num_threads);
@@ -260,7 +259,7 @@ int main(int argc, char** argv) {
 
     while (total_positions.load(std::memory_order_relaxed) < target_positions) {
       std::size_t before = local_positions.size();
-      int outcome = play_game(rng, searcher, dtm_mgr, local_positions, random_plies, search_depth);
+      int outcome = play_game(rng, searcher, tb_mgr, local_positions, random_plies, search_depth);
       std::size_t added = local_positions.size() - before;
 
       // Update atomic counters
