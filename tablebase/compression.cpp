@@ -2063,12 +2063,7 @@ const CompressedTablebase* CompressedTablebaseManager::get_tablebase(const Mater
 // Look up WDL value, searching through capture positions as needed.
 // Since captures are irreversible, the recursion depth is bounded by
 // the number of pieces on the board (at most ~24).
-// Handles board flip: tries both orientations if needed.
 Value CompressedTablebaseManager::lookup_wdl(const Board& b) {
-  return lookup_wdl_internal(b, false);
-}
-
-Value CompressedTablebaseManager::lookup_wdl_internal(const Board& b, bool flipped) {
   Material m = get_material(b);
 
   // Terminal: opponent has no pieces
@@ -2076,16 +2071,8 @@ Value CompressedTablebaseManager::lookup_wdl_internal(const Board& b, bool flipp
     return Value::LOSS;
   }
 
-  CompressedTablebase* tb = load_or_get(m, false);  // Don't warn yet
+  CompressedTablebase* tb = load_or_get(m, true);
   if (!tb) {
-    // Try flipped orientation
-    if (!flipped) {
-      Value result = lookup_wdl_internal(flip(b), true);
-      // Flip the result (WIN <-> LOSS)
-      if (result == Value::WIN) return Value::LOSS;
-      if (result == Value::LOSS) return Value::WIN;
-      return result;
-    }
     return Value::UNKNOWN;
   }
 
@@ -2093,14 +2080,7 @@ Value CompressedTablebaseManager::lookup_wdl_internal(const Board& b, bool flipp
     Material pos_m = get_material(pos);
     CompressedTablebase* pos_tb = load_or_get(pos_m, false);
     if (!pos_tb) {
-      // Try flipped
-      Material flip_m = flip(pos_m);
-      pos_tb = load_or_get(flip_m, false);
-      if (!pos_tb) {
-        return SCORE_DRAW;  // Missing tablebase - conservative
-      }
-      std::size_t idx = board_to_index(flip(pos), flip_m);
-      return -value_to_score(lookup_compressed(*pos_tb, idx));  // Negate for flip
+      return SCORE_DRAW;  // Missing tablebase - conservative
     }
     std::size_t idx = board_to_index(pos, pos_m);
     return value_to_score(lookup_compressed(*pos_tb, idx));
