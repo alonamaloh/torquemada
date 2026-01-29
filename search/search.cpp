@@ -239,6 +239,14 @@ SearchResult Searcher::search(const Board& board, int depth) {
     return result;
   }
 
+  // Only one legal move - return immediately
+  if (moves.size() == 1) {
+    result.best_move = moves[0];
+    result.score = 0;  // Score doesn't matter, no choice
+    result.nodes = 0;
+    return result;
+  }
+
   int alpha = -SCORE_INFINITE;
   int beta = SCORE_INFINITE;
 
