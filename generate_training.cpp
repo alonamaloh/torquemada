@@ -5,6 +5,8 @@
 #include "search/search.hpp"
 #include "tablebase/tb_probe.hpp"
 #include <H5Cpp.h>
+#include <omp.h>
+#include <atomic>
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -29,7 +31,7 @@ bool is_quiet(const Board& board) {
 // Generate a single game and collect training positions
 // Returns: outcome from white's perspective at game start (+1 win, 0 draw, -1 loss)
 int play_game(RandomBits& rng, search::Searcher& searcher,
-              tablebase::DTMTablebaseManager* dtm_mgr,
+              tablebase::DTMTablebaseManager& dtm_mgr,
               std::vector<TrainingPosition>& positions,
               int random_plies, int search_depth) {
   Board board;  // Starting position
@@ -57,7 +59,6 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
 
     if (moves.empty()) {
       int outcome = (ply % 2 == 0) ? -1 : +1;
-      // Label all positions from this game
       for (auto& pos : game_positions) {
         pos.outcome = (pos.ply % 2 == 0) ? outcome : -outcome;
         positions.push_back(pos);
@@ -68,7 +69,7 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
     // Check for tablebase hit (≤7 pieces)
     int piece_count = std::popcount(board.allPieces());
     if (piece_count <= 7 && board.n_reversible == 0) {
-      tablebase::DTM dtm = dtm_mgr->lookup_dtm(board);
+      tablebase::DTM dtm = dtm_mgr.lookup_dtm(board);
       if (dtm != tablebase::DTM_UNKNOWN) {
         int result;
         if (dtm > 0) result = +1;
@@ -76,7 +77,6 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
         else result = 0;
 
         int outcome = (ply % 2 == 0) ? result : -result;
-        // Label all positions from this game
         for (auto& pos : game_positions) {
           pos.outcome = (pos.ply % 2 == 0) ? outcome : -outcome;
           positions.push_back(pos);
@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
   int search_depth = 8;
   int random_plies = 10;
   std::size_t target_positions = 1000;
-  bool verbose = false;
+  int num_threads = omp_get_max_threads();
 
   // Parse arguments
   for (int i = 1; i < argc; ++i) {
@@ -193,70 +193,110 @@ int main(int argc, char** argv) {
       output_file = argv[++i];
     } else if (arg == "--positions" && i + 1 < argc) {
       target_positions = std::atoll(argv[++i]);
-    } else if (arg == "--verbose" || arg == "-v") {
-      verbose = true;
+    } else if (arg == "--threads" && i + 1 < argc) {
+      num_threads = std::atoi(argv[++i]);
     }
   }
 
+  omp_set_num_threads(num_threads);
+
   // Seed RNG with nanoseconds
   auto now = std::chrono::high_resolution_clock::now();
-  auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-      now.time_since_epoch()).count();
-  RandomBits rng(static_cast<std::uint64_t>(ns));
+  auto base_seed = static_cast<std::uint64_t>(
+      std::chrono::duration_cast<std::chrono::nanoseconds>(
+          now.time_since_epoch()).count());
 
   std::cout << "=== Training Data Generator ===\n";
-  std::cout << "RNG seed (ns): " << ns << "\n";
+  std::cout << "Threads: " << num_threads << "\n";
+  std::cout << "RNG base seed: " << base_seed << "\n";
   std::cout << "Random opening plies: " << random_plies << "\n";
   std::cout << "Search depth: " << search_depth << "\n";
   std::cout << "Tablebases: " << tb_dir << "\n";
   std::cout << "Output: " << output_file << "\n";
   std::cout << "Target positions: " << target_positions << "\n\n";
 
-  // Create searcher and DTM manager
-  search::Searcher searcher(tb_dir, 7, 6);
-  tablebase::DTMTablebaseManager dtm_mgr(tb_dir);
+  // Atomic counters for progress tracking
+  std::atomic<std::size_t> total_positions{0};
+  std::atomic<int> num_games{0};
+  std::atomic<int> white_wins{0}, black_wins{0}, draws{0};
 
-  // Play games until we have enough positions
-  std::vector<TrainingPosition> all_positions;
-  int num_games = 0;
-  int white_wins = 0, black_wins = 0, draws = 0;
+  // Thread-local storage for positions
+  std::vector<std::vector<TrainingPosition>> thread_positions(num_threads);
 
-  while (all_positions.size() < target_positions) {
-    int outcome = play_game(rng, searcher, &dtm_mgr, all_positions, random_plies, search_depth);
-    num_games++;
+  auto start_time = std::chrono::steady_clock::now();
 
-    if (outcome > 0) white_wins++;
-    else if (outcome < 0) black_wins++;
-    else draws++;
+  #pragma omp parallel
+  {
+    int tid = omp_get_thread_num();
 
-    if (verbose) {
-      std::cout << "Game " << num_games << ": ";
-      if (outcome > 0) std::cout << "WHITE WINS";
-      else if (outcome < 0) std::cout << "BLACK WINS";
-      else std::cout << "DRAW";
-      std::cout << " (" << all_positions.size() << " total positions)\n";
-    } else if (num_games % 100 == 0) {
-      std::cout << "Completed " << num_games << " games, "
-                << all_positions.size() << " positions\n";
+    // Each thread gets its own RNG, searcher, and DTM manager
+    RandomBits rng(base_seed + tid * 0x9e3779b97f4a7c15ULL);
+    search::Searcher searcher(tb_dir, 7, 6);
+    tablebase::DTMTablebaseManager dtm_mgr(tb_dir);
+
+    auto& local_positions = thread_positions[tid];
+
+    while (total_positions.load(std::memory_order_relaxed) < target_positions) {
+      std::size_t before = local_positions.size();
+      int outcome = play_game(rng, searcher, dtm_mgr, local_positions, random_plies, search_depth);
+      std::size_t added = local_positions.size() - before;
+
+      // Update atomic counters
+      total_positions.fetch_add(added, std::memory_order_relaxed);
+      num_games.fetch_add(1, std::memory_order_relaxed);
+
+      if (outcome > 0) white_wins.fetch_add(1, std::memory_order_relaxed);
+      else if (outcome < 0) black_wins.fetch_add(1, std::memory_order_relaxed);
+      else draws.fetch_add(1, std::memory_order_relaxed);
+
+      // Progress report (only from thread 0)
+      if (tid == 0) {
+        int games = num_games.load(std::memory_order_relaxed);
+        if (games % 100 == 0) {
+          std::size_t pos = total_positions.load(std::memory_order_relaxed);
+          auto elapsed = std::chrono::steady_clock::now() - start_time;
+          double secs = std::chrono::duration<double>(elapsed).count();
+          std::cout << "Games: " << games << "  Positions: " << pos
+                    << "  (" << static_cast<int>(pos / secs) << " pos/sec)\n";
+        }
+      }
     }
+  }
+
+  auto end_time = std::chrono::steady_clock::now();
+  double total_secs = std::chrono::duration<double>(end_time - start_time).count();
+
+  // Merge all thread-local positions
+  std::vector<TrainingPosition> all_positions;
+  std::size_t total_size = 0;
+  for (const auto& tp : thread_positions) {
+    total_size += tp.size();
+  }
+  all_positions.reserve(total_size);
+  for (auto& tp : thread_positions) {
+    all_positions.insert(all_positions.end(),
+                         std::make_move_iterator(tp.begin()),
+                         std::make_move_iterator(tp.end()));
   }
 
   // Stats
   std::cout << "\n=== Summary ===\n";
-  std::cout << "Games: " << num_games << " (W:" << white_wins
-            << " B:" << black_wins << " D:" << draws << ")\n";
+  std::cout << "Time: " << std::fixed << std::setprecision(1) << total_secs << " seconds\n";
+  std::cout << "Games: " << num_games.load() << " (W:" << white_wins.load()
+            << " B:" << black_wins.load() << " D:" << draws.load() << ")\n";
   std::cout << "Total positions: " << all_positions.size() << "\n";
+  std::cout << "Throughput: " << static_cast<int>(all_positions.size() / total_secs) << " pos/sec\n";
 
   int tactical_count = 0;
   for (const auto& pos : all_positions) {
     if (pos.pre_tactical) tactical_count++;
   }
   std::cout << "Pre-tactical: " << tactical_count << " ("
+            << std::fixed << std::setprecision(1)
             << (100.0 * tactical_count / all_positions.size()) << "%)\n";
 
   // Write to HDF5
   write_hdf5(output_file, all_positions);
-
 
   return 0;
 }
