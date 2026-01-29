@@ -30,7 +30,7 @@ NN_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(NN_SRCS))
 ALL_OBJS = $(CORE_OBJS) $(SEARCH_OBJS) $(TB_OBJS) $(NN_OBJS)
 
 # Targets
-all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/selfplay $(BINDIR)/generate_training $(BINDIR)/test_nn
+all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/selfplay $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match
 
 dirs:
 	@mkdir -p $(BINDIR) $(OBJDIR)/$(CORE) $(OBJDIR)/$(SEARCH) $(OBJDIR)/$(TABLEBASE) $(OBJDIR)/$(NN)
@@ -48,6 +48,9 @@ $(BINDIR)/generate_training: $(ALL_OBJS) $(OBJDIR)/generate_training.o
 	$(CXX) $(LDFLAGS) -o $@ $^ $(HDF5_LDFLAGS)
 
 $(BINDIR)/test_nn: $(CORE_OBJS) $(NN_OBJS) $(OBJDIR)/test_nn.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+$(BINDIR)/match: $(ALL_OBJS) $(OBJDIR)/match.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 # Object file rules
@@ -68,6 +71,9 @@ $(OBJDIR)/generate_training.o: generate_training.cpp
 	$(CXX) $(CXXFLAGS) $(HDF5_CFLAGS) -c $< -o $@
 
 $(OBJDIR)/test_nn.o: test_nn.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/match.o: match.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
