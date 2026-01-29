@@ -155,7 +155,17 @@ int main(int argc, char** argv) {
   // Parse arguments
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
-    if (arg == "--depth" && i + 1 < argc) {
+    if (arg == "-h" || arg == "--help") {
+      std::cout << "Usage: " << argv[0] << " [options]\n"
+                << "Play a self-play game with search\n\n"
+                << "Options:\n"
+                << "  -h, --help          Show this help message\n"
+                << "  --depth N           Search depth (default: 8)\n"
+                << "  --model FILE        Neural network model file (.bin)\n"
+                << "  --dtm-path PATH     Tablebase directory (default: /home/alvaro/claude/damas)\n"
+                << "  --no-tb             Disable tablebases\n";
+      return 0;
+    } else if (arg == "--depth" && i + 1 < argc) {
       max_depth = std::atoi(argv[++i]);
     } else if (arg == "--no-tb") {
       tb_dir = "";

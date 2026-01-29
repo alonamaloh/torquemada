@@ -159,7 +159,16 @@ int main(int argc, char** argv) {
   // Parse arguments
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
-    if (arg == "--tb-dir" && i + 1 < argc) {
+    if (arg == "-h" || arg == "--help") {
+      std::cout << "Usage: " << argv[0] << " [options]\n"
+                << "Test the search engine\n\n"
+                << "Options:\n"
+                << "  -h, --help          Show this help message\n"
+                << "  --tb-dir PATH       Tablebase directory (default: /home/alvaro/claude/damas)\n"
+                << "  --tb-limit N        Tablebase piece limit (default: 7)\n"
+                << "  --no-tb             Disable tablebases\n";
+      return 0;
+    } else if (arg == "--tb-dir" && i + 1 < argc) {
       tb_dir = argv[++i];
     } else if (arg == "--tb-limit" && i + 1 < argc) {
       tb_limit = std::atoi(argv[++i]);

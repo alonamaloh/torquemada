@@ -5,9 +5,14 @@
 #include <chrono>
 
 int main(int argc, char** argv) {
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <model.bin>\n";
-        return 1;
+    if (argc < 2 || std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help") {
+        std::cout << "Usage: " << argv[0] << " <model.bin>\n"
+                  << "Test neural network inference\n\n"
+                  << "Arguments:\n"
+                  << "  model.bin           Neural network model file\n\n"
+                  << "Options:\n"
+                  << "  -h, --help          Show this help message\n";
+        return argc < 2 ? 1 : 0;
     }
 
     std::cout << "Loading model from " << argv[1] << "...\n";

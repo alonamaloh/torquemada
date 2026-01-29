@@ -1,9 +1,20 @@
 #include "core/board.hpp"
 #include "core/movegen.hpp"
-#include <iostream>
 #include <chrono>
+#include <iostream>
+#include <string>
 
 int main(int argc, char** argv) {
+  if (argc > 1 && (std::string(argv[1]) == "-h" || std::string(argv[1]) == "--help")) {
+    std::cout << "Usage: " << argv[0] << " [depth]\n"
+              << "Run perft test on initial position\n\n"
+              << "Arguments:\n"
+              << "  depth               Maximum depth to test (default: 6)\n\n"
+              << "Options:\n"
+              << "  -h, --help          Show this help message\n";
+    return 0;
+  }
+
   int max_depth = 6;
   if (argc > 1) {
     max_depth = std::atoi(argv[1]);

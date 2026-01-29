@@ -183,7 +183,19 @@ int main(int argc, char** argv) {
   // Parse arguments
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
-    if (arg == "--depth" && i + 1 < argc) {
+    if (arg == "-h" || arg == "--help") {
+      std::cout << "Usage: " << argv[0] << " [options]\n"
+                << "Generate training data for neural network\n\n"
+                << "Options:\n"
+                << "  -h, --help          Show this help message\n"
+                << "  --depth N           Search depth (default: 8)\n"
+                << "  --random-plies N    Random opening moves (default: 10)\n"
+                << "  --tb-path PATH      Tablebase directory (default: /home/alvaro/claude/damas)\n"
+                << "  --output FILE       Output HDF5 file (default: training_data.h5)\n"
+                << "  --positions N       Target number of positions (default: 1000)\n"
+                << "  --threads N         Number of threads (default: max available)\n";
+      return 0;
+    } else if (arg == "--depth" && i + 1 < argc) {
       search_depth = std::atoi(argv[++i]);
     } else if (arg == "--random-plies" && i + 1 < argc) {
       random_plies = std::atoi(argv[++i]);
