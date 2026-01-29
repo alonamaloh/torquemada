@@ -41,40 +41,6 @@ std::string move_to_str(const Move& m, Bb white) {
   return s;
 }
 
-// Print board from a specific side's perspective
-void print_board(const Board& board, bool white_perspective, int move_number) {
-  // If we need black's perspective, flip the board for display
-  Board display = white_perspective ? board : flip(board);
-
-  std::cout << "\n";
-  if (white_perspective) {
-    std::cout << "Position after move " << move_number << " (White to move):\n";
-  } else {
-    std::cout << "Position after move " << move_number << " (Black to move):\n";
-  }
-
-  // Print with rank/file guides
-  std::cout << "  +---------------+\n";
-  for (int row = 7; row >= 0; --row) {
-    std::cout << (row + 1) << " |";
-    if (row % 2 == 0) std::cout << " ";
-    for (int col = 3; col >= 0; --col) {
-      int bit = row * 4 + col;
-      char piece = '.';
-      if ((display.white >> bit) & 1) {
-        piece = ((display.kings >> bit) & 1) ? 'W' : 'w';
-      } else if ((display.black >> bit) & 1) {
-        piece = ((display.kings >> bit) & 1) ? 'B' : 'b';
-      }
-      std::cout << piece << " ";
-    }
-    if (row % 2 == 1) std::cout << " ";
-    std::cout << "|\n";
-  }
-  std::cout << "  +---------------+\n";
-  std::cout << "    a b c d e f g h\n";
-}
-
 // Verbose searcher that prints info after each depth
 class VerboseSearcher {
 public:
@@ -165,8 +131,7 @@ int main(int argc, char** argv) {
   bool white_to_move_in_reality = true;  // Track actual side to move
 
   // Show initial position
-  std::cout << "Initial position:\n";
-  print_board(board, true, 0);
+  std::cout << "Initial position:\n" << board;
 
   while (move_number < max_moves) {
     // Generate moves
@@ -213,10 +178,10 @@ int main(int argc, char** argv) {
     board = makeMove(board, result.best_move);
     white_to_move_in_reality = !white_to_move_in_reality;
 
-    // Show position (from white's real perspective)
-    // Since board is always stored as white-to-move, we need to flip for display
-    // when it's actually black's turn in the real game
-    print_board(board, white_to_move_in_reality, move_number);
+    // Show position
+    std::cout << "\nPosition after move " << move_number
+              << " (" << (white_to_move_in_reality ? "White" : "Black") << " to move):\n"
+              << board;
 
     // Print material count
     int white_pieces = std::popcount(board.white);
