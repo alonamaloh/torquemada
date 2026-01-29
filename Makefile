@@ -11,7 +11,7 @@ BINDIR = bin
 OBJDIR = obj
 
 # Source files
-CORE_SRCS = $(CORE)/board.cpp $(CORE)/movegen.cpp
+CORE_SRCS = $(CORE)/board.cpp $(CORE)/movegen.cpp $(CORE)/notation.cpp
 SEARCH_SRCS = $(SEARCH)/search.cpp $(SEARCH)/tt.cpp
 TB_SRCS = $(TABLEBASE)/tablebase.cpp $(TABLEBASE)/compression.cpp
 

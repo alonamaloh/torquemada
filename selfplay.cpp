@@ -1,44 +1,45 @@
 #include "core/board.h"
 #include "core/movegen.h"
+#include "core/notation.h"
 #include "search/search.h"
 #include <iostream>
 #include <iomanip>
+#include <sstream>
 #include <vector>
 #include <bit>
 
-// Convert square index to algebraic notation (1-32)
-std::string sq_to_str(int sq) {
-  return std::to_string(sq + 1);
-}
-
-// Get from/to squares from a move
-std::pair<int, int> get_from_to(const Move& m, Bb white) {
-  Bb from_bb = m.from_xor_to & white;
-  Bb to_bb = m.from_xor_to & ~white;
-
-  // Handle edge case where piece moves within same bitboard region
-  if (from_bb == 0 || to_bb == 0) {
-    // Both bits are in from_xor_to, need to figure out which is which
-    int bit1 = std::countr_zero(m.from_xor_to);
-    int bit2 = std::countr_zero(m.from_xor_to & ~(1u << bit1));
-    // The 'from' square has the piece
-    if ((1u << bit1) & white) {
-      return {bit1, bit2};
-    } else {
-      return {bit2, bit1};
+// Find the FullMove matching a compact Move
+FullMove findFullMove(const Board& board, const Move& move) {
+  std::vector<FullMove> fullMoves;
+  generateFullMoves(board, fullMoves);
+  for (const auto& fm : fullMoves) {
+    if (fm.move.from_xor_to == move.from_xor_to &&
+        fm.move.captures == move.captures) {
+      return fm;
     }
   }
-
-  return {std::countr_zero(from_bb), std::countr_zero(to_bb)};
+  // Fallback: return empty FullMove
+  return FullMove{};
 }
 
-// Format a move as string
-std::string move_to_str(const Move& m, Bb white) {
-  auto [from, to] = get_from_to(m, white);
-  std::string s = sq_to_str(from);
-  s += m.isCapture() ? "x" : "-";
-  s += sq_to_str(to);
-  return s;
+// Flip a square for black's perspective
+inline int flipSquare(int sq) { return 31 - sq; }
+
+// Convert FullMove to string with perspective handling
+std::string moveToStringPerspective(const FullMove& fullMove, bool blackPerspective) {
+  const auto& path = fullMove.path;
+  if (path.empty()) return "?";
+
+  std::ostringstream oss;
+  char sep = fullMove.move.isCapture() ? 'x' : '-';
+
+  for (size_t i = 0; i < path.size(); ++i) {
+    if (i > 0) oss << sep;
+    int sq = path[i];
+    if (blackPerspective) sq = flipSquare(sq);
+    oss << (sq + 1);
+  }
+  return oss.str();
 }
 
 // Verbose searcher that prints info after each depth
@@ -52,7 +53,9 @@ public:
     }
   }
 
-  search::SearchResult search(const Board& board, int max_depth) {
+  // Search and print PV with proper perspective
+  // ply: current ply (0 = white's first move, 1 = black's first move, etc.)
+  search::SearchResult search(const Board& board, int max_depth, int ply) {
     search::SearchResult best_result;
 
     for (int depth = 1; depth <= max_depth; ++depth) {
@@ -65,17 +68,26 @@ public:
                 << "  score " << std::setw(6) << result.score
                 << "  nodes " << std::setw(8) << result.nodes;
 
-      // Print PV (just best move for now, full PV would need TT extraction)
-      std::cout << "  pv " << move_to_str(result.best_move, board.white);
-
-      // Extract more of the PV by following TT
+      // Print PV with full path notation
+      std::cout << "  pv";
       Board pos = board;
       Move pv_move = result.best_move;
+      int pv_ply = ply;
+
+      // First move in PV
+      if (pv_move.from_xor_to != 0) {
+        FullMove fm = findFullMove(pos, pv_move);
+        std::cout << " " << moveToStringPerspective(fm, pv_ply % 2 == 1);
+      }
+
+      // Extract more of the PV by following TT
       for (int i = 0; i < depth - 1 && pv_move.from_xor_to != 0; ++i) {
         pos = makeMove(pos, pv_move);
+        pv_ply++;
         auto child_result = searcher_.search(pos, 1);
         if (child_result.best_move.from_xor_to == 0) break;
-        std::cout << " " << move_to_str(child_result.best_move, pos.white);
+        FullMove fm = findFullMove(pos, child_result.best_move);
+        std::cout << " " << moveToStringPerspective(fm, pv_ply % 2 == 1);
         pv_move = child_result.best_move;
       }
 
@@ -123,9 +135,8 @@ int main(int argc, char** argv) {
   VerboseSearcher searcher(tb_dir, tb_limit, use_hash_eval);
 
   Board board;  // Initial position
-  std::vector<std::string> move_list;
-  int move_number = 0;
-  bool white_to_move_in_reality = true;  // Track actual side to move
+  std::vector<FullMove> game_moves;  // Store full moves for notation
+  int ply = 0;  // 0 = white's first move, 1 = black's first, etc.
 
   // Show initial position
   std::cout << "Initial position:\n" << board;
@@ -145,7 +156,8 @@ int main(int argc, char** argv) {
     if (moves.empty()) {
       // Game over - current side to move loses
       std::cout << "\n*** GAME OVER ***\n";
-      if (white_to_move_in_reality) {
+      bool white_to_move = (ply % 2 == 0);
+      if (white_to_move) {
         std::cout << "Black wins! (White has no moves)\n";
       } else {
         std::cout << "White wins! (Black has no moves)\n";
@@ -153,15 +165,16 @@ int main(int argc, char** argv) {
       break;
     }
 
-    move_number++;
-
-    std::cout << "\n--- Move " << move_number << " ---\n";
-    std::cout << (white_to_move_in_reality ? "White" : "Black") << " to move\n";
+    bool white_to_move = (ply % 2 == 0);
+    std::cout << "\n--- Move " << (ply + 1) << " ---\n";
+    std::cout << (white_to_move ? "White" : "Black") << " to move\n";
     std::cout << "Searching...\n";
 
-    auto result = searcher.search(board, max_depth);
+    auto result = searcher.search(board, max_depth, ply);
 
-    std::string move_str = move_to_str(result.best_move, board.white);
+    // Find full move for proper notation
+    FullMove bestFullMove = findFullMove(board, result.best_move);
+    std::string move_str = moveToStringPerspective(bestFullMove, !white_to_move);
     std::cout << "\nBest move: " << move_str;
     if (result.best_move.isCapture()) {
       std::cout << " (captures " << std::popcount(result.best_move.captures) << ")";
@@ -169,24 +182,25 @@ int main(int argc, char** argv) {
     std::cout << "\n";
 
     // Record move
-    move_list.push_back(move_str);
+    game_moves.push_back(bestFullMove);
 
     // Make the move
     board = makeMove(board, result.best_move);
-    white_to_move_in_reality = !white_to_move_in_reality;
+    ply++;
 
     // Show position (flip if black's turn so display matches real game)
-    Board display = white_to_move_in_reality ? board : flip(board);
-    std::cout << "\nPosition after move " << move_number
-              << " (" << (white_to_move_in_reality ? "White" : "Black") << " to move):\n"
+    bool next_is_white = (ply % 2 == 0);
+    Board display = next_is_white ? board : flip(board);
+    std::cout << "\nPosition after move " << ply
+              << " (" << (next_is_white ? "White" : "Black") << " to move):\n"
               << display;
 
     // Print material count
     int white_pieces = std::popcount(board.white);
     int black_pieces = std::popcount(board.black);
-    // Remember: board is flipped, so if it's black's turn in reality,
+    // Remember: board is flipped, so if it's black's turn next,
     // what's stored as "white" is actually black's pieces
-    if (!white_to_move_in_reality) {
+    if (!next_is_white) {
       std::swap(white_pieces, black_pieces);
     }
     std::cout << "Material: White " << white_pieces << ", Black " << black_pieces << "\n";
@@ -195,30 +209,17 @@ int main(int argc, char** argv) {
     if (search::is_mate_score(result.score)) {
       std::cout << "\n*** GAME OVER ***\n";
       if (result.score > 0) {
-        std::cout << (white_to_move_in_reality ? "Black" : "White") << " wins!\n";
+        std::cout << (next_is_white ? "Black" : "White") << " wins!\n";
       } else {
-        std::cout << (white_to_move_in_reality ? "White" : "Black") << " wins!\n";
+        std::cout << (next_is_white ? "White" : "Black") << " wins!\n";
       }
       break;
     }
   }
 
-  // Print move list
+  // Print move list using gameToString
   std::cout << "\n=== Move List ===\n";
-  for (size_t i = 0; i < move_list.size(); ++i) {
-    if (i % 2 == 0) {
-      std::cout << ((i / 2) + 1) << ". ";
-    }
-    std::cout << move_list[i];
-    if (i % 2 == 1) {
-      std::cout << "\n";
-    } else {
-      std::cout << " ";
-    }
-  }
-  if (move_list.size() % 2 == 1) {
-    std::cout << "\n";
-  }
+  std::cout << gameToString(game_moves) << "\n";
 
   return 0;
 }
