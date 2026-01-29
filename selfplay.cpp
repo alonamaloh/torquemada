@@ -178,10 +178,11 @@ int main(int argc, char** argv) {
     board = makeMove(board, result.best_move);
     white_to_move_in_reality = !white_to_move_in_reality;
 
-    // Show position
+    // Show position (flip if black's turn so display matches real game)
+    Board display = white_to_move_in_reality ? board : flip(board);
     std::cout << "\nPosition after move " << move_number
               << " (" << (white_to_move_in_reality ? "White" : "Black") << " to move):\n"
-              << board;
+              << display;
 
     // Print material count
     int white_pieces = std::popcount(board.white);
