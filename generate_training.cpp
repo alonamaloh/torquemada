@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
   std::string output_file = "training_data.h5";
   int search_depth = 8;
   int random_plies = 10;
-  int num_games = 1;
+  std::size_t target_positions = 1000;
   bool verbose = false;
 
   // Parse arguments
@@ -191,8 +191,8 @@ int main(int argc, char** argv) {
       tb_dir = argv[++i];
     } else if (arg == "--output" && i + 1 < argc) {
       output_file = argv[++i];
-    } else if (arg == "--games" && i + 1 < argc) {
-      num_games = std::atoi(argv[++i]);
+    } else if (arg == "--positions" && i + 1 < argc) {
+      target_positions = std::atoll(argv[++i]);
     } else if (arg == "--verbose" || arg == "-v") {
       verbose = true;
     }
@@ -210,32 +210,33 @@ int main(int argc, char** argv) {
   std::cout << "Search depth: " << search_depth << "\n";
   std::cout << "Tablebases: " << tb_dir << "\n";
   std::cout << "Output: " << output_file << "\n";
-  std::cout << "Games: " << num_games << "\n\n";
+  std::cout << "Target positions: " << target_positions << "\n\n";
 
   // Create searcher and DTM manager
   search::Searcher searcher(tb_dir, 7, 6);
   tablebase::DTMTablebaseManager dtm_mgr(tb_dir);
 
-  // Play games and collect positions
+  // Play games until we have enough positions
   std::vector<TrainingPosition> all_positions;
+  int num_games = 0;
   int white_wins = 0, black_wins = 0, draws = 0;
 
-  for (int game = 0; game < num_games; ++game) {
-    std::vector<TrainingPosition> positions;
+  while (all_positions.size() < target_positions) {
     int outcome = play_game(rng, searcher, &dtm_mgr, all_positions, random_plies, search_depth);
+    num_games++;
 
     if (outcome > 0) white_wins++;
     else if (outcome < 0) black_wins++;
     else draws++;
 
-    if (verbose || num_games == 1) {
-      std::cout << "Game " << (game + 1) << ": ";
+    if (verbose) {
+      std::cout << "Game " << num_games << ": ";
       if (outcome > 0) std::cout << "WHITE WINS";
       else if (outcome < 0) std::cout << "BLACK WINS";
       else std::cout << "DRAW";
       std::cout << " (" << all_positions.size() << " total positions)\n";
-    } else if ((game + 1) % 100 == 0) {
-      std::cout << "Completed " << (game + 1) << " games, "
+    } else if (num_games % 100 == 0) {
+      std::cout << "Completed " << num_games << " games, "
                 << all_positions.size() << " positions\n";
     }
   }
@@ -256,20 +257,6 @@ int main(int argc, char** argv) {
   // Write to HDF5
   write_hdf5(output_file, all_positions);
 
-  // If verbose and single game, print positions
-  if (verbose && num_games == 1) {
-    std::cout << "\nPositions:\n" << std::string(60, '-') << "\n";
-    for (size_t i = 0; i < all_positions.size(); ++i) {
-      const auto& pos = all_positions[i];
-      std::cout << "Position " << std::setw(3) << i
-                << " (ply " << std::setw(3) << pos.ply << ")";
-      std::cout << "  Label: " << std::setw(2) << pos.outcome;
-      std::cout << " (" << (pos.outcome > 0 ? "win" : (pos.outcome < 0 ? "loss" : "draw")) << ")";
-      if (pos.pre_tactical) std::cout << "  [PRE-TACTICAL]";
-      std::cout << "\n" << pos.board;
-      std::cout << "Pieces: " << std::popcount(pos.board.allPieces()) << "\n\n";
-    }
-  }
 
   return 0;
 }
