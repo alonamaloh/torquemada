@@ -78,6 +78,10 @@ Searcher::~Searcher() = default;
 bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   if (!tb_manager_) return false;
 
+  // Only probe when n_reversible == 0 (after a capture or pawn move)
+  // This forces the winning side to find moves that make progress
+  if (board.n_reversible != 0) return false;
+
   int piece_count = std::popcount(board.allPieces());
   if (piece_count > tb_piece_limit_) return false;
 
