@@ -2,11 +2,52 @@
 #include "core/movegen.h"
 #include "core/notation.h"
 #include "search/search.h"
+#include "tablebase/tb_probe.h"
 #include <iostream>
 #include <iomanip>
 #include <sstream>
 #include <vector>
 #include <bit>
+
+// DTM manager for endgame display
+static std::unique_ptr<tablebase::DTMTablebaseManager> g_dtm_manager;
+
+// Material string like "KKvK" or "PPvK"
+std::string materialString(const Material& m) {
+  std::string result;
+  for (int i = 0; i < m.white_queens; ++i) result += 'K';
+  for (int i = 0; i < m.back_white_pawns + m.other_white_pawns; ++i) result += 'P';
+  result += 'v';
+  for (int i = 0; i < m.black_queens; ++i) result += 'K';
+  for (int i = 0; i < m.back_black_pawns + m.other_black_pawns; ++i) result += 'P';
+  return result;
+}
+
+// DTM description like "winning in 5 moves"
+std::string dtmDescription(tablebase::DTM d) {
+  if (d == tablebase::DTM_UNKNOWN) return "unknown";
+  if (d == tablebase::DTM_DRAW) return "draw";
+  if (d > 0) return "winning in " + std::to_string(d) + " moves";
+  if (d < 0) return "losing in " + std::to_string(-d) + " moves";
+  return "draw";
+}
+
+// Print pieces with positions (from display perspective)
+void printPieces(const Board& b) {
+  std::cout << "  White: ";
+  for (int sq = 0; sq < 32; ++sq) {
+    if (b.white & (1u << sq)) {
+      std::cout << (b.kings & (1u << sq) ? "K" : "P") << (sq + 1) << " ";
+    }
+  }
+  std::cout << "\n  Black: ";
+  for (int sq = 0; sq < 32; ++sq) {
+    if (b.black & (1u << sq)) {
+      std::cout << (b.kings & (1u << sq) ? "K" : "P") << (sq + 1) << " ";
+    }
+  }
+  std::cout << "\n";
+}
 
 // Find the FullMove matching a compact Move
 FullMove findFullMove(const Board& board, const Move& move) {
@@ -134,6 +175,11 @@ int main(int argc, char** argv) {
 
   VerboseSearcher searcher(tb_dir, tb_limit, use_hash_eval);
 
+  // Initialize DTM manager for endgame display
+  if (!tb_dir.empty()) {
+    g_dtm_manager = std::make_unique<tablebase::DTMTablebaseManager>(tb_dir);
+  }
+
   Board board;  // Initial position
   std::vector<FullMove> game_moves;  // Store full moves for notation
   int ply = 0;  // 0 = white's first move, 1 = black's first, etc.
@@ -203,7 +249,23 @@ int main(int argc, char** argv) {
     if (!next_is_white) {
       std::swap(white_pieces, black_pieces);
     }
-    std::cout << "Material: White " << white_pieces << ", Black " << black_pieces << "\n";
+    int total_pieces = white_pieces + black_pieces;
+
+    // For endgame positions (≤6 pieces), show DTM-style output
+    if (total_pieces <= 6 && g_dtm_manager) {
+      Material m = get_material(board);
+      // Flip material if it's black's turn (internal board is flipped)
+      if (!next_is_white) {
+        m = flip(m);
+      }
+      std::cout << "Material: " << materialString(m) << " (" << total_pieces << " pieces)\n";
+      printPieces(display);
+
+      tablebase::DTM dtm = g_dtm_manager->lookup_dtm(board);
+      std::cout << "Position: " << dtmDescription(dtm) << "\n";
+    } else {
+      std::cout << "Material: White " << white_pieces << ", Black " << black_pieces << "\n";
+    }
 
     // Check for decisive result
     if (search::is_mate_score(result.score)) {
