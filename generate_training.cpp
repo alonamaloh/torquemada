@@ -10,10 +10,11 @@
 #include <vector>
 #include <bit>
 
-// Training position: board state + outcome label
+// Training position: board state + metadata
 struct TrainingPosition {
   Board board;
-  int ply;  // When this position occurred (for debugging)
+  int ply;           // When this position occurred (for debugging)
+  bool pre_tactical; // True if the move played leads to opponent having captures
 };
 
 // Check if position is quiet (no captures available)
@@ -81,11 +82,6 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
       return 0;
     }
 
-    // Record position if quiet
-    if (is_quiet(board)) {
-      positions.push_back({board, ply});
-    }
-
     // Search for best move
     auto result = searcher.search(board, search_depth);
     if (result.best_move.from_xor_to == 0) {
@@ -93,7 +89,18 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
       return (ply % 2 == 0) ? -1 : +1;
     }
 
-    board = makeMove(board, result.best_move);
+    // Make the move to see the resulting position
+    Board next_board = makeMove(board, result.best_move);
+
+    // Check if move is pre-tactical (opponent has captures after our move)
+    bool pre_tactical = !is_quiet(next_board);
+
+    // Record position if quiet (before the move)
+    if (is_quiet(board)) {
+      positions.push_back({board, ply, pre_tactical});
+    }
+
+    board = next_board;
     ply++;
 
     // Safety limit
@@ -150,8 +157,10 @@ int main(int argc, char** argv) {
   std::cout << "Collected " << positions.size() << " training positions:\n";
   std::cout << std::string(60, '-') << "\n";
 
+  int tactical_count = 0;
   for (size_t i = 0; i < positions.size(); ++i) {
     const auto& pos = positions[i];
+    if (pos.pre_tactical) tactical_count++;
 
     // Determine label: outcome from the perspective of side to move at this position
     // pos.ply is the ply when this position occurred
@@ -160,10 +169,14 @@ int main(int argc, char** argv) {
 
     std::cout << "Position " << std::setw(3) << i << " (ply " << std::setw(3) << pos.ply << ")";
     std::cout << "  Label: " << std::setw(2) << label;
-    std::cout << " (" << (label > 0 ? "win" : (label < 0 ? "loss" : "draw")) << ")\n";
+    std::cout << " (" << (label > 0 ? "win" : (label < 0 ? "loss" : "draw")) << ")";
+    if (pos.pre_tactical) std::cout << "  [PRE-TACTICAL]";
+    std::cout << "\n";
     std::cout << pos.board;
     std::cout << "Pieces: " << std::popcount(pos.board.allPieces()) << "\n\n";
   }
+
+  std::cout << "Summary: " << tactical_count << "/" << positions.size() << " positions are pre-tactical\n";
 
   return 0;
 }
