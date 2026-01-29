@@ -240,6 +240,9 @@ int main(int argc, char** argv) {
   // Shared WDL tablebase manager
   CompressedTablebaseManager tb_mgr(tb_dir);
 
+  // Progress reporting
+  std::atomic<double> last_report_time{0.0};
+
   // Thread-local storage for positions
   std::vector<std::vector<TrainingPosition>> thread_positions(num_threads);
 
@@ -270,15 +273,17 @@ int main(int argc, char** argv) {
       else if (outcome < 0) black_wins.fetch_add(1, std::memory_order_relaxed);
       else draws.fetch_add(1, std::memory_order_relaxed);
 
-      // Progress report (only from thread 0)
-      if (tid == 0) {
-        int games = num_games.load(std::memory_order_relaxed);
-        if (games % 100 == 0) {
+      // Progress report (any thread, every 10 seconds)
+      auto now = std::chrono::steady_clock::now();
+      double secs = std::chrono::duration<double>(now - start_time).count();
+      double last = last_report_time.load(std::memory_order_relaxed);
+      if (secs - last >= 10.0) {
+        if (last_report_time.compare_exchange_weak(last, secs, std::memory_order_relaxed)) {
+          int games = num_games.load(std::memory_order_relaxed);
           std::size_t pos = total_positions.load(std::memory_order_relaxed);
-          auto elapsed = std::chrono::steady_clock::now() - start_time;
-          double secs = std::chrono::duration<double>(elapsed).count();
           std::cout << "Games: " << games << "  Positions: " << pos
-                    << "  (" << static_cast<int>(pos / secs) << " pos/sec)\n";
+                    << "  (" << static_cast<int>(pos / secs) << " pos/sec)\n"
+                    << std::flush;
         }
       }
     }
