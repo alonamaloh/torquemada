@@ -239,11 +239,24 @@ SearchResult Searcher::search(const Board& board, int depth) {
     return result;
   }
 
-  // Only one legal move - return immediately
+  // Only one legal move - return immediately, but lookup score if in TB range
   if (moves.size() == 1) {
     result.best_move = moves[0];
-    result.score = 0;  // Score doesn't matter, no choice
     result.nodes = 0;
+
+    // Try to get accurate score from tablebase
+    int piece_count = std::popcount(board.allPieces());
+    if (dtm_manager_ && piece_count <= dtm_piece_limit_) {
+      tablebase::DTM dtm = dtm_manager_->lookup_dtm(board);
+      if (dtm != tablebase::DTM_UNKNOWN) {
+        result.score = dtm_to_score(dtm, 0);
+        stats_.tb_hits++;
+        result.tb_hits = 1;
+        return result;
+      }
+    }
+
+    result.score = 0;  // No TB available, score doesn't matter anyway
     return result;
   }
 
