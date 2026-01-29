@@ -56,11 +56,9 @@ struct SearchStats {
 // Takes a board (white to move) and returns a score from white's perspective
 using EvalFunc = std::function<int(const Board&)>;
 
-// Material + positional evaluation
-int material_eval(const Board& board);
-
-// Hash-based evaluation (reproducible pseudo-random, for training data generation)
-int hash_eval(const Board& board);
+// Random evaluation: reproducible pseudo-random score in [-10000, +10000]
+// Used as placeholder until neural network is trained
+int random_eval(const Board& board);
 
 // Searcher class - the main search engine
 class Searcher {

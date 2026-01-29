@@ -5,52 +5,9 @@
 
 namespace search {
 
-// Piece-square tables for positional evaluation
-// Bonus for pawn advancement (row 0-7, where 7 is promotion rank for white)
-constexpr int PAWN_ROW_BONUS[8] = {0, 0, 2, 5, 10, 20, 35, 0};  // Row 7 = queen, handled separately
-
-// Center squares are slightly better for queens
-constexpr Bb CENTER_MASK = 0x00666600u;  // Squares 9,10,13,14,17,18,21,22
-
-// Material + positional evaluation
-int material_eval(const Board& board) {
-  constexpr int PAWN_VALUE = 100;
-  constexpr int QUEEN_VALUE = 300;
-  constexpr int CENTER_BONUS = 5;
-
-  int score = 0;
-
-  // Material
-  score += std::popcount(board.whitePawns()) * PAWN_VALUE;
-  score += std::popcount(board.whiteQueens()) * QUEEN_VALUE;
-  score -= std::popcount(board.blackPawns()) * PAWN_VALUE;
-  score -= std::popcount(board.blackQueens()) * QUEEN_VALUE;
-
-  // Pawn advancement bonus (white pawns want to go to higher rows)
-  for (Bb pawns = board.whitePawns(); pawns; pawns &= pawns - 1) {
-    int sq = std::countr_zero(pawns);
-    int row = sq / 4;
-    score += PAWN_ROW_BONUS[row];
-  }
-
-  // Black pawns want to go to lower rows (from their perspective after flip)
-  // But board is stored with white to move, so black pawns on low rows are advanced
-  for (Bb pawns = board.blackPawns(); pawns; pawns &= pawns - 1) {
-    int sq = std::countr_zero(pawns);
-    int row = sq / 4;
-    score -= PAWN_ROW_BONUS[7 - row];  // Flip row for black
-  }
-
-  // Queen centralization
-  score += std::popcount(board.whiteQueens() & CENTER_MASK) * CENTER_BONUS;
-  score -= std::popcount(board.blackQueens() & CENTER_MASK) * CENTER_BONUS;
-
-  return score;
-}
-
-// Hash-based evaluation: reproducible pseudo-random score derived from position hash
-// Returns a score in the range [-500, +500] based on the hash
-int hash_eval(const Board& board) {
+// Random evaluation: reproducible pseudo-random score derived from position hash
+// Returns a score in the range [-10000, +10000] based on the hash
+int random_eval(const Board& board) {
   std::uint64_t h = board.hash() + 1;
 
   // Mix the hash to get good distribution
@@ -60,14 +17,13 @@ int hash_eval(const Board& board) {
   h *= 0xc4ceb9fe1a85ec53ULL;
   h ^= h >> 33;
 
-  // Convert to signed score in range [-500, +500]
-  // Use the lower 32 bits, treat as signed, then scale
-  std::int32_t raw = static_cast<std::int32_t>(h & 0xFFFFFFFFu);
-  return raw % 501;  // Range [-500, +500]
+  // Convert to signed score in range [-10000, +10000]
+  std::int64_t raw = static_cast<std::int64_t>(h);
+  return static_cast<int>(raw % 10001);
 }
 
 Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_piece_limit)
-    : tt_(64), eval_(material_eval), tb_piece_limit_(tb_piece_limit),
+    : tt_(64), eval_(random_eval), tb_piece_limit_(tb_piece_limit),
       dtm_piece_limit_(dtm_piece_limit) {
   if (!tb_directory.empty()) {
     tb_manager_ = std::make_unique<CompressedTablebaseManager>(tb_directory);

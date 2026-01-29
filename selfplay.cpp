@@ -86,12 +86,9 @@ std::string moveToStringPerspective(const FullMove& fullMove, bool blackPerspect
 // Verbose searcher that prints info after each depth
 class VerboseSearcher {
 public:
-  VerboseSearcher(const std::string& tb_dir, int tb_limit, bool use_hash_eval = false)
+  VerboseSearcher(const std::string& tb_dir, int tb_limit)
       : searcher_(tb_dir, tb_limit) {
     searcher_.set_tt_size(128);
-    if (use_hash_eval) {
-      searcher_.set_eval(search::hash_eval);
-    }
   }
 
   // Search and print PV with proper perspective
@@ -153,7 +150,6 @@ int main(int argc, char** argv) {
   std::string tb_dir = "/home/alvaro/claude/damas";
   int tb_limit = 7;
   int max_depth = 8;
-  bool use_hash_eval = false;
 
   // Parse arguments
   for (int i = 1; i < argc; ++i) {
@@ -162,18 +158,18 @@ int main(int argc, char** argv) {
       max_depth = std::atoi(argv[++i]);
     } else if (arg == "--no-tb") {
       tb_dir = "";
-    } else if (arg == "--hash-eval") {
-      use_hash_eval = true;
+    } else if (arg == "--dtm-path" && i + 1 < argc) {
+      tb_dir = argv[++i];
     }
   }
 
   std::cout << "=== Torquemada Self-Play Game ===\n";
   std::cout << "Search depth: " << max_depth << "\n";
   std::cout << "Tablebases: " << (tb_dir.empty() ? "disabled" : tb_dir) << "\n";
-  std::cout << "Evaluation: " << (use_hash_eval ? "hash-based" : "material+positional") << "\n";
+  std::cout << "Evaluation: random\n";
   std::cout << "\n";
 
-  VerboseSearcher searcher(tb_dir, tb_limit, use_hash_eval);
+  VerboseSearcher searcher(tb_dir, tb_limit);
 
   // Initialize DTM manager for endgame display
   if (!tb_dir.empty()) {
