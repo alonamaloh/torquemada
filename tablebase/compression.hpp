@@ -383,5 +383,8 @@ private:
 
   // Load a compressed tablebase (or return cached)
   CompressedTablebase* load_or_get(const Material& m, bool warn_if_missing = true);
+
+  // Internal lookup that handles flipped boards
+  Value lookup_wdl_internal(const Board& b, bool flipped);
 };
 

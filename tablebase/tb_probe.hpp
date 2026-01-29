@@ -53,13 +53,27 @@ public:
   // Lookup DTM value for a position
   // Returns DTM_UNKNOWN if tablebase not available
   // Note: Call preload() before parallel use to avoid locking overhead
+  // Handles board flip: tries both orientations and uses the one in cache
   DTM lookup_dtm(const Board& board) {
+    return lookup_dtm_internal(board, false);
+  }
+
+private:
+  DTM lookup_dtm_internal(const Board& board, bool flipped) {
     Material m = get_material(board);
 
-    // Fast path: no lock if preloaded (cache is read-only after preload)
     auto it = dtm_cache_.find(m);
     if (it != dtm_cache_.end()) {
       if (it->second.empty()) {
+        // This material config doesn't exist - try flipped if we haven't
+        if (!flipped) {
+          DTM result = lookup_dtm_internal(flip(board), true);
+          // DTM is from opponent's perspective, so negate
+          if (result != DTM_UNKNOWN && result != DTM_DRAW) {
+            return static_cast<DTM>(-result);
+          }
+          return result;
+        }
         return DTM_UNKNOWN;
       }
       std::size_t idx = board_to_index(board, m);
@@ -69,11 +83,20 @@ public:
       return it->second[idx];
     }
 
-    // Slow path: need to load (not thread-safe, use preload() for parallel)
+    // Not in cache - try to load (not thread-safe, use preload() for parallel)
     if (!dtm_exists_in_dir(m)) {
       dtm_cache_[m] = {};
+      // Try flipped orientation if we haven't
+      if (!flipped) {
+        DTM result = lookup_dtm_internal(flip(board), true);
+        if (result != DTM_UNKNOWN && result != DTM_DRAW) {
+          return static_cast<DTM>(-result);
+        }
+        return result;
+      }
       return DTM_UNKNOWN;
     }
+
     dtm_cache_[m] = load_dtm_from_dir(m);
     it = dtm_cache_.find(m);
 
@@ -88,6 +111,8 @@ public:
 
     return it->second[idx];
   }
+
+public:
 
   // Preload all DTM tables for up to max_pieces
   // Call this before parallel use to avoid locking
