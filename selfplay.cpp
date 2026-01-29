@@ -267,16 +267,7 @@ int main(int argc, char** argv) {
       std::cout << "Material: White " << white_pieces << ", Black " << black_pieces << "\n";
     }
 
-    // Check for decisive result
-    if (search::is_mate_score(result.score)) {
-      std::cout << "\n*** GAME OVER ***\n";
-      if (result.score > 0) {
-        std::cout << (next_is_white ? "Black" : "White") << " wins!\n";
-      } else {
-        std::cout << (next_is_white ? "White" : "Black") << " wins!\n";
-      }
-      break;
-    }
+    // Game continues until no moves available (checked at start of loop)
   }
 
   // Print move list using gameToString
