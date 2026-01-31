@@ -18,8 +18,12 @@ public:
     // Positive = good for side to move, negative = bad
     int evaluate(const Board& board) const;
 
-    // Get raw output probabilities [loss, draw, win]
+    // Get raw output probabilities [loss, draw, win] (for 3-class WDL model)
     void predict_proba(const Board& board, float& p_loss, float& p_draw, float& p_win) const;
+
+    // Evaluate using DTM model (15-class output)
+    // Returns score: positive = winning, negative = losing, magnitude ~ 20000 - 10*DTM
+    int evaluate_dtm(const Board& board) const;
 
     // Get number of parameters
     std::size_t num_parameters() const;
@@ -33,6 +37,7 @@ private:
     };
 
     std::vector<Layer> layers_;
+    std::uint32_t max_layer_size_ = 128;  // Computed in constructor
 
     // Convert board to 128 input features
     void board_to_features(const Board& board, float* features) const;

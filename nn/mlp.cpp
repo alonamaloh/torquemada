@@ -41,6 +41,12 @@ MLP::MLP(const std::string& path) {
             throw std::runtime_error("Failed to read layer weights/biases");
         }
     }
+
+    // Compute max layer size for stack allocation in forward()
+    max_layer_size_ = 128;  // Input size
+    for (const auto& layer : layers_) {
+        if (layer.out_size > max_layer_size_) max_layer_size_ = layer.out_size;
+    }
 }
 
 std::size_t MLP::num_parameters() const {
@@ -206,23 +212,17 @@ void MLP::softmax(const float* input, float* output, std::uint32_t size) {
 }
 
 void MLP::forward(const float* input, float* output) const {
-    // Allocate buffers for intermediate results
-    std::uint32_t max_size = 128;  // Input size
-    for (const auto& layer : layers_) {
-        if (layer.out_size > max_size) max_size = layer.out_size;
-    }
-
-    // Double buffer for in-place computation
-    std::vector<float> buf1(max_size);
-    std::vector<float> buf2(max_size);
+    // Stack-allocated buffers (no heap allocation, thread-safe)
+    alignas(32) float buf1[512];
+    alignas(32) float buf2[512];
 
     // Copy input to first buffer
     for (std::uint32_t i = 0; i < 128; ++i) {
         buf1[i] = input[i];
     }
 
-    float* current = buf1.data();
-    float* next = buf2.data();
+    float* current = buf1;
+    float* next = buf2;
 
     for (std::size_t l = 0; l < layers_.size(); ++l) {
         const auto& layer = layers_[l];
@@ -268,6 +268,43 @@ int MLP::evaluate(const Board& board) const {
     // P(win) - P(loss) gives range [-1, 1], scale to [-10000, 10000]
     float expected = p_win - p_loss;
     return static_cast<int>(expected * 10000.0f);
+}
+
+int MLP::evaluate_dtm(const Board& board) const {
+    alignas(32) float features[128];
+    board_to_features(board, features);
+
+    float logits[15];
+    forward(features, logits);
+
+    float probs[15];
+    softmax(logits, probs, 15);
+
+    // DTM class midpoints (in moves)
+    // Classes 0-6: WIN_1, WIN_2_3, WIN_4_7, WIN_8_15, WIN_16_31, WIN_32_63, WIN_64_127
+    // Class 7: DRAW
+    // Classes 8-14: LOSS_64_127, LOSS_32_63, LOSS_16_31, LOSS_8_15, LOSS_4_7, LOSS_2_3, LOSS_1
+    static const int dtm_midpoints[] = {1, 2, 5, 11, 23, 47, 95, 0, 95, 47, 23, 11, 5, 2, 1};
+
+    // Compute expected score using formula: WIN = 20000 - 10*M, LOSS = -(20000 - 10*M)
+    float expected = 0.0f;
+    for (int c = 0; c < 15; ++c) {
+        int m = dtm_midpoints[c];
+        int score;
+        if (c < 7) {
+            // WIN classes
+            score = 20000 - 10 * m;
+        } else if (c == 7) {
+            // DRAW
+            score = 0;
+        } else {
+            // LOSS classes
+            score = -(20000 - 10 * m);
+        }
+        expected += probs[c] * score;
+    }
+
+    return static_cast<int>(expected);
 }
 
 } // namespace nn
