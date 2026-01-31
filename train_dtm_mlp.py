@@ -164,9 +164,9 @@ def main():
     parser = argparse.ArgumentParser(description='Train MLP for DTM class prediction')
     parser.add_argument('--dtm-dir', type=str, default='../damas',
                         help='Directory containing DTM tablebase files')
-    parser.add_argument('--epochs', type=int, default=100,
-                        help='Number of epochs')
-    parser.add_argument('--epoch-size', type=int, default=1_000_000,
+    parser.add_argument('--epochs', type=int, default=0,
+                        help='Number of epochs (0 = infinite)')
+    parser.add_argument('--epoch-size', type=int, default=10_000_000,
                         help='Samples per epoch')
     parser.add_argument('--batch-size', type=int, default=4096,
                         help='Batch size')
@@ -205,26 +205,34 @@ def main():
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     print(f"Loss weights: WDL={args.wdl_weight}, DTM={args.dtm_weight}")
+    print(f"Epoch size: {args.epoch_size:,} samples")
+    if args.epochs == 0:
+        print("Training indefinitely (Ctrl+C to stop)")
     print(f"\n{'Epoch':>5} {'Loss':>10} {'DTM Acc':>10} {'WDL Acc':>10}")
     print("-" * 40)
 
-    for epoch in range(args.epochs):
-        loss, dtm_acc, wdl_acc = train_epoch(
-            model, sampler, optimizer, criterion, args.device,
-            epoch_size=args.epoch_size, batch_size=args.batch_size
-        )
+    epoch = 0
+    try:
+        while args.epochs == 0 or epoch < args.epochs:
+            epoch += 1
+            loss, dtm_acc, wdl_acc = train_epoch(
+                model, sampler, optimizer, criterion, args.device,
+                epoch_size=args.epoch_size, batch_size=args.batch_size
+            )
 
-        print(f"{epoch+1:>5} {loss:>10.4f} {dtm_acc:>10.2%} {wdl_acc:>10.2%}")
+            print(f"{epoch:>5} {loss:>10.4f} {dtm_acc:>10.2%} {wdl_acc:>10.2%}")
 
-        # Save checkpoint every epoch
-        torch.save({
-            'epoch': epoch + 1,
-            'model_state_dict': model.state_dict(),
-            'hidden_sizes': hidden_sizes,
-            'loss': loss,
-            'dtm_accuracy': dtm_acc,
-            'wdl_accuracy': wdl_acc,
-        }, args.output)
+            # Save checkpoint every epoch
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'hidden_sizes': hidden_sizes,
+                'loss': loss,
+                'dtm_accuracy': dtm_acc,
+                'wdl_accuracy': wdl_acc,
+            }, args.output)
+    except KeyboardInterrupt:
+        print(f"\nTraining interrupted at epoch {epoch}")
 
     # Final class-wise stats
     print("\nPer-class accuracy:")
