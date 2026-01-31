@@ -43,18 +43,18 @@ Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_
 
   // Set up evaluation function based on available models
   if (nn_model_ && dtm_nn_model_) {
-    // Use DTM specialist for 6-7 pieces, general model for 8+
+    // Use endgame model for 6-7 pieces, general model for 8+
     eval_ = [this](const Board& board) {
       int piece_count = std::popcount(board.allPieces());
       if (piece_count <= 7) {
-        return dtm_nn_model_->evaluate_dtm(board);
+        return dtm_nn_model_->evaluate(board);
       }
       return nn_model_->evaluate(board);
     };
   } else if (nn_model_) {
     eval_ = [this](const Board& board) { return nn_model_->evaluate(board); };
   } else if (dtm_nn_model_) {
-    eval_ = [this](const Board& board) { return dtm_nn_model_->evaluate_dtm(board); };
+    eval_ = [this](const Board& board) { return dtm_nn_model_->evaluate(board); };
   }
 }
 
@@ -76,14 +76,14 @@ Searcher::Searcher(CompressedTablebaseManager* wdl_tb, tablebase::DTMTablebaseMa
     eval_ = [this](const Board& board) {
       int piece_count = std::popcount(board.allPieces());
       if (piece_count <= 7) {
-        return dtm_nn_model_->evaluate_dtm(board);
+        return dtm_nn_model_->evaluate(board);
       }
       return nn_model_->evaluate(board);
     };
   } else if (nn_model_) {
     eval_ = [this](const Board& board) { return nn_model_->evaluate(board); };
   } else if (dtm_nn_model_) {
-    eval_ = [this](const Board& board) { return dtm_nn_model_->evaluate_dtm(board); };
+    eval_ = [this](const Board& board) { return dtm_nn_model_->evaluate(board); };
   }
 }
 
