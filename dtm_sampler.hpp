@@ -6,49 +6,18 @@
 #include <random>
 #include <string>
 
-// DTM class labels (15 classes with logarithmic boundaries)
-// Classes 0-6: WIN_1, WIN_2_3, WIN_4_7, WIN_8_15, WIN_16_31, WIN_32_63, WIN_64_127
-// Class 7: DRAW
-// Classes 8-14: LOSS_64_127, LOSS_32_63, LOSS_16_31, LOSS_8_15, LOSS_4_7, LOSS_2_3, LOSS_1
-constexpr int NUM_DTM_CLASSES = 15;
-constexpr int DTM_CLASS_DRAW = 7;
+// WDL class labels (same as 8+ piece model)
+// 0 = LOSS, 1 = DRAW, 2 = WIN
+constexpr int WDL_LOSS = 0;
+constexpr int WDL_DRAW = 1;
+constexpr int WDL_WIN = 2;
+constexpr int NUM_WDL_CLASSES = 3;
 
-// Convert DTM value to class index
-inline int dtm_to_class(DTM dtm) {
-  if (dtm == 0) return DTM_CLASS_DRAW;
-
-  int moves = dtm > 0 ? dtm : -dtm;
-  if (dtm == DTM_LOSS_TERMINAL) moves = 1;  // Terminal loss → LOSS_1
-
-  // Logarithmic bucket: find which power of 2 range
-  int bucket;
-  if (moves == 1) bucket = 0;
-  else if (moves <= 3) bucket = 1;
-  else if (moves <= 7) bucket = 2;
-  else if (moves <= 15) bucket = 3;
-  else if (moves <= 31) bucket = 4;
-  else if (moves <= 63) bucket = 5;
-  else bucket = 6;
-
-  if (dtm > 0) {
-    return bucket;  // WIN classes: 0-6
-  } else {
-    return 14 - bucket;  // LOSS classes: 14-8 (mirror of WIN)
-  }
-}
-
-// Midpoint of each class for computing expected scores
-inline int class_to_dtm_midpoint(int cls) {
-  // Bucket midpoints: 1, 2.5, 5.5, 11.5, 23.5, 47.5, 95.5
-  static const int midpoints[] = {1, 2, 5, 11, 23, 47, 95};
-
-  if (cls == DTM_CLASS_DRAW) return 0;
-
-  if (cls < DTM_CLASS_DRAW) {
-    return midpoints[cls];  // WIN: positive
-  } else {
-    return -midpoints[14 - cls];  // LOSS: negative
-  }
+// Convert DTM value to WDL class
+inline int dtm_to_wdl(DTM dtm) {
+  if (dtm > 0) return WDL_WIN;
+  if (dtm == 0) return WDL_DRAW;
+  return WDL_LOSS;  // dtm < 0 (including DTM_LOSS_TERMINAL)
 }
 
 // One loaded DTM tablebase
@@ -58,14 +27,16 @@ struct DTMTable {
   double weight;  // Sampling weight based on queen count
 };
 
-// Sampler that loads all DTM tablebases and generates training batches
+// Sampler that loads DTM tablebases and generates training batches
 class DTMSampler {
 public:
-  // Load all DTM files from directory
-  void load(const std::string& directory);
+  // Load DTM files from directory
+  // min_pieces/max_pieces: only load tables with this piece count range
+  void load(const std::string& directory, int min_pieces = 2, int max_pieces = 7);
 
-  // Sample a batch of (features, classes)
+  // Sample a batch of (features, wdl_classes)
   // Returns: features as flat array [batch_size * 128], classes as [batch_size]
+  // Classes are WDL: 0=LOSS, 1=DRAW, 2=WIN
   void sample_batch(int batch_size, float* features, int* classes);
 
   // Total number of positions across all tables

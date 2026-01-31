@@ -13,7 +13,7 @@ double DTMSampler::compute_weight(const Material& m) {
   return 0.1;
 }
 
-void DTMSampler::load(const std::string& directory) {
+void DTMSampler::load(const std::string& directory, int min_pieces, int max_pieces) {
   tables_.clear();
   cumulative_weights_.clear();
   total_weight_ = 0;
@@ -31,9 +31,11 @@ void DTMSampler::load(const std::string& directory) {
   }
 
   std::sort(dtm_files.begin(), dtm_files.end());
-  std::cout << "Found " << dtm_files.size() << " DTM files" << std::endl;
+  std::cout << "Found " << dtm_files.size() << " DTM files, filtering to "
+            << min_pieces << "-" << max_pieces << " pieces" << std::endl;
 
   // Load each file
+  int skipped = 0;
   for (const auto& path : dtm_files) {
     std::ifstream file(path, std::ios::binary);
     if (!file) {
@@ -56,6 +58,13 @@ void DTMSampler::load(const std::string& directory) {
       continue;
     }
 
+    // Filter by piece count
+    int pieces = m.total_pieces();
+    if (pieces < min_pieces || pieces > max_pieces) {
+      skipped++;
+      continue;
+    }
+
     // Read DTM data
     std::vector<std::int8_t> data(size);
     file.read(reinterpret_cast<char*>(data.data()), size);
@@ -74,7 +83,7 @@ void DTMSampler::load(const std::string& directory) {
     cumulative_weights_.push_back(total_weight_);
   }
 
-  std::cout << "Loaded " << tables_.size() << " tables, "
+  std::cout << "Loaded " << tables_.size() << " tables (" << skipped << " skipped), "
             << total_positions_ << " total positions" << std::endl;
 }
 
@@ -128,7 +137,7 @@ void DTMSampler::sample_batch(int batch_size, float* features, int* classes) {
     // Convert to features
     board_to_features(board, features + i * 128);
 
-    // Get DTM class
-    classes[i] = dtm_to_class(dtm);
+    // Get WDL class (0=LOSS, 1=DRAW, 2=WIN)
+    classes[i] = dtm_to_wdl(dtm);
   }
 }

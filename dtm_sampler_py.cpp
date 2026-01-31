@@ -5,13 +5,15 @@
 namespace py = pybind11;
 
 PYBIND11_MODULE(dtm_sampler, m) {
-  m.doc() = "DTM tablebase sampler for training";
+  m.doc() = "DTM tablebase sampler for WDL training";
 
   py::class_<DTMSampler>(m, "DTMSampler")
     .def(py::init<>())
     .def("load", &DTMSampler::load,
          py::arg("directory"),
-         "Load all DTM tablebase files from directory")
+         py::arg("min_pieces") = 2,
+         py::arg("max_pieces") = 7,
+         "Load DTM tablebase files from directory (filtered by piece count)")
     .def("total_positions", &DTMSampler::total_positions,
          "Total number of positions across all tables")
     .def("num_tables", &DTMSampler::num_tables,
@@ -29,16 +31,14 @@ PYBIND11_MODULE(dtm_sampler, m) {
       return py::make_tuple(features, classes);
     },
     py::arg("batch_size"),
-    "Sample a batch of (features, classes) from the tablebases");
+    "Sample a batch of (features, wdl_classes) from the tablebases");
 
-  // Expose class constants
-  m.attr("NUM_DTM_CLASSES") = NUM_DTM_CLASSES;
-  m.attr("DTM_CLASS_DRAW") = DTM_CLASS_DRAW;
+  // WDL class constants (same as 8+ piece model)
+  m.attr("NUM_CLASSES") = NUM_WDL_CLASSES;
+  m.attr("WDL_LOSS") = WDL_LOSS;
+  m.attr("WDL_DRAW") = WDL_DRAW;
+  m.attr("WDL_WIN") = WDL_WIN;
 
   // Class names for display
-  m.attr("DTM_CLASS_NAMES") = py::make_tuple(
-    "WIN_1", "WIN_2_3", "WIN_4_7", "WIN_8_15", "WIN_16_31", "WIN_32_63", "WIN_64_127",
-    "DRAW",
-    "LOSS_64_127", "LOSS_32_63", "LOSS_16_31", "LOSS_8_15", "LOSS_4_7", "LOSS_2_3", "LOSS_1"
-  );
+  m.attr("CLASS_NAMES") = py::make_tuple("LOSS", "DRAW", "WIN");
 }
