@@ -97,27 +97,38 @@ void DTMSampler::sample_batch(int batch_size, float* features, int* classes) {
   std::uniform_real_distribution<double> table_dist(0.0, total_weight_);
 
   for (int i = 0; i < batch_size; i++) {
-    // Pick a table weighted by (weight * size)
-    double r = table_dist(rng_);
-    auto it = std::lower_bound(cumulative_weights_.begin(),
-                                cumulative_weights_.end(), r);
-    std::size_t table_idx = it - cumulative_weights_.begin();
-    if (table_idx >= tables_.size()) table_idx = tables_.size() - 1;
+    Board board;
+    DTM dtm;
 
-    const DTMTable& table = tables_[table_idx];
+    // Rejection sampling: keep picking until we find a quiet position
+    while (true) {
+      // Pick a table weighted by (weight * size)
+      double r = table_dist(rng_);
+      auto it = std::lower_bound(cumulative_weights_.begin(),
+                                  cumulative_weights_.end(), r);
+      std::size_t table_idx = it - cumulative_weights_.begin();
+      if (table_idx >= tables_.size()) table_idx = tables_.size() - 1;
 
-    // Pick a random position within the table
-    std::uniform_int_distribution<std::size_t> pos_dist(0, table.data.size() - 1);
-    std::size_t pos_idx = pos_dist(rng_);
+      const DTMTable& table = tables_[table_idx];
 
-    // Convert index to board
-    Board board = index_to_board(pos_idx, table.material);
+      // Pick a random position within the table
+      std::uniform_int_distribution<std::size_t> pos_dist(0, table.data.size() - 1);
+      std::size_t pos_idx = pos_dist(rng_);
+
+      // Convert index to board
+      board = index_to_board(pos_idx, table.material);
+
+      // Only accept quiet positions (no captures available)
+      if (!has_captures(board)) {
+        dtm = static_cast<DTM>(table.data[pos_idx]);
+        break;
+      }
+    }
 
     // Convert to features
     board_to_features(board, features + i * 128);
 
     // Get DTM class
-    DTM dtm = static_cast<DTM>(table.data[pos_idx]);
     classes[i] = dtm_to_class(dtm);
   }
 }

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tablebase/tablebase.hpp"
+#include "core/movegen.hpp"
 #include <vector>
 #include <random>
 #include <string>
