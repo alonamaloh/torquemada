@@ -9,9 +9,63 @@ import argparse
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 
 import dtm_sampler
+
+
+# DTM class to WDL mapping:
+# Classes 0-6 (WIN_*) -> WDL class 0 (WIN)
+# Class 7 (DRAW) -> WDL class 1 (DRAW)
+# Classes 8-14 (LOSS_*) -> WDL class 2 (LOSS)
+DTM_TO_WDL = torch.tensor([0, 0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 2, 2, 2, 2])
+
+
+class CombinedLoss(nn.Module):
+    """Combined WDL + DTM classification loss.
+
+    Aggregates 15-class logits into 3-class WDL probabilities and computes
+    both coarse (WDL) and fine (DTM) classification losses.
+    """
+
+    def __init__(self, wdl_weight=2.0, dtm_weight=1.0):
+        super().__init__()
+        self.wdl_weight = wdl_weight
+        self.dtm_weight = dtm_weight
+
+        # Aggregation matrix: WDL_probs = softmax(logits) @ agg_matrix
+        # Shape: [15, 3] - sums probabilities for each WDL class
+        agg = torch.zeros(15, 3)
+        agg[0:7, 0] = 1.0    # WIN classes -> WDL WIN
+        agg[7, 1] = 1.0      # DRAW -> WDL DRAW
+        agg[8:15, 2] = 1.0   # LOSS classes -> WDL LOSS
+        self.register_buffer('agg_matrix', agg)
+
+    def forward(self, logits, dtm_labels):
+        """
+        Args:
+            logits: [batch, 15] raw network output
+            dtm_labels: [batch] DTM class labels (0-14)
+
+        Returns:
+            Combined loss scalar
+        """
+        # Fine-grained DTM loss
+        dtm_loss = F.cross_entropy(logits, dtm_labels)
+
+        # Aggregate to WDL probabilities
+        probs = F.softmax(logits, dim=1)  # [batch, 15]
+        wdl_probs = probs @ self.agg_matrix  # [batch, 3]
+
+        # Convert DTM labels to WDL labels
+        wdl_labels = DTM_TO_WDL.to(dtm_labels.device)[dtm_labels]
+
+        # WDL loss (using log of aggregated probs)
+        wdl_log_probs = torch.log(wdl_probs + 1e-8)
+        wdl_loss = F.nll_loss(wdl_log_probs, wdl_labels)
+
+        return self.wdl_weight * wdl_loss + self.dtm_weight * dtm_loss
 
 
 class DTMMlp(nn.Module):
@@ -38,13 +92,18 @@ class DTMMlp(nn.Module):
 
 def train_epoch(model, sampler, optimizer, criterion, device,
                 epoch_size=1_000_000, batch_size=4096):
-    """Train for one epoch (epoch_size samples)."""
+    """Train for one epoch (epoch_size samples).
+
+    Returns: (loss, dtm_accuracy, wdl_accuracy)
+    """
     model.train()
     total_loss = 0
-    correct = 0
+    dtm_correct = 0
+    wdl_correct = 0
     total = 0
 
     n_batches = epoch_size // batch_size
+    dtm_to_wdl = DTM_TO_WDL.to(device)
 
     for _ in range(n_batches):
         features, labels = sampler.sample_batch(batch_size)
@@ -59,11 +118,19 @@ def train_epoch(model, sampler, optimizer, criterion, device,
         optimizer.step()
 
         total_loss += loss.item() * len(labels)
+
+        # DTM accuracy (15-class)
         _, predicted = outputs.max(1)
-        correct += predicted.eq(labels).sum().item()
+        dtm_correct += predicted.eq(labels).sum().item()
+
+        # WDL accuracy (3-class)
+        pred_wdl = dtm_to_wdl[predicted]
+        true_wdl = dtm_to_wdl[labels]
+        wdl_correct += pred_wdl.eq(true_wdl).sum().item()
+
         total += len(labels)
 
-    return total_loss / total, correct / total
+    return total_loss / total, dtm_correct / total, wdl_correct / total
 
 
 def compute_class_stats(model, sampler, device, n_samples=100_000, batch_size=4096):
@@ -107,6 +174,10 @@ def main():
                         help='Learning rate')
     parser.add_argument('--hidden', type=str, default='256,128,64',
                         help='Hidden layer sizes')
+    parser.add_argument('--wdl-weight', type=float, default=2.0,
+                        help='Weight for WDL loss component')
+    parser.add_argument('--dtm-weight', type=float, default=1.0,
+                        help='Weight for DTM loss component')
     parser.add_argument('--output', type=str, default='dtm_model.pt',
                         help='Output model path')
     parser.add_argument('--device', type=str,
@@ -129,19 +200,21 @@ def main():
     print(f"Hidden layers: {hidden_sizes}")
     print(f"Device: {args.device}")
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = CombinedLoss(wdl_weight=args.wdl_weight, dtm_weight=args.dtm_weight)
+    criterion = criterion.to(args.device)
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
-    print(f"\n{'Epoch':>5} {'Loss':>10} {'Accuracy':>10}")
-    print("-" * 30)
+    print(f"Loss weights: WDL={args.wdl_weight}, DTM={args.dtm_weight}")
+    print(f"\n{'Epoch':>5} {'Loss':>10} {'DTM Acc':>10} {'WDL Acc':>10}")
+    print("-" * 40)
 
     for epoch in range(args.epochs):
-        loss, acc = train_epoch(
+        loss, dtm_acc, wdl_acc = train_epoch(
             model, sampler, optimizer, criterion, args.device,
             epoch_size=args.epoch_size, batch_size=args.batch_size
         )
 
-        print(f"{epoch+1:>5} {loss:>10.4f} {acc:>10.2%}")
+        print(f"{epoch+1:>5} {loss:>10.4f} {dtm_acc:>10.2%} {wdl_acc:>10.2%}")
 
         # Save checkpoint every epoch
         torch.save({
@@ -149,7 +222,8 @@ def main():
             'model_state_dict': model.state_dict(),
             'hidden_sizes': hidden_sizes,
             'loss': loss,
-            'accuracy': acc,
+            'dtm_accuracy': dtm_acc,
+            'wdl_accuracy': wdl_acc,
         }, args.output)
 
     # Final class-wise stats
