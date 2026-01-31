@@ -41,6 +41,7 @@ struct SearchResult {
   int depth;
   std::uint64_t nodes;
   std::uint64_t tb_hits;
+  std::vector<Move> pv;  // Principal variation
 
   SearchResult() : score(0), depth(0), nodes(0), tb_hits(0) {}
 };
@@ -51,6 +52,16 @@ struct SearchStats {
   std::uint64_t tb_hits = 0;
   std::uint64_t tt_hits = 0;
   std::uint64_t tt_cutoffs = 0;
+
+  // Timing (accumulated across all searches)
+  double eval_time = 0;      // Time in neural network evaluation
+  double tt_probe_time = 0;  // Time probing TT
+  double tt_store_time = 0;  // Time storing in TT
+  double movegen_time = 0;   // Time generating moves in search
+  std::uint64_t eval_calls = 0;
+  std::uint64_t tt_probes = 0;
+  std::uint64_t tt_stores = 0;
+  std::uint64_t movegen_calls = 0;
 };
 
 // Evaluation function type
@@ -69,8 +80,16 @@ public:
   // tb_piece_limit: use WDL tablebases for positions with this many pieces or fewer
   // dtm_piece_limit: use DTM optimal play for positions with this many pieces or fewer
   // nn_model_path: path to neural network model (.bin file), empty for random eval
+  // dtm_nn_model_path: path to DTM specialist model (.bin file), for 6-7 piece positions
   explicit Searcher(const std::string& tb_directory = "", int tb_piece_limit = 7,
-                    int dtm_piece_limit = 6, const std::string& nn_model_path = "");
+                    int dtm_piece_limit = 6, const std::string& nn_model_path = "",
+                    const std::string& dtm_nn_model_path = "");
+
+  // Construct with pre-loaded external tablebase managers (non-owning).
+  // The managers must outlive this Searcher and be preloaded before parallel use.
+  Searcher(CompressedTablebaseManager* wdl_tb, tablebase::DTMTablebaseManager* dtm_tb,
+           int tb_piece_limit, int dtm_piece_limit, const std::string& nn_model_path = "",
+           const std::string& dtm_nn_model_path = "");
 
   ~Searcher();
 
@@ -83,11 +102,21 @@ public:
   // Clear transposition table
   void clear_tt() { tt_.clear(); }
 
+  // Enable verbose output during search
+  void set_verbose(bool v) { verbose_ = v; }
+
+  // Set perspective for PV display (true = white's view, false = black's view)
+  void set_perspective(bool white) { white_perspective_ = white; }
+
   // Search to a fixed depth
   SearchResult search(const Board& board, int depth);
 
   // Search with iterative deepening up to max_depth
   SearchResult search_iterative(const Board& board, int max_depth);
+
+  // Search with iterative deepening until node limit is reached
+  // Returns the result from the last completed depth
+  SearchResult search_nodes(const Board& board, std::uint64_t max_nodes);
 
   // Get statistics from last search
   const SearchStats& stats() const { return stats_; }
@@ -103,7 +132,10 @@ private:
   bool probe_tb(const Board& board, int ply, int& score);
 
   // Order moves for better pruning
-  void order_moves(std::vector<Move>& moves, const Board& board, const Move& tt_move);
+  void order_moves(MoveList& moves, const Board& board, const Move& tt_move);
+
+  // Extract principal variation from TT
+  void extract_pv(const Board& board, std::vector<Move>& pv, int max_depth);
 
   // Convert DTM to search score
   int dtm_to_score(tablebase::DTM dtm, int ply);
@@ -112,14 +144,22 @@ private:
   EvalFunc eval_;
   SearchStats stats_;
 
-  // Tablebase support
-  std::unique_ptr<CompressedTablebaseManager> tb_manager_;
-  std::unique_ptr<tablebase::DTMTablebaseManager> dtm_manager_;
+  // Tablebase support (owned)
+  std::unique_ptr<CompressedTablebaseManager> tb_manager_owned_;
+  std::unique_ptr<tablebase::DTMTablebaseManager> dtm_manager_owned_;
+  // Non-owning pointers (either point to owned or external managers)
+  CompressedTablebaseManager* tb_manager_ = nullptr;
+  tablebase::DTMTablebaseManager* dtm_manager_ = nullptr;
   int tb_piece_limit_;
   int dtm_piece_limit_;  // Use DTM optimal play when <= this many pieces
 
   // Neural network evaluation
-  std::unique_ptr<nn::MLP> nn_model_;
+  std::unique_ptr<nn::MLP> nn_model_;       // General evaluation (8+ pieces)
+  std::unique_ptr<nn::MLP> dtm_nn_model_;   // DTM specialist (6-7 pieces)
+
+  // Verbose output
+  bool verbose_ = false;
+  bool white_perspective_ = true;  // For PV display
 };
 
 } // namespace search

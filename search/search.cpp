@@ -23,19 +23,67 @@ int random_eval(const Board& board) {
 }
 
 Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_piece_limit,
-                   const std::string& nn_model_path)
+                   const std::string& nn_model_path, const std::string& dtm_nn_model_path)
     : tt_(64), eval_(random_eval), tb_piece_limit_(tb_piece_limit),
       dtm_piece_limit_(dtm_piece_limit) {
   if (!tb_directory.empty()) {
-    tb_manager_ = std::make_unique<CompressedTablebaseManager>(tb_directory);
-    dtm_manager_ = std::make_unique<tablebase::DTMTablebaseManager>(tb_directory);
+    tb_manager_owned_ = std::make_unique<CompressedTablebaseManager>(tb_directory);
+    dtm_manager_owned_ = std::make_unique<tablebase::DTMTablebaseManager>(tb_directory);
+    tb_manager_ = tb_manager_owned_.get();
+    dtm_manager_ = dtm_manager_owned_.get();
   }
 
-  // Load neural network if path provided
+  // Load neural networks if paths provided
   if (!nn_model_path.empty()) {
     nn_model_ = std::make_unique<nn::MLP>(nn_model_path);
-    // Use neural network for evaluation
+  }
+  if (!dtm_nn_model_path.empty()) {
+    dtm_nn_model_ = std::make_unique<nn::MLP>(dtm_nn_model_path);
+  }
+
+  // Set up evaluation function based on available models
+  if (nn_model_ && dtm_nn_model_) {
+    // Use DTM specialist for 6-7 pieces, general model for 8+
+    eval_ = [this](const Board& board) {
+      int piece_count = std::popcount(board.allPieces());
+      if (piece_count <= 7) {
+        return dtm_nn_model_->evaluate_dtm(board);
+      }
+      return nn_model_->evaluate(board);
+    };
+  } else if (nn_model_) {
     eval_ = [this](const Board& board) { return nn_model_->evaluate(board); };
+  } else if (dtm_nn_model_) {
+    eval_ = [this](const Board& board) { return dtm_nn_model_->evaluate_dtm(board); };
+  }
+}
+
+Searcher::Searcher(CompressedTablebaseManager* wdl_tb, tablebase::DTMTablebaseManager* dtm_tb,
+                   int tb_piece_limit, int dtm_piece_limit, const std::string& nn_model_path,
+                   const std::string& dtm_nn_model_path)
+    : tt_(64), eval_(random_eval), tb_manager_(wdl_tb), dtm_manager_(dtm_tb),
+      tb_piece_limit_(tb_piece_limit), dtm_piece_limit_(dtm_piece_limit) {
+  // Load neural networks if paths provided
+  if (!nn_model_path.empty()) {
+    nn_model_ = std::make_unique<nn::MLP>(nn_model_path);
+  }
+  if (!dtm_nn_model_path.empty()) {
+    dtm_nn_model_ = std::make_unique<nn::MLP>(dtm_nn_model_path);
+  }
+
+  // Set up evaluation function based on available models
+  if (nn_model_ && dtm_nn_model_) {
+    eval_ = [this](const Board& board) {
+      int piece_count = std::popcount(board.allPieces());
+      if (piece_count <= 7) {
+        return dtm_nn_model_->evaluate_dtm(board);
+      }
+      return nn_model_->evaluate(board);
+    };
+  } else if (nn_model_) {
+    eval_ = [this](const Board& board) { return nn_model_->evaluate(board); };
+  } else if (dtm_nn_model_) {
+    eval_ = [this](const Board& board) { return dtm_nn_model_->evaluate_dtm(board); };
   }
 }
 
@@ -90,22 +138,6 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   return true;
 }
 
-void Searcher::order_moves(std::vector<Move>& moves, const Board& /*board*/, const Move& tt_move) {
-  // Simple move ordering:
-  // 1. TT move first (if valid)
-  // 2. Captures before quiet moves (captures are mandatory, but within same length)
-
-  auto score_move = [&](const Move& m) -> int {
-    if (m == tt_move) return 10000;  // TT move first
-    if (m.isCapture()) return 1000 + std::popcount(m.captures);  // More captures = better
-    return 0;
-  };
-
-  std::stable_sort(moves.begin(), moves.end(), [&](const Move& a, const Move& b) {
-    return score_move(a) > score_move(b);
-  });
-}
-
 int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int ply) {
   stats_.nodes++;
 
@@ -153,7 +185,7 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   }
 
   // Generate moves
-  std::vector<Move> moves;
+  MoveList moves;
   generateMoves(board, moves);
 
   // Terminal node - no moves means loss
@@ -167,9 +199,6 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   if (depth <= 0 && !has_captures) {
     return eval_(board);
   }
-
-  // Order moves for better pruning
-  order_moves(moves, board, tt_move);
 
   int best_score = -SCORE_INFINITE;
   Move best_move;
@@ -209,6 +238,44 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   return best_score;
 }
 
+void Searcher::extract_pv(const Board& board, std::vector<Move>& pv, int max_depth) {
+  pv.clear();
+  Board pos = board;
+  std::uint64_t seen_keys[64];  // To detect cycles
+  int seen_count = 0;
+
+  for (int i = 0; i < max_depth && seen_count < 64; ++i) {
+    std::uint64_t key = pos.hash();
+
+    // Check for cycle
+    for (int j = 0; j < seen_count; ++j) {
+      if (seen_keys[j] == key) return;
+    }
+    seen_keys[seen_count++] = key;
+
+    TTEntry entry;
+    if (!tt_.probe(key, entry) || entry.best_move.from_xor_to == 0) {
+      return;
+    }
+
+    // Verify move is legal
+    MoveList moves;
+    generateMoves(pos, moves);
+    bool found = false;
+    for (const Move& m : moves) {
+      if (m.from_xor_to == entry.best_move.from_xor_to &&
+          m.captures == entry.best_move.captures) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) return;
+
+    pv.push_back(entry.best_move);
+    pos = makeMove(pos, entry.best_move);
+  }
+}
+
 SearchResult Searcher::search(const Board& board, int depth) {
   stats_ = SearchStats{};
 
@@ -231,7 +298,7 @@ SearchResult Searcher::search(const Board& board, int depth) {
   }
 
   // Generate root moves
-  std::vector<Move> moves;
+  MoveList moves;
   generateMoves(board, moves);
 
   if (moves.empty()) {
@@ -239,28 +306,27 @@ SearchResult Searcher::search(const Board& board, int depth) {
     return result;
   }
 
-  // Only one legal move - still need to evaluate to get a score
+  // Only one legal move - no need to search, just return it
   if (moves.size() == 1) {
     result.best_move = moves[0];
+    result.nodes = 0;
+    result.depth = depth;
 
-    // Try to get accurate score from tablebase
+    // Try to get score from tablebase
     int piece_count = std::popcount(board.allPieces());
     if (dtm_manager_ && piece_count <= dtm_piece_limit_) {
       tablebase::DTM dtm = dtm_manager_->lookup_dtm(board);
       if (dtm != tablebase::DTM_UNKNOWN) {
         result.score = dtm_to_score(dtm, 0);
-        result.nodes = 0;
         stats_.tb_hits++;
         result.tb_hits = 1;
         return result;
       }
     }
 
-    // No tablebase - search the forced move to get a score
+    // No tablebase - use eval of resulting position as rough score estimate
     Board child = makeMove(board, moves[0]);
-    result.score = -negamax(child, depth - 1, -SCORE_INFINITE, SCORE_INFINITE, 1);
-    result.nodes = stats_.nodes;
-    result.tb_hits = stats_.tb_hits;
+    result.score = -eval_(child);
     return result;
   }
 
@@ -280,6 +346,16 @@ SearchResult Searcher::search(const Board& board, int depth) {
 
   result.nodes = stats_.nodes;
   result.tb_hits = stats_.tb_hits;
+
+  // Extract PV from TT (root move + continuation from TT)
+  if (result.best_move.from_xor_to != 0) {
+    result.pv.push_back(result.best_move);
+    Board child = makeMove(board, result.best_move);
+    std::vector<Move> continuation;
+    extract_pv(child, continuation, depth - 1);
+    result.pv.insert(result.pv.end(), continuation.begin(), continuation.end());
+  }
+
   return result;
 }
 
@@ -292,6 +368,53 @@ SearchResult Searcher::search_iterative(const Board& board, int max_depth) {
 
     // Early exit if we found a forced mate
     if (is_mate_score(result.score)) {
+      break;
+    }
+  }
+
+  return result;
+}
+
+SearchResult Searcher::search_nodes(const Board& board, std::uint64_t max_nodes) {
+  SearchResult result;
+
+  for (int depth = 1; depth <= 100; ++depth) {  // Max depth 100 as safety limit
+    result = search(board, depth);
+    result.depth = depth;
+
+    if (verbose_) {
+      std::cout << "depth " << depth << " score " << result.score
+                << " nodes " << result.nodes;
+      if (result.tb_hits > 0) {
+        std::cout << " tbhits " << result.tb_hits;
+      }
+      if (!result.pv.empty()) {
+        std::cout << " pv";
+        Board pos = board;
+        bool white_view = white_perspective_;
+        for (const Move& m : result.pv) {
+          // Find from/to squares
+          int from = __builtin_ctz(m.from_xor_to & pos.white);
+          if (from >= 32) from = __builtin_ctz(m.from_xor_to & pos.black);
+          int to = __builtin_ctz(m.from_xor_to ^ (1u << from));
+          // Flip squares for black's perspective
+          int disp_from = white_view ? (from + 1) : (32 - from);
+          int disp_to = white_view ? (to + 1) : (32 - to);
+          std::cout << " " << disp_from << (m.isCapture() ? "x" : "-") << disp_to;
+          pos = makeMove(pos, m);
+          white_view = !white_view;  // Alternate perspective for each ply
+        }
+      }
+      std::cout << std::endl;
+    }
+
+    // Stop if we've exceeded the node limit
+    if (result.nodes >= max_nodes) {
+      break;
+    }
+
+    // Early exit if we found a forced mate or forced move
+    if (is_mate_score(result.score) || result.nodes == 0) {
       break;
     }
   }
