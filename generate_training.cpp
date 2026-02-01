@@ -106,7 +106,7 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
     }
 
     // Search for best move
-    auto result = searcher.search_nodes(board, max_nodes);
+    auto result = searcher.search(board, 100, max_nodes);
     if (result.best_move.from_xor_to == 0) {
       int outcome = (ply % 2 == 0) ? -1 : +1;
       for (auto& pos : game_positions) {

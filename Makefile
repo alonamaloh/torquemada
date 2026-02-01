@@ -35,7 +35,7 @@ NN_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(NN_SRCS))
 ALL_OBJS = $(CORE_OBJS) $(SEARCH_OBJS) $(TB_OBJS) $(NN_OBJS)
 
 # Targets
-all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/selfplay $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play
+all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play
 
 # Python module
 python: dirs dtm_sampler$(PYTHON_EXT)
@@ -47,9 +47,6 @@ $(BINDIR)/test_search: $(ALL_OBJS) $(OBJDIR)/test_search.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 $(BINDIR)/perft: $(CORE_OBJS) $(OBJDIR)/perft.o
-	$(CXX) $(LDFLAGS) -o $@ $^
-
-$(BINDIR)/selfplay: $(ALL_OBJS) $(OBJDIR)/selfplay.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 $(BINDIR)/generate_training: $(ALL_OBJS) $(OBJDIR)/generate_training.o
@@ -73,9 +70,6 @@ $(OBJDIR)/test_search.o: test_search.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR)/perft.o: perft.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-$(OBJDIR)/selfplay.o: selfplay.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR)/generate_training.o: generate_training.cpp

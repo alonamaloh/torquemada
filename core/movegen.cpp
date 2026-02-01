@@ -330,8 +330,8 @@ std::size_t generateMoves(const Board& board, MoveList& moves) {
       maxCaptures = std::max(maxCaptures, std::popcount(m.captures));
 
     // Filter: keep only moves with max captures
-    int writeIdx = 0;
-    for (int i = 0; i < moves.size(); ++i) {
+    std::size_t writeIdx = 0;
+    for (std::size_t i = 0; i < moves.size(); ++i) {
       if (std::popcount(moves[i].captures) == maxCaptures) {
         moves[writeIdx++] = moves[i];
       }
@@ -340,8 +340,8 @@ std::size_t generateMoves(const Board& board, MoveList& moves) {
 
     // Sort and deduplicate
     std::sort(moves.begin(), moves.end());
-    int uniqueIdx = 0;
-    for (int i = 0; i < moves.size(); ++i) {
+    std::size_t uniqueIdx = 0;
+    for (std::size_t i = 0; i < moves.size(); ++i) {
       if (i == 0 || !(moves[i] == moves[uniqueIdx - 1])) {
         moves[uniqueIdx++] = moves[i];
       }

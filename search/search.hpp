@@ -136,20 +136,19 @@ public:
     if (hard_node_limit_ > 0 && stats_.nodes >= hard_node_limit_) throw SearchInterrupted{};
   }
 
-  // Search to a fixed depth
-  SearchResult search(const Board& board, int depth);
-
-  // Search with iterative deepening up to max_depth
-  SearchResult search_iterative(const Board& board, int max_depth);
-
-  // Search with iterative deepening until node limit is reached
-  // Returns the result from the last completed depth
-  SearchResult search_nodes(const Board& board, std::uint64_t max_nodes);
+  // Search with iterative deepening
+  // max_depth: maximum search depth (default 100)
+  // max_nodes: soft node limit, stops after completing a depth (0 = no limit)
+  SearchResult search(const Board& board, int max_depth = 100, std::uint64_t max_nodes = 0);
 
   // Get statistics from last search
   const SearchStats& stats() const { return stats_; }
 
 private:
+  // Root search at a fixed depth
+  // root_moves is reordered to put the best move first
+  SearchResult search_root(const Board& board, MoveList& root_moves, int depth);
+
   // Negamax alpha-beta search
   // Returns score from the perspective of the side to move (white, since board is always flipped)
   // Continues searching beyond depth 0 if captures are available (quiescence)
@@ -207,7 +206,7 @@ private:
   // External stop flag (for SIGINT handling)
   std::atomic<bool>* stop_flag_ = nullptr;
 
-  // Hard node limit (0 = no limit, set by search_nodes)
+  // Hard node limit (0 = no limit)
   std::uint64_t hard_node_limit_ = 0;
 };
 

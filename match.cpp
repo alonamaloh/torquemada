@@ -53,7 +53,7 @@ int play_game(const Board& start, search::Searcher& white, search::Searcher& bla
         bool white_to_move = (ply % 2 == 0);
         search::Searcher& searcher = white_to_move ? white : black;
 
-        auto result = searcher.search_nodes(board, max_nodes);
+        auto result = searcher.search(board, 100, max_nodes);
 
         if (result.best_move.from_xor_to == 0) {
             // No move found (shouldn't happen)

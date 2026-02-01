@@ -160,7 +160,7 @@ void engine_move(GameState& state, search::Searcher& searcher, bool white_to_mov
 
   searcher.set_perspective(white_to_move);
   searcher.set_root_white_to_move(white_to_move);
-  auto result = searcher.search_nodes(state.board, state.nodes);
+  auto result = searcher.search(state.board, 100, state.nodes);
 
   // Reset stop flag if it was set
   g_stop_requested.store(false, std::memory_order_relaxed);

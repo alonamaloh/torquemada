@@ -47,7 +47,7 @@ struct FixedVector {
   using const_iterator = const T*;
 
   T data[MaxSize];
-  int count = 0;
+  std::size_t count = 0;
 
   T const& operator[](std::size_t i) const { return data[i]; }
   T& operator[](std::size_t i) { return data[i]; }
@@ -56,7 +56,7 @@ struct FixedVector {
 
   void clear() { count = 0; }
   bool empty() const { return count == 0; }
-  int size() const { return count; }
+  std::size_t size() const { return count; }
 
   iterator begin() { return data; }
   iterator end() { return data + count; }

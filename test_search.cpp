@@ -63,7 +63,7 @@ void test_tablebase_position(search::Searcher& searcher) {
   std::cout << board << "\n";
   std::cout << "Pieces: " << std::popcount(board.allPieces()) << "\n";
 
-  auto result = searcher.search_iterative(board, 20);
+  auto result = searcher.search(board, 20);
   std::cout << "Result: score " << result.score << ", depth " << result.depth;
   if (result.best_move.from_xor_to != 0) {
     std::cout << ", best move ";
@@ -135,7 +135,7 @@ void test_iterative_deepening(search::Searcher& searcher) {
   Board board;
 
   auto start = std::chrono::high_resolution_clock::now();
-  auto result = searcher.search_iterative(board, 10);
+  auto result = searcher.search(board, 10);
   auto end = std::chrono::high_resolution_clock::now();
 
   auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();

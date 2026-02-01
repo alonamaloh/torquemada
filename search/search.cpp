@@ -298,63 +298,15 @@ void Searcher::extract_pv(const Board& board, std::vector<Move>& pv, int max_dep
   }
 }
 
-SearchResult Searcher::search(const Board& board, int depth) {
+SearchResult Searcher::search_root(const Board& board, MoveList& moves, int depth) {
   SearchResult result;
   result.depth = depth;
-
-  // Check if we should use DTM optimal play (≤ dtm_piece_limit pieces)
-  int piece_count = std::popcount(board.allPieces());
-  if (dtm_manager_ && piece_count <= dtm_piece_limit_) {
-    Move best_move;
-    tablebase::DTM best_dtm;
-    if (dtm_manager_->find_best_move(board, best_move, best_dtm)) {
-      result.best_move = best_move;
-      result.score = dtm_to_score(best_dtm, 0);
-      result.nodes = 1;
-      stats_.tb_hits++;
-      result.tb_hits = 1;
-      return result;
-    }
-  }
-
-  // Generate root moves
-  MoveList moves;
-  generateMoves(board, moves);
-
-  if (moves.empty()) {
-    result.score = mated_score(0);
-    return result;
-  }
-
-  // Only one legal move - no need to search, just return it
-  if (moves.size() == 1) {
-    result.best_move = moves[0];
-    result.nodes = 0;
-    result.depth = depth;
-
-    // Try to get score from tablebase
-    int piece_count = std::popcount(board.allPieces());
-    if (dtm_manager_ && piece_count <= dtm_piece_limit_) {
-      tablebase::DTM dtm = dtm_manager_->lookup_dtm(board);
-      if (dtm != tablebase::DTM_UNKNOWN) {
-        result.score = dtm_to_score(dtm, 0);
-        stats_.tb_hits++;
-        result.tb_hits = 1;
-        return result;
-      }
-    }
-
-    // No tablebase - use eval of resulting position as rough score estimate
-    // child is at ply 1 (after one move from root)
-    Board child = makeMove(board, moves[0]);
-    result.score = -eval_(child, 1);
-    return result;
-  }
 
   int alpha = -SCORE_INFINITE;
   int beta = SCORE_INFINITE;
 
-  for (const Move& move : moves) {
+  for (std::size_t i = 0; i < moves.size(); ++i) {
+    const Move& move = moves[i];
     Board child = makeMove(board, move);
     int score = -negamax(child, depth - 1, -beta, -alpha, 1);
 
@@ -362,6 +314,20 @@ SearchResult Searcher::search(const Board& board, int depth) {
       alpha = score;
       result.best_move = move;
       result.score = score;
+
+      // Rotate this move to the front for better ordering in next iteration
+      if (i > 0) {
+        std::rotate(moves.begin(), moves.begin() + i, moves.begin() + i + 1);
+      }
+
+      if (verbose_) {
+        std::cout << ": depth " << depth << " score " << result.score
+                  << " nodes " << stats_.nodes;
+        if (stats_.tb_hits > 0) {
+          std::cout << " tbhits " << stats_.tb_hits;
+        }
+        std::cout << std::endl;
+      }
     }
   }
 
@@ -380,46 +346,70 @@ SearchResult Searcher::search(const Board& board, int depth) {
   return result;
 }
 
-SearchResult Searcher::search_iterative(const Board& board, int max_depth) {
+SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t max_nodes) {
   stats_ = SearchStats{};
   tt_.new_search();
+  hard_node_limit_ = (max_nodes > 0) ? max_nodes * 5 : 0;
 
   SearchResult result;
 
-  for (int depth = 1; depth <= max_depth; ++depth) {
-    try {
-      result = search(board, depth);
-      result.depth = depth;
-    } catch (const SearchInterrupted&) {
-      break;  // Return best result from previous depth
-    }
-
-    // Early exit if we found a forced mate
-    if (is_mate_score(result.score)) {
-      break;
+  // Check if we should use DTM optimal play (≤ dtm_piece_limit pieces)
+  int piece_count = std::popcount(board.allPieces());
+  if (dtm_manager_ && piece_count <= dtm_piece_limit_) {
+    Move best_move;
+    tablebase::DTM best_dtm;
+    if (dtm_manager_->find_best_move(board, best_move, best_dtm)) {
+      result.best_move = best_move;
+      result.score = dtm_to_score(best_dtm, 0);
+      result.nodes = 1;
+      stats_.tb_hits++;
+      result.tb_hits = 1;
+      return result;
     }
   }
 
-  return result;
-}
+  // Generate root moves once - they will be reordered across iterations
+  MoveList root_moves;
+  generateMoves(board, root_moves);
 
-SearchResult Searcher::search_nodes(const Board& board, std::uint64_t max_nodes) {
-  stats_ = SearchStats{};
-  tt_.new_search();
-  hard_node_limit_ = max_nodes * 5;  // Hard limit at 5x soft limit
+  if (root_moves.empty()) {
+    result.score = mated_score(0);
+    return result;
+  }
 
-  SearchResult result;
+  // Only one legal move - no need to search, just return it
+  if (root_moves.size() == 1) {
+    result.best_move = root_moves[0];
+    result.nodes = 0;
+    result.depth = 1;
 
-  for (int depth = 1; depth <= 100; ++depth) {  // Max depth 100 as safety limit
+    // Try to get score from tablebase
+    if (dtm_manager_ && piece_count <= dtm_piece_limit_) {
+      tablebase::DTM dtm = dtm_manager_->lookup_dtm(board);
+      if (dtm != tablebase::DTM_UNKNOWN) {
+        result.score = dtm_to_score(dtm, 0);
+        stats_.tb_hits++;
+        result.tb_hits = 1;
+        return result;
+      }
+    }
+
+    // No tablebase - use eval of resulting position as rough score estimate
+    Board child = makeMove(board, root_moves[0]);
+    result.score = -eval_(child, 1);
+    return result;
+  }
+
+  for (int depth = 1; depth <= max_depth; ++depth) {
     try {
-      result = search(board, depth);
+      result = search_root(board, root_moves, depth);
       result.depth = depth;
     } catch (const SearchInterrupted&) {
       break;  // Return best result from previous depth
     }
 
     if (verbose_) {
-      std::cout << "depth " << depth << " score " << result.score
+      std::cout << ". depth " << depth << " score " << result.score
                 << " nodes " << result.nodes;
       if (result.tb_hits > 0) {
         std::cout << " tbhits " << result.tb_hits;
@@ -444,8 +434,8 @@ SearchResult Searcher::search_nodes(const Board& board, std::uint64_t max_nodes)
       std::cout << std::endl;
     }
 
-    // Stop if we've exceeded the node limit
-    if (result.nodes >= max_nodes) {
+    // Stop if we've exceeded the soft node limit
+    if (max_nodes > 0 && result.nodes >= max_nodes) {
       break;
     }
 
@@ -455,7 +445,7 @@ SearchResult Searcher::search_nodes(const Board& board, std::uint64_t max_nodes)
     }
   }
 
-  hard_node_limit_ = 0;  // Reset for next search
+  hard_node_limit_ = 0;
   return result;
 }
 
