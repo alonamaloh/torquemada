@@ -4,6 +4,7 @@
 #include "search/search.hpp"
 #include "tablebase/tb_probe.hpp"
 #include <chrono>
+#include <fstream>
 #include <iostream>
 #include <iomanip>
 #include <string>
@@ -123,6 +124,16 @@ int main(int argc, char** argv) {
     if (model1_path.empty() || model2_path.empty()) {
         std::cerr << "Error: Two model paths required\n";
         std::cerr << "Use -h for help\n";
+        return 1;
+    }
+
+    // Verify model files exist before loading tablebases
+    if (!std::ifstream(model1_path)) {
+        std::cerr << "Error: Cannot open model file: " << model1_path << "\n";
+        return 1;
+    }
+    if (!std::ifstream(model2_path)) {
+        std::cerr << "Error: Cannot open model file: " << model2_path << "\n";
         return 1;
     }
 
