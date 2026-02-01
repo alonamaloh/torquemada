@@ -147,6 +147,8 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
 }
 
 int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int ply) {
+  check_stop();  // Throws SearchInterrupted if we should stop
+
   stats_.nodes++;
 
   // Check for tablebase hit (before TT to get exact values)
@@ -382,8 +384,12 @@ SearchResult Searcher::search_iterative(const Board& board, int max_depth) {
   SearchResult result;
 
   for (int depth = 1; depth <= max_depth; ++depth) {
-    result = search(board, depth);
-    result.depth = depth;
+    try {
+      result = search(board, depth);
+      result.depth = depth;
+    } catch (const SearchInterrupted&) {
+      break;  // Return best result from previous depth
+    }
 
     // Early exit if we found a forced mate
     if (is_mate_score(result.score)) {
@@ -397,12 +403,17 @@ SearchResult Searcher::search_iterative(const Board& board, int max_depth) {
 SearchResult Searcher::search_nodes(const Board& board, std::uint64_t max_nodes) {
   stats_ = SearchStats{};
   tt_.new_search();
+  hard_node_limit_ = max_nodes * 5;  // Hard limit at 5x soft limit
 
   SearchResult result;
 
   for (int depth = 1; depth <= 100; ++depth) {  // Max depth 100 as safety limit
-    result = search(board, depth);
-    result.depth = depth;
+    try {
+      result = search(board, depth);
+      result.depth = depth;
+    } catch (const SearchInterrupted&) {
+      break;  // Return best result from previous depth
+    }
 
     if (verbose_) {
       std::cout << "depth " << depth << " score " << result.score
@@ -441,6 +452,7 @@ SearchResult Searcher::search_nodes(const Board& board, std::uint64_t max_nodes)
     }
   }
 
+  hard_node_limit_ = 0;  // Reset for next search
   return result;
 }
 

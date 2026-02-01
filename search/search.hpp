@@ -5,9 +5,11 @@
 #include "../nn/mlp.hpp"
 #include "../tablebase/tb_probe.hpp"
 #include "tt.hpp"
+#include <atomic>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 
 namespace search {
@@ -69,6 +71,11 @@ struct SearchStats {
 // Returns a score from the perspective of the side to move in the stored board
 using EvalFunc = std::function<int(const Board&, int ply)>;
 
+// Exception thrown when search is interrupted
+struct SearchInterrupted : std::exception {
+  const char* what() const noexcept override { return "search interrupted"; }
+};
+
 // Random evaluation: reproducible pseudo-random score in [-10000, +10000]
 // Used as placeholder until neural network is trained
 int random_eval(const Board& board, int ply);
@@ -118,6 +125,15 @@ public:
   // Set whether white is to move at the root of the search (from the game's perspective)
   // This is needed to correctly apply draw_score based on whose turn it originally is
   void set_root_white_to_move(bool white) { root_white_to_move_ = white; }
+
+  // Set external stop flag (for SIGINT handling)
+  void set_stop_flag(std::atomic<bool>* flag) { stop_flag_ = flag; }
+
+  // Check if search should stop and throw if so
+  void check_stop() const {
+    if (stop_flag_ && stop_flag_->load(std::memory_order_relaxed)) throw SearchInterrupted{};
+    if (hard_node_limit_ > 0 && stats_.nodes >= hard_node_limit_) throw SearchInterrupted{};
+  }
 
   // Search to a fixed depth
   SearchResult search(const Board& board, int depth);
@@ -186,6 +202,12 @@ private:
 
   // Whether white is to move at the root (from the game's perspective)
   bool root_white_to_move_ = true;
+
+  // External stop flag (for SIGINT handling)
+  std::atomic<bool>* stop_flag_ = nullptr;
+
+  // Hard node limit (0 = no limit, set by search_nodes)
+  std::uint64_t hard_node_limit_ = 0;
 };
 
 } // namespace search

@@ -14,9 +14,18 @@
 #include "core/notation.hpp"
 #include "search/search.hpp"
 #include "tablebase/tb_probe.hpp"
+#include <atomic>
+#include <csignal>
 #include <iostream>
 #include <string>
 #include <vector>
+
+// Global stop flag for SIGINT handling
+std::atomic<bool> g_stop_requested{false};
+
+void sigint_handler(int) {
+  g_stop_requested.store(true, std::memory_order_relaxed);
+}
 
 // Game state
 struct GameState {
@@ -147,11 +156,14 @@ bool parse_move(const Board& board, const std::string& input, bool white_to_move
 
 // Make the engine play
 void engine_move(GameState& state, search::Searcher& searcher, bool white_to_move) {
-  std::cout << "Engine is thinking...\n";
+  std::cout << "Engine is thinking... (Ctrl+C to move now)\n";
 
   searcher.set_perspective(white_to_move);
   searcher.set_root_white_to_move(white_to_move);
   auto result = searcher.search_nodes(state.board, state.nodes);
+
+  // Reset stop flag if it was set
+  g_stop_requested.store(false, std::memory_order_relaxed);
 
   if (result.best_move.from_xor_to == 0) {
     std::cout << "Engine has no move - game over!\n";
@@ -246,6 +258,8 @@ int main(int argc, char** argv) {
   search::Searcher searcher(tb_dir, tb_limit, dtm_limit, nn_model, dtm_nn_model);
   searcher.set_tt_size(2048);
   searcher.set_verbose(true);
+  searcher.set_stop_flag(&g_stop_requested);
+  std::signal(SIGINT, sigint_handler);
   if (draw_score != 0) {
     searcher.set_draw_score(draw_score);
     std::cout << "  Draw score: " << draw_score << " (for white)\n";
