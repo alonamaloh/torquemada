@@ -93,9 +93,10 @@ public:
                     int dtm_piece_limit = 6, const std::string& nn_model_path = "",
                     const std::string& dtm_nn_model_path = "");
 
-  // Construct with pre-loaded external tablebase managers (non-owning).
+  // Construct with pre-loaded external tablebase managers (non-owning, const).
   // The managers must outlive this Searcher and be preloaded before parallel use.
-  Searcher(CompressedTablebaseManager* wdl_tb, tablebase::DTMTablebaseManager* dtm_tb,
+  // Using const pointers guarantees thread-safe read-only access.
+  Searcher(const CompressedTablebaseManager* wdl_tb, const tablebase::DTMTablebaseManager* dtm_tb,
            int tb_piece_limit, int dtm_piece_limit, const std::string& nn_model_path = "",
            const std::string& dtm_nn_model_path = "");
 
@@ -180,12 +181,12 @@ private:
   EvalFunc eval_;
   SearchStats stats_;
 
-  // Tablebase support (owned)
+  // Tablebase support (owned - for when Searcher loads its own)
   std::unique_ptr<CompressedTablebaseManager> tb_manager_owned_;
   std::unique_ptr<tablebase::DTMTablebaseManager> dtm_manager_owned_;
-  // Non-owning pointers (either point to owned or external managers)
-  CompressedTablebaseManager* tb_manager_ = nullptr;
-  tablebase::DTMTablebaseManager* dtm_manager_ = nullptr;
+  // Const pointers for thread-safe read-only access (either point to owned or external)
+  const CompressedTablebaseManager* tb_manager_ = nullptr;
+  const tablebase::DTMTablebaseManager* dtm_manager_ = nullptr;
   int tb_piece_limit_;
   int dtm_piece_limit_;  // Use DTM optimal play when <= this many pieces
 

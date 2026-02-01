@@ -29,6 +29,9 @@ Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_
   if (!tb_directory.empty()) {
     tb_manager_owned_ = std::make_unique<CompressedTablebaseManager>(tb_directory);
     dtm_manager_owned_ = std::make_unique<tablebase::DTMTablebaseManager>(tb_directory);
+    // Preload for thread-safe const access
+    tb_manager_owned_->preload(tb_piece_limit);
+    dtm_manager_owned_->preload(dtm_piece_limit);
     tb_manager_ = tb_manager_owned_.get();
     dtm_manager_ = dtm_manager_owned_.get();
   }
@@ -62,7 +65,7 @@ Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_
   }
 }
 
-Searcher::Searcher(CompressedTablebaseManager* wdl_tb, tablebase::DTMTablebaseManager* dtm_tb,
+Searcher::Searcher(const CompressedTablebaseManager* wdl_tb, const tablebase::DTMTablebaseManager* dtm_tb,
                    int tb_piece_limit, int dtm_piece_limit, const std::string& nn_model_path,
                    const std::string& dtm_nn_model_path)
     : tt_(64), eval_(random_eval), tb_manager_(wdl_tb), dtm_manager_(dtm_tb),
@@ -124,7 +127,7 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   int piece_count = std::popcount(board.allPieces());
   if (piece_count > tb_piece_limit_) return false;
 
-  Value result = tb_manager_->lookup_wdl(board);
+  Value result = tb_manager_->lookup_wdl_preloaded(board);
   if (result == Value::UNKNOWN) return false;
 
   stats_.tb_hits++;

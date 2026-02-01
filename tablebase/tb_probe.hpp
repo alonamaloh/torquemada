@@ -50,42 +50,20 @@ public:
   explicit DTMTablebaseManager(const std::string& directory)
       : directory_(directory) {}
 
-  // Lookup DTM value for a position
-  // Returns DTM_UNKNOWN if tablebase not available
-  // Note: Call preload() before parallel use to avoid locking overhead
-  DTM lookup_dtm(const Board& board) {
+  // Lookup DTM value for a position (thread-safe after preload)
+  // Returns DTM_UNKNOWN if tablebase not available or not preloaded
+  // Use this version for parallel access after calling preload()
+  DTM lookup_dtm(const Board& board) const {
     Material m = get_material(board);
 
-    // Fast path: no lock if preloaded (cache is read-only after preload)
     auto it = dtm_cache_.find(m);
-    if (it != dtm_cache_.end()) {
-      if (it->second.empty()) {
-        return DTM_UNKNOWN;
-      }
-      std::size_t idx = board_to_index(board, m);
-      if (idx >= it->second.size()) {
-        return DTM_UNKNOWN;
-      }
-      return it->second[idx];
-    }
-
-    // Slow path: need to load (not thread-safe, use preload() for parallel)
-    if (!dtm_exists_in_dir(m)) {
-      dtm_cache_[m] = {};
+    if (it == dtm_cache_.end() || it->second.empty()) {
       return DTM_UNKNOWN;
     }
-    dtm_cache_[m] = load_dtm_from_dir(m);
-    it = dtm_cache_.find(m);
-
-    if (it->second.empty()) {
-      return DTM_UNKNOWN;
-    }
-
     std::size_t idx = board_to_index(board, m);
     if (idx >= it->second.size()) {
       return DTM_UNKNOWN;
     }
-
     return it->second[idx];
   }
 
@@ -134,20 +112,19 @@ public:
     std::cout << " loaded " << loaded << " tables\n";
   }
 
-  // Check if DTM tablebase is available for a position
-  bool has_dtm(const Board& board) {
+  // Check if DTM tablebase is available for a position (after preload)
+  // Thread-safe after preload()
+  bool has_dtm(const Board& board) const {
     Material m = get_material(board);
     auto it = dtm_cache_.find(m);
-    if (it != dtm_cache_.end()) {
-      return !it->second.empty();
-    }
-    return dtm_exists_in_dir(m);
+    return it != dtm_cache_.end() && !it->second.empty();
   }
 
   // Find best move using DTM tablebase (depth-1 search with DTM lookup)
   // Logic adapted from damas/play_optimal.cpp
   // Returns true if a move was found, sets best_move and best_dtm (from our perspective)
-  bool find_best_move(const Board& board, Move& best_move, DTM& best_dtm) {
+  // Thread-safe after preload()
+  bool find_best_move(const Board& board, Move& best_move, DTM& best_dtm) const {
     MoveList moves;
     generateMoves(board, moves);
 
