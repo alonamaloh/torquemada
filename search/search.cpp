@@ -7,7 +7,7 @@ namespace search {
 
 // Random evaluation: reproducible pseudo-random score derived from position hash
 // Returns a score in the range [-10000, +10000] based on the hash
-int random_eval(const Board& board) {
+int random_eval(const Board& board, int /*ply*/) {
   std::uint64_t h = board.hash() + 1;
 
   // Mix the hash to get good distribution
@@ -44,17 +44,21 @@ Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_
   // Set up evaluation function based on available models
   if (nn_model_ && dtm_nn_model_) {
     // Use endgame model for 6-7 pieces, general model for 8+
-    eval_ = [this](const Board& board) {
+    eval_ = [this](const Board& board, int ply) {
       int piece_count = std::popcount(board.allPieces());
       if (piece_count <= 7) {
-        return dtm_nn_model_->evaluate(board);
+        return dtm_nn_model_->evaluate(board, effective_draw_score(ply));
       }
-      return nn_model_->evaluate(board);
+      return nn_model_->evaluate(board, effective_draw_score(ply));
     };
   } else if (nn_model_) {
-    eval_ = [this](const Board& board) { return nn_model_->evaluate(board); };
+    eval_ = [this](const Board& board, int ply) {
+      return nn_model_->evaluate(board, effective_draw_score(ply));
+    };
   } else if (dtm_nn_model_) {
-    eval_ = [this](const Board& board) { return dtm_nn_model_->evaluate(board); };
+    eval_ = [this](const Board& board, int ply) {
+      return dtm_nn_model_->evaluate(board, effective_draw_score(ply));
+    };
   }
 }
 
@@ -73,17 +77,21 @@ Searcher::Searcher(CompressedTablebaseManager* wdl_tb, tablebase::DTMTablebaseMa
 
   // Set up evaluation function based on available models
   if (nn_model_ && dtm_nn_model_) {
-    eval_ = [this](const Board& board) {
+    eval_ = [this](const Board& board, int ply) {
       int piece_count = std::popcount(board.allPieces());
       if (piece_count <= 7) {
-        return dtm_nn_model_->evaluate(board);
+        return dtm_nn_model_->evaluate(board, effective_draw_score(ply));
       }
-      return nn_model_->evaluate(board);
+      return nn_model_->evaluate(board, effective_draw_score(ply));
     };
   } else if (nn_model_) {
-    eval_ = [this](const Board& board) { return nn_model_->evaluate(board); };
+    eval_ = [this](const Board& board, int ply) {
+      return nn_model_->evaluate(board, effective_draw_score(ply));
+    };
   } else if (dtm_nn_model_) {
-    eval_ = [this](const Board& board) { return dtm_nn_model_->evaluate(board); };
+    eval_ = [this](const Board& board, int ply) {
+      return dtm_nn_model_->evaluate(board, effective_draw_score(ply));
+    };
   }
 }
 
@@ -94,7 +102,7 @@ int Searcher::dtm_to_score(tablebase::DTM dtm, int ply) {
     return 0;  // Shouldn't happen
   }
   if (dtm == tablebase::DTM_DRAW) {
-    return SCORE_DRAW;
+    return effective_draw_score(ply);
   }
   if (dtm > 0) {
     // Win in dtm moves - convert to mate-like score
@@ -130,7 +138,7 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
       score = SCORE_TB_LOSS + ply;
       break;
     case Value::DRAW:
-      score = SCORE_DRAW;
+      score = effective_draw_score(ply);
       break;
     default:
       return false;
@@ -150,11 +158,11 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   // Probe transposition table
   std::uint64_t key = board.hash();
   TTEntry tt_entry;
-  Move tt_move;
+  CompactMove tt_compact_move = 0;
 
   if (tt_.probe(key, tt_entry)) {
     stats_.tt_hits++;
-    tt_move = tt_entry.best_move;
+    tt_compact_move = tt_entry.best_move;
 
     // Can we use the TT score?
     if (tt_entry.depth >= depth) {
@@ -183,11 +191,11 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
       }
     }
   }
-
+  
   // Generate moves
   MoveList moves;
   generateMoves(board, moves);
-
+  
   // Terminal node - no moves means loss
   if (moves.empty()) {
     return mated_score(ply);
@@ -197,9 +205,19 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   // If captures exist, continue searching (quiescence)
   bool has_captures = moves[0].isCapture();
   if (depth <= 0 && !has_captures) {
-    return eval_(board);
+    return eval_(board, ply);
   }
 
+  // Bring tt move to the front
+  if (tt_compact_move != 0) {
+    for (auto it = moves.begin(); it != moves.end(); ++it) {
+      if (compact_matches(tt_compact_move, *it)) {
+        std::swap(*moves.begin(), *it);
+        break;
+      }
+    }
+  }
+  
   int best_score = -SCORE_INFINITE;
   Move best_move;
   TTFlag flag = TTFlag::UPPER_BOUND;
@@ -254,30 +272,30 @@ void Searcher::extract_pv(const Board& board, std::vector<Move>& pv, int max_dep
     seen_keys[seen_count++] = key;
 
     TTEntry entry;
-    if (!tt_.probe(key, entry) || entry.best_move.from_xor_to == 0) {
+    if (!tt_.probe(key, entry) || entry.best_move == 0) {
       return;
     }
 
-    // Verify move is legal
+    // Find the matching move from legal moves
     MoveList moves;
     generateMoves(pos, moves);
-    bool found = false;
-    for (const Move& m : moves) {
-      if (m.from_xor_to == entry.best_move.from_xor_to &&
-          m.captures == entry.best_move.captures) {
-        found = true;
+    Move* found_move = nullptr;
+    for (Move& m : moves) {
+      if (compact_matches(entry.best_move, m)) {
+        found_move = &m;
         break;
       }
     }
-    if (!found) return;
+    if (!found_move) return;
 
-    pv.push_back(entry.best_move);
-    pos = makeMove(pos, entry.best_move);
+    pv.push_back(*found_move);
+    pos = makeMove(pos, *found_move);
   }
 }
 
 SearchResult Searcher::search(const Board& board, int depth) {
   stats_ = SearchStats{};
+  tt_.new_search();
 
   SearchResult result;
   result.depth = depth;
@@ -325,8 +343,9 @@ SearchResult Searcher::search(const Board& board, int depth) {
     }
 
     // No tablebase - use eval of resulting position as rough score estimate
+    // child is at ply 1 (after one move from root)
     Board child = makeMove(board, moves[0]);
-    result.score = -eval_(child);
+    result.score = -eval_(child, 1);
     return result;
   }
 

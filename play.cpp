@@ -150,6 +150,7 @@ void engine_move(GameState& state, search::Searcher& searcher, bool white_to_mov
   std::cout << "Engine is thinking...\n";
 
   searcher.set_perspective(white_to_move);
+  searcher.set_root_white_to_move(white_to_move);
   auto result = searcher.search_nodes(state.board, state.nodes);
 
   if (result.best_move.from_xor_to == 0) {
@@ -173,6 +174,7 @@ int main(int argc, char** argv) {
   bool use_tb = true;
   bool use_dtm_tb = true;  // Use DTM tablebases for optimal play
   int tb_limit = 7;  // Use tablebases for positions with this many pieces or fewer
+  int draw_score = 0;  // Value of a draw from white's perspective
 
   // Parse arguments
   for (int i = 1; i < argc; ++i) {
@@ -191,6 +193,8 @@ int main(int argc, char** argv) {
       tb_limit = std::stoi(argv[++i]);
     } else if (arg == "--nodes" && i + 1 < argc) {
       nodes = std::stoull(argv[++i]);
+    } else if (arg == "--draw-score" && i + 1 < argc) {
+      draw_score = std::stoi(argv[++i]);
     } else if (arg == "-h" || arg == "--help") {
       std::cout << "Usage: " << argv[0] << " [options]\n"
                 << "Options:\n"
@@ -201,6 +205,7 @@ int main(int argc, char** argv) {
                 << "  --no-tb           Disable all tablebases (use NN only)\n"
                 << "  --no-dtm-tb       Disable DTM tablebases (use only cwdl_*.bin)\n"
                 << "  --nodes N         Search node limit (default: 100000)\n"
+                << "  --draw-score N    Value of draw for white (default: 0, use -100 for aggression)\n"
                 << "\nCommands during play:\n"
                 << "  <move>  Enter a move (e.g., 11-15 or 11x18x25)\n"
                 << "  b       Take back the last move\n"
@@ -239,8 +244,12 @@ int main(int argc, char** argv) {
   }
 
   search::Searcher searcher(tb_dir, tb_limit, dtm_limit, nn_model, dtm_nn_model);
-  searcher.set_tt_size(64);
+  searcher.set_tt_size(2048);
   searcher.set_verbose(true);
+  if (draw_score != 0) {
+    searcher.set_draw_score(draw_score);
+    std::cout << "  Draw score: " << draw_score << " (for white)\n";
+  }
 
   GameState state;
   state.nodes = nodes;

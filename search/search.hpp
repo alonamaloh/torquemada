@@ -18,7 +18,6 @@ constexpr int SCORE_MATE = 30000;      // Mate at root = 30000, mate in N ply = 
 constexpr int SCORE_TB_WIN = 29000;    // Tablebase win
 constexpr int SCORE_TB_LOSS = -29000;  // Tablebase loss
 constexpr int SCORE_SPECIAL = 28000;   // Scores with |score| > this need special TT handling
-constexpr int SCORE_DRAW = 0;
 
 // Adjust mate score for ply distance (so we prefer shorter mates)
 inline int mate_score(int ply) { return SCORE_MATE - ply; }
@@ -65,12 +64,14 @@ struct SearchStats {
 };
 
 // Evaluation function type
-// Takes a board (white to move) and returns a score from white's perspective
-using EvalFunc = std::function<int(const Board&)>;
+// Takes a board (always stored as white to move) and ply depth
+// ply is used to determine the original side: even ply = original white, odd ply = original black
+// Returns a score from the perspective of the side to move in the stored board
+using EvalFunc = std::function<int(const Board&, int ply)>;
 
 // Random evaluation: reproducible pseudo-random score in [-10000, +10000]
 // Used as placeholder until neural network is trained
-int random_eval(const Board& board);
+int random_eval(const Board& board, int ply);
 
 // Searcher class - the main search engine
 class Searcher {
@@ -108,6 +109,16 @@ public:
   // Set perspective for PV display (true = white's view, false = black's view)
   void set_perspective(bool white) { white_perspective_ = white; }
 
+  // Set the value of a draw from white's perspective
+  // Default is 0. Use negative values (e.g., -100) to make the engine avoid draws.
+  // Use -10000 to make draws as bad as losses for white.
+  void set_draw_score(int score) { draw_score_ = score; }
+  int draw_score() const { return draw_score_; }
+
+  // Set whether white is to move at the root of the search (from the game's perspective)
+  // This is needed to correctly apply draw_score based on whose turn it originally is
+  void set_root_white_to_move(bool white) { root_white_to_move_ = white; }
+
   // Search to a fixed depth
   SearchResult search(const Board& board, int depth);
 
@@ -140,6 +151,15 @@ private:
   // Convert DTM to search score
   int dtm_to_score(tablebase::DTM dtm, int ply);
 
+  // Get effective draw score for a given search ply
+  // Combines root_white_to_move_ with ply to determine if it's original white's turn
+  int effective_draw_score(int ply) const {
+    // If root is white's turn and ply is even, or root is black's turn and ply is odd,
+    // then it's original white's turn
+    bool is_original_white = (root_white_to_move_ == (ply % 2 == 0));
+    return is_original_white ? draw_score_ : -draw_score_;
+  }
+
   TranspositionTable tt_;
   EvalFunc eval_;
   SearchStats stats_;
@@ -160,6 +180,12 @@ private:
   // Verbose output
   bool verbose_ = false;
   bool white_perspective_ = true;  // For PV display
+
+  // Draw score from white's perspective (default 0)
+  int draw_score_ = 0;
+
+  // Whether white is to move at the root (from the game's perspective)
+  bool root_white_to_move_ = true;
 };
 
 } // namespace search

@@ -260,14 +260,13 @@ void MLP::predict_proba(const Board& board, float& p_loss, float& p_draw, float&
     p_win = probs[2];
 }
 
-int MLP::evaluate(const Board& board) const {
+int MLP::evaluate(const Board& board, int draw_score) const {
     float p_loss, p_draw, p_win;
     predict_proba(board, p_loss, p_draw, p_win);
 
-    // Convert to centipawn-like score: expected value scaled
-    // P(win) - P(loss) gives range [-1, 1], scale to [-10000, 10000]
-    float expected = p_win - p_loss;
-    return static_cast<int>(expected * 10000.0f);
+    // Weighted average: p_win * 10000 + p_draw * draw_score + p_loss * (-10000)
+    float expected = p_win * 10000.0f + p_draw * static_cast<float>(draw_score) + p_loss * (-10000.0f);
+    return static_cast<int>(expected);
 }
 
 int MLP::evaluate_dtm(const Board& board) const {
