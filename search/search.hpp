@@ -86,21 +86,20 @@ int random_eval(const Board& board, int ply);
 // Searcher class - the main search engine
 class Searcher {
 public:
-  // Construct with optional tablebase manager and neural network model
-  // tb_directory: path to directory containing cwdl_*.bin and dtm_*.bin files
-  // tb_piece_limit: use WDL tablebases for positions with this many pieces or fewer
-  // dtm_piece_limit: use DTM optimal play for positions with this many pieces or fewer
+  // Construct with optional DTM tablebase manager and neural network model
+  // tb_directory: path to directory containing dtm_*.bin files
+  // tb_piece_limit: use DTM tablebases for positions with this many pieces or fewer
   // nn_model_path: path to neural network model (.bin file), empty for random eval
   // dtm_nn_model_path: path to DTM specialist model (.bin file), for 6-7 piece positions
   explicit Searcher(const std::string& tb_directory = "", int tb_piece_limit = 7,
-                    int dtm_piece_limit = 6, const std::string& nn_model_path = "",
+                    const std::string& nn_model_path = "",
                     const std::string& dtm_nn_model_path = "");
 
-  // Construct with pre-loaded external tablebase managers (non-owning, const).
-  // The managers must outlive this Searcher and be preloaded before parallel use.
-  // Using const pointers guarantees thread-safe read-only access.
-  Searcher(const CompressedTablebaseManager* wdl_tb, const tablebase::DTMTablebaseManager* dtm_tb,
-           int tb_piece_limit, int dtm_piece_limit, const std::string& nn_model_path = "",
+  // Construct with pre-loaded external DTM tablebase manager (non-owning, const).
+  // The manager must outlive this Searcher and be preloaded before parallel use.
+  // Using const pointer guarantees thread-safe read-only access.
+  Searcher(const tablebase::DTMTablebaseManager* dtm_tb, int tb_piece_limit,
+           const std::string& nn_model_path = "",
            const std::string& dtm_nn_model_path = "");
 
   ~Searcher();
@@ -183,14 +182,11 @@ private:
   EvalFunc eval_;
   SearchStats stats_;
 
-  // Tablebase support (owned - for when Searcher loads its own)
-  std::unique_ptr<CompressedTablebaseManager> tb_manager_owned_;
+  // DTM tablebase support (owned - for when Searcher loads its own)
   std::unique_ptr<tablebase::DTMTablebaseManager> dtm_manager_owned_;
-  // Const pointers for thread-safe read-only access (either point to owned or external)
-  const CompressedTablebaseManager* tb_manager_ = nullptr;
+  // Const pointer for thread-safe read-only access (either points to owned or external)
   const tablebase::DTMTablebaseManager* dtm_manager_ = nullptr;
-  int tb_piece_limit_;
-  int dtm_piece_limit_;  // Use DTM optimal play when <= this many pieces
+  int tb_piece_limit_;  // Use DTM tablebases when <= this many pieces
 
   // Neural network evaluation
   std::unique_ptr<nn::MLP> nn_model_;       // General evaluation (8+ pieces)

@@ -23,17 +23,12 @@ int random_eval(const Board& board, int /*ply*/) {
   return static_cast<int>(raw % 10001);
 }
 
-Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_piece_limit,
+Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit,
                    const std::string& nn_model_path, const std::string& dtm_nn_model_path)
-    : tt_(64), eval_(random_eval), tb_piece_limit_(tb_piece_limit),
-      dtm_piece_limit_(dtm_piece_limit) {
-  if (!tb_directory.empty()) {
-    tb_manager_owned_ = std::make_unique<CompressedTablebaseManager>(tb_directory);
+    : tt_(64), eval_(random_eval), tb_piece_limit_(tb_piece_limit) {
+  if (!tb_directory.empty() && tb_piece_limit > 0) {
     dtm_manager_owned_ = std::make_unique<tablebase::DTMTablebaseManager>(tb_directory);
-    // Preload for thread-safe const access
-    tb_manager_owned_->preload(tb_piece_limit);
-    dtm_manager_owned_->preload(dtm_piece_limit);
-    tb_manager_ = tb_manager_owned_.get();
+    dtm_manager_owned_->preload(tb_piece_limit);
     dtm_manager_ = dtm_manager_owned_.get();
   }
 
@@ -66,11 +61,9 @@ Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit, int dtm_
   }
 }
 
-Searcher::Searcher(const CompressedTablebaseManager* wdl_tb, const tablebase::DTMTablebaseManager* dtm_tb,
-                   int tb_piece_limit, int dtm_piece_limit, const std::string& nn_model_path,
-                   const std::string& dtm_nn_model_path)
-    : tt_(64), eval_(random_eval), tb_manager_(wdl_tb), dtm_manager_(dtm_tb),
-      tb_piece_limit_(tb_piece_limit), dtm_piece_limit_(dtm_piece_limit) {
+Searcher::Searcher(const tablebase::DTMTablebaseManager* dtm_tb, int tb_piece_limit,
+                   const std::string& nn_model_path, const std::string& dtm_nn_model_path)
+    : tt_(64), eval_(random_eval), dtm_manager_(dtm_tb), tb_piece_limit_(tb_piece_limit) {
   // Load neural networks if paths provided
   if (!nn_model_path.empty()) {
     nn_model_ = std::make_unique<nn::MLP>(nn_model_path);
@@ -119,7 +112,7 @@ int Searcher::dtm_to_score(tablebase::DTM dtm, int ply) {
 }
 
 bool Searcher::probe_tb(const Board& board, int ply, int& score) {
-  if (!tb_manager_) return false;
+  if (!dtm_manager_) return false;
 
   // Only probe when n_reversible == 0 (after a capture or pawn move)
   // This forces the winning side to find moves that make progress
@@ -128,25 +121,11 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   int piece_count = std::popcount(board.allPieces());
   if (piece_count > tb_piece_limit_) return false;
 
-  Value result = tb_manager_->lookup_wdl_preloaded(board);
-  if (result == Value::UNKNOWN) return false;
+  tablebase::DTM dtm = dtm_manager_->lookup_dtm(board);
+  if (dtm == tablebase::DTM_UNKNOWN) return false;
 
   stats_.tb_hits++;
-
-  // Adjust TB score by ply so we prefer shorter paths to wins
-  switch (result) {
-    case Value::WIN:
-      score = SCORE_TB_WIN - ply;
-      break;
-    case Value::LOSS:
-      score = SCORE_TB_LOSS + ply;
-      break;
-    case Value::DRAW:
-      score = effective_draw_score(ply);
-      break;
-    default:
-      return false;
-  }
+  score = dtm_to_score(dtm, ply);
   return true;
 }
 
@@ -402,9 +381,9 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
 
   SearchResult result;
 
-  // Check if we should use DTM optimal play (≤ dtm_piece_limit pieces)
+  // Check if we should use DTM optimal play (≤ tb_piece_limit_ pieces)
   int piece_count = std::popcount(board.allPieces());
-  if (dtm_manager_ && piece_count <= dtm_piece_limit_) {
+  if (dtm_manager_ && piece_count <= tb_piece_limit_) {
     Move best_move;
     tablebase::DTM best_dtm;
     if (dtm_manager_->find_best_move(board, best_move, best_dtm)) {
@@ -433,7 +412,7 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
     result.depth = 1;
 
     // Try to get score from tablebase
-    if (dtm_manager_ && piece_count <= dtm_piece_limit_) {
+    if (dtm_manager_ && piece_count <= tb_piece_limit_) {
       tablebase::DTM dtm = dtm_manager_->lookup_dtm(board);
       if (dtm != tablebase::DTM_UNKNOWN) {
         result.score = dtm_to_score(dtm, 0);

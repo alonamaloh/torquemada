@@ -270,9 +270,10 @@ int main(int argc, char** argv) {
   {
     int tid = omp_get_thread_num();
 
-    // Each thread gets its own RNG and searcher, sharing preloaded WDL tablebases
+    // Each thread gets its own RNG and searcher
+    // Note: Searcher doesn't use tablebases here - WDL lookups are done separately
     RandomBits rng(base_seed + tid * 0x9e3779b97f4a7c15ULL);
-    search::Searcher searcher(&tb_wdl, nullptr, 7, 0, nn_model);
+    search::Searcher searcher("", 0, nn_model);
     searcher.set_tt_size(32);
 
     auto& local_positions = thread_positions[tid];

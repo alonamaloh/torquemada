@@ -183,8 +183,6 @@ int main(int argc, char** argv) {
   std::string nn_model = "";
   std::string dtm_nn_model = "";
   std::uint64_t nodes = 100000;
-  bool use_tb = true;
-  bool use_dtm_tb = true;  // Use DTM tablebases for optimal play
   int tb_limit = 7;  // Use tablebases for positions with this many pieces or fewer
   int draw_score = 0;  // Value of a draw from white's perspective
 
@@ -198,9 +196,8 @@ int main(int argc, char** argv) {
     } else if (arg == "--tb" && i + 1 < argc) {
       tb_dir = argv[++i];
     } else if (arg == "--no-tb") {
-      use_tb = false;
-    } else if (arg == "--no-dtm-tb") {
-      use_dtm_tb = false;
+      tb_dir = "";
+      tb_limit = 0;
     } else if (arg == "--tb-limit" && i + 1 < argc) {
       tb_limit = std::stoi(argv[++i]);
     } else if (arg == "--nodes" && i + 1 < argc) {
@@ -212,10 +209,9 @@ int main(int argc, char** argv) {
                 << "Options:\n"
                 << "  --model FILE      Neural network model (general eval)\n"
                 << "  --dtm-model FILE  DTM specialist model (endgame eval)\n"
-                << "  --tb PATH         Tablebase directory\n"
+                << "  --tb PATH         Tablebase directory (default: /home/alvaro/claude/damas)\n"
                 << "  --tb-limit N      Use tablebases for N pieces or fewer (default: 7)\n"
-                << "  --no-tb           Disable all tablebases (use NN only)\n"
-                << "  --no-dtm-tb       Disable DTM tablebases (use only cwdl_*.bin)\n"
+                << "  --no-tb           Disable tablebases (use NN only)\n"
                 << "  --nodes N         Search node limit (default: 100000)\n"
                 << "  --draw-score N    Value of draw for white (default: 0, use -100 for aggression)\n"
                 << "\nCommands during play:\n"
@@ -232,18 +228,8 @@ int main(int argc, char** argv) {
 
   // Initialize engine
   std::cout << "Initializing engine...\n";
-  if (use_tb) {
-    std::cout << "  WDL tablebases: " << tb_dir << " (limit: " << tb_limit << " pieces)\n";
-  } else {
-    std::cout << "  WDL tablebases: disabled\n";
-    tb_dir = "";  // Empty disables TB loading
-    tb_limit = 0;
-  }
-
-  // dtm_limit controls DTM optimal play (usually tb_limit - 1)
-  int dtm_limit = use_dtm_tb ? std::max(0, tb_limit - 1) : 0;
-  if (use_tb && use_dtm_tb) {
-    std::cout << "  DTM tablebases: enabled (limit: " << dtm_limit << " pieces)\n";
+  if (!tb_dir.empty() && tb_limit > 0) {
+    std::cout << "  DTM tablebases: " << tb_dir << " (limit: " << tb_limit << " pieces)\n";
   } else {
     std::cout << "  DTM tablebases: disabled\n";
   }
@@ -255,8 +241,8 @@ int main(int argc, char** argv) {
     std::cout << "  DTM NN model: " << dtm_nn_model << "\n";
   }
 
-  search::Searcher searcher(tb_dir, tb_limit, dtm_limit, nn_model, dtm_nn_model);
-  searcher.set_tt_size(2048);
+  search::Searcher searcher(tb_dir, tb_limit, nn_model, dtm_nn_model);
+  searcher.set_tt_size(64);
   searcher.set_verbose(true);
   searcher.set_stop_flag(&g_stop_requested);
   std::signal(SIGINT, sigint_handler);

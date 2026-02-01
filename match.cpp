@@ -152,23 +152,19 @@ int main(int argc, char** argv) {
             now.time_since_epoch()).count());
     RandomBits rng(seed);
 
-    // Preload tablebases once (shared between both searchers)
-    std::unique_ptr<CompressedTablebaseManager> tb_wdl;
+    // Preload DTM tablebases once (shared between both searchers)
     std::unique_ptr<tablebase::DTMTablebaseManager> tb_dtm;
     int tb_piece_limit = 7;
-    int dtm_piece_limit = 6;
 
     if (!tb_dir.empty()) {
-        std::cout << "Preloading tablebases...\n";
-        tb_wdl = std::make_unique<CompressedTablebaseManager>(tb_dir);
-        tb_wdl->preload(tb_piece_limit);
+        std::cout << "Preloading DTM tablebases...\n";
         tb_dtm = std::make_unique<tablebase::DTMTablebaseManager>(tb_dir);
-        tb_dtm->preload(dtm_piece_limit);
+        tb_dtm->preload(tb_piece_limit);
     }
 
     // Create searchers with shared tablebases
-    search::Searcher searcher1(tb_wdl.get(), tb_dtm.get(), tb_piece_limit, dtm_piece_limit, model1_path);
-    search::Searcher searcher2(tb_wdl.get(), tb_dtm.get(), tb_piece_limit, dtm_piece_limit, model2_path);
+    search::Searcher searcher1(tb_dtm.get(), tb_piece_limit, model1_path);
+    search::Searcher searcher2(tb_dtm.get(), tb_piece_limit, model2_path);
     searcher1.set_tt_size(32);
     searcher2.set_tt_size(32);
 
