@@ -3,12 +3,35 @@
 
 import argparse
 import glob
+import struct
 import h5py
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
+
+
+def export_to_bin(model, output_path):
+    """Export model weights to binary format for C++ inference."""
+    state_dict = model.state_dict()
+
+    # Collect layer parameters
+    layers = []
+    i = 0
+    while f'net.{i}.weight' in state_dict:
+        weight = state_dict[f'net.{i}.weight'].cpu().numpy()
+        bias = state_dict[f'net.{i}.bias'].cpu().numpy()
+        layers.append((weight, bias))
+        i += 2  # Skip ReLU layers
+
+    with open(output_path, 'wb') as f:
+        f.write(struct.pack('<I', len(layers)))
+        for weight, bias in layers:
+            out_size, in_size = weight.shape
+            f.write(struct.pack('<II', in_size, out_size))
+            f.write(weight.astype(np.float32).tobytes())
+            f.write(bias.astype(np.float32).tobytes())
 
 
 class CheckersDataset(Dataset):
@@ -227,6 +250,21 @@ def main():
                 'hidden_sizes': hidden_sizes,
                 'val_acc': val_acc,
             }, args.output)
+            bin_path = args.output.replace('.pt', '.bin')
+            export_to_bin(model, bin_path)
+
+        # Save checkpoint every 5 epochs (both .pt and .bin for C++ matches)
+        if (epoch + 1) % 5 == 0:
+            checkpoint_path = args.output.replace('.pt', f'_epoch_{epoch+1}.pt')
+            torch.save({
+                'model_state_dict': model.state_dict(),
+                'hidden_sizes': hidden_sizes,
+                'epoch': epoch + 1,
+                'val_acc': val_acc,
+            }, checkpoint_path)
+            bin_path = checkpoint_path.replace('.pt', '.bin')
+            export_to_bin(model, bin_path)
+            print(f"  -> Saved checkpoint: {checkpoint_path} and {bin_path}")
 
     print(f"\nBest validation accuracy: {best_val_acc:.2%}")
     print(f"Model saved to {args.output}")

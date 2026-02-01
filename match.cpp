@@ -2,6 +2,7 @@
 #include "core/movegen.hpp"
 #include "core/random.hpp"
 #include "search/search.hpp"
+#include "tablebase/tb_probe.hpp"
 #include <chrono>
 #include <iostream>
 #include <iomanip>
@@ -52,6 +53,7 @@ int play_game(const Board& start, search::Searcher& white, search::Searcher& bla
         // Select searcher based on side to move
         bool white_to_move = (ply % 2 == 0);
         search::Searcher& searcher = white_to_move ? white : black;
+        searcher.set_root_white_to_move(white_to_move);
 
         auto result = searcher.search(board, 100, max_nodes);
 
@@ -139,9 +141,23 @@ int main(int argc, char** argv) {
             now.time_since_epoch()).count());
     RandomBits rng(seed);
 
-    // Create searchers
-    search::Searcher searcher1(tb_dir, 7, 6, model1_path);
-    search::Searcher searcher2(tb_dir, 7, 6, model2_path);
+    // Preload tablebases once (shared between both searchers)
+    std::unique_ptr<CompressedTablebaseManager> tb_wdl;
+    std::unique_ptr<tablebase::DTMTablebaseManager> tb_dtm;
+    int tb_piece_limit = 7;
+    int dtm_piece_limit = 6;
+
+    if (!tb_dir.empty()) {
+        std::cout << "Preloading tablebases...\n";
+        tb_wdl = std::make_unique<CompressedTablebaseManager>(tb_dir);
+        tb_wdl->preload(tb_piece_limit);
+        tb_dtm = std::make_unique<tablebase::DTMTablebaseManager>(tb_dir);
+        tb_dtm->preload(dtm_piece_limit);
+    }
+
+    // Create searchers with shared tablebases
+    search::Searcher searcher1(tb_wdl.get(), tb_dtm.get(), tb_piece_limit, dtm_piece_limit, model1_path);
+    search::Searcher searcher2(tb_wdl.get(), tb_dtm.get(), tb_piece_limit, dtm_piece_limit, model2_path);
     searcher1.set_tt_size(32);
     searcher2.set_tt_size(32);
 
