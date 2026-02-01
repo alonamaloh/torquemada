@@ -14,6 +14,9 @@
 
 namespace search {
 
+// Search limits
+constexpr int MAX_PLY = 128;
+
 // Score constants
 constexpr int SCORE_INFINITE = 32000;
 constexpr int SCORE_MATE = 30000;      // Mate at root = 30000, mate in N ply = 30000 - N
@@ -208,6 +211,13 @@ private:
 
   // Hard node limit (0 = no limit)
   std::uint64_t hard_node_limit_ = 0;
+
+  // Killer moves (2 per ply)
+  Move killers_[MAX_PLY][2] = {};
+
+  // History heuristic: indexed by [from_sq][to_sq]
+  // Lower values are better (moves that cause cutoffs get decremented)
+  std::int16_t history_[32][32] = {};
 };
 
 } // namespace search

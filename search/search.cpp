@@ -1,6 +1,7 @@
 #include "search.hpp"
 #include <algorithm>
 #include <bit>
+#include <cstring>
 #include <iostream>
 
 namespace search {
@@ -213,19 +214,51 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     return eval_(board, ply);
   }
 
-  // Bring tt move to the front
+  // Move ordering: TT move first, then killers
+  auto insert_pos = moves.begin();
+
+  // Bring TT move to the front
   if (tt_compact_move != 0) {
-    for (auto it = moves.begin(); it != moves.end(); ++it) {
+    for (auto it = insert_pos; it != moves.end(); ++it) {
       if (compact_matches(tt_compact_move, *it)) {
-        std::swap(*moves.begin(), *it);
+        std::swap(*insert_pos, *it);
+        ++insert_pos;
         break;
       }
     }
   }
-  
+
+  // Bring killer moves next (only for non-captures, and if not already TT move)
+  if (ply < MAX_PLY) {
+    for (int k = 0; k < 2; ++k) {
+      const Move& killer = killers_[ply][k];
+      if (killer.from_xor_to == 0) continue;
+      for (auto it = insert_pos; it != moves.end(); ++it) {
+        if (it->from_xor_to == killer.from_xor_to && !it->isCapture()) {
+          std::swap(*insert_pos, *it);
+          ++insert_pos;
+          break;
+        }
+      }
+    }
+  }
+
+  // Sort remaining moves by history (ascending - lower/negative values first)
+  // Note: from_xor_to can be 0 for circular captures, skip those in sorting
+  std::sort(insert_pos, moves.end(), [this](const Move& a, const Move& b) {
+    if (a.from_xor_to == 0 || b.from_xor_to == 0) return false;
+    int a_sq1 = __builtin_ctz(a.from_xor_to);
+    int a_sq2 = 31 - __builtin_clz(a.from_xor_to);
+    int b_sq1 = __builtin_ctz(b.from_xor_to);
+    int b_sq2 = 31 - __builtin_clz(b.from_xor_to);
+    return history_[a_sq1][a_sq2] < history_[b_sq1][b_sq2];
+  });
+
   int best_score = -SCORE_INFINITE;
   Move best_move;
   TTFlag flag = TTFlag::UPPER_BOUND;
+  Move first_move = moves[0];
+  bool is_first = true;
 
   for (const Move& move : moves) {
     Board child = makeMove(board, move);
@@ -241,10 +274,33 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
 
         if (alpha >= beta) {
           flag = TTFlag::LOWER_BOUND;
+          // Store killer move (only for quiet moves)
+          if (!move.isCapture() && ply < MAX_PLY) {
+            if (killers_[ply][0].from_xor_to != move.from_xor_to) {
+              killers_[ply][1] = killers_[ply][0];
+              killers_[ply][0] = move;
+            }
+          }
+          // Update history (only if not first move, and skip circular captures)
+          if (!is_first && first_move.from_xor_to != 0 && move.from_xor_to != 0) {
+            int f1_sq1 = __builtin_ctz(first_move.from_xor_to);
+            int f1_sq2 = 31 - __builtin_clz(first_move.from_xor_to);
+            int c_sq1 = __builtin_ctz(move.from_xor_to);
+            int c_sq2 = 31 - __builtin_clz(move.from_xor_to);
+            // Increment first move (should have been tried later)
+            if (history_[f1_sq1][f1_sq2] < INT16_MAX) {
+              history_[f1_sq1][f1_sq2]++;
+            }
+            // Decrement cutoff move (should have been tried earlier)
+            if (history_[c_sq1][c_sq2] > INT16_MIN) {
+              history_[c_sq1][c_sq2]--;
+            }
+          }
           break;  // Beta cutoff
         }
       }
     }
+    is_first = false;
   }
 
   // Store in transposition table
@@ -319,15 +375,6 @@ SearchResult Searcher::search_root(const Board& board, MoveList& moves, int dept
       if (i > 0) {
         std::rotate(moves.begin(), moves.begin() + i, moves.begin() + i + 1);
       }
-
-      if (verbose_) {
-        std::cout << ": depth " << depth << " score " << result.score
-                  << " nodes " << stats_.nodes;
-        if (stats_.tb_hits > 0) {
-          std::cout << " tbhits " << stats_.tb_hits;
-        }
-        std::cout << std::endl;
-      }
     }
   }
 
@@ -350,6 +397,8 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
   stats_ = SearchStats{};
   tt_.new_search();
   hard_node_limit_ = (max_nodes > 0) ? max_nodes * 5 : 0;
+  std::memset(killers_, 0, sizeof(killers_));
+  std::memset(history_, 0, sizeof(history_));
 
   SearchResult result;
 
