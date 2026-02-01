@@ -104,13 +104,16 @@ public:
             int bp = total - wq - bq - wp;
             if (bp < 0) continue;
 
-            // Split pawns into back row and other
-            for (int bwp = 0; bwp <= wp; ++bwp) {
+            // Split pawns into back row and other (back rank has only 4 squares)
+            for (int bwp = 0; bwp <= std::min(wp, 4); ++bwp) {
               int owp = wp - bwp;
-              for (int bbp = 0; bbp <= bp; ++bbp) {
+              for (int bbp = 0; bbp <= std::min(bp, 4); ++bbp) {
                 int obp = bp - bbp;
 
                 Material m{bwp, bbp, owp, obp, wq, bq};
+
+                // Skip terminal positions (one side has no pieces)
+                if (m.white_pieces() == 0 || m.black_pieces() == 0) continue;
 
                 // Skip if already cached
                 if (dtm_cache_.count(m)) continue;
@@ -145,7 +148,7 @@ public:
   // Logic adapted from damas/play_optimal.cpp
   // Returns true if a move was found, sets best_move and best_dtm (from our perspective)
   bool find_best_move(const Board& board, Move& best_move, DTM& best_dtm) {
-    std::vector<Move> moves;
+    MoveList moves;
     generateMoves(board, moves);
 
     if (moves.empty()) {
@@ -196,8 +199,8 @@ public:
         // Prefer higher opponent DTM (they take longer to win)
         dominated = (opp_dtm <= best_opp_dtm);
       } else {
-        // Draw - prefer to keep it a draw or find a win
-        dominated = (opp_dtm <= best_opp_dtm);
+        // Draw - prefer lower opp_dtm (we win or draw, not lose)
+        dominated = (opp_dtm >= best_opp_dtm);
       }
 
       if (!dominated) {

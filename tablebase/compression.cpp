@@ -186,7 +186,7 @@ static int negamax(const Board& b, int alpha, int beta, Lookup&& lookup,
               << "Board: " << b << "\n"
               << "Material: " << get_material(b) << "\n"
               << "has_captures=" << has_captures(b) << "\n";
-    std::vector<Move> dbg_moves;
+    MoveList dbg_moves;
     generateMoves(b, dbg_moves);
     std::cerr << "Generated " << dbg_moves.size() << " moves:\n";
     for (const auto& mv : dbg_moves) {
@@ -199,7 +199,7 @@ static int negamax(const Board& b, int alpha, int beta, Lookup&& lookup,
   }
 
   // Capture position: search through forced moves
-  std::vector<Move> moves;
+  MoveList moves;
   generateMoves(b, moves);
 
   if (moves.empty()) {
@@ -2023,6 +2023,58 @@ void CompressedTablebaseManager::clear() {
   tb_cache_.clear();
 }
 
+void CompressedTablebaseManager::preload(int max_pieces) {
+  std::cout << "Preloading compressed WDL tables..." << std::flush;
+  int loaded = 0;
+
+  // Enumerate all material configurations up to max_pieces
+  for (int total = 2; total <= max_pieces; ++total) {
+    for (int wq = 0; wq <= total; ++wq) {
+      for (int bq = 0; bq <= total - wq; ++bq) {
+        for (int wp = 0; wp <= total - wq - bq; ++wp) {
+          int bp = total - wq - bq - wp;
+          if (bp < 0) continue;
+
+          // Split pawns into back row and other (back rank has only 4 squares)
+          for (int bwp = 0; bwp <= std::min(wp, 4); ++bwp) {
+            int owp = wp - bwp;
+            for (int bbp = 0; bbp <= std::min(bp, 4); ++bbp) {
+              int obp = bp - bbp;
+
+              Material m{bwp, bbp, owp, obp, wq, bq};
+
+              // Skip terminal positions (one side has no pieces)
+              if (m.white_pieces() == 0 || m.black_pieces() == 0) continue;
+
+              // Skip if already cached
+              if (tb_cache_.count(m)) continue;
+
+              // Build filename and try to load
+              char filename[256];
+              std::snprintf(filename, sizeof(filename), "%s/cwdl_%d%d%d%d%d%d.bin",
+                            directory_.c_str(),
+                            m.back_white_pawns, m.back_black_pawns,
+                            m.other_white_pawns, m.other_black_pawns,
+                            m.white_queens, m.black_queens);
+
+              if (std::filesystem::exists(filename)) {
+                CompressedTablebase tb = load_compressed_tablebase(filename);
+                tb_cache_[m] = std::move(tb);
+                loaded++;
+              } else {
+                // Mark as not available (empty tablebase)
+                tb_cache_[m] = CompressedTablebase{};
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  std::cout << " loaded " << loaded << " tables\n";
+  preloaded_ = true;
+}
+
 CompressedTablebase* CompressedTablebaseManager::load_or_get(const Material& m, bool warn_if_missing) {
   auto it = tb_cache_.find(m);
   if (it != tb_cache_.end()) {
@@ -2060,10 +2112,23 @@ const CompressedTablebase* CompressedTablebaseManager::get_tablebase(const Mater
   return load_or_get(m, false);
 }
 
+const CompressedTablebase* CompressedTablebaseManager::get_preloaded(const Material& m) const {
+  auto it = tb_cache_.find(m);
+  if (it != tb_cache_.end() && !it->second.empty()) {
+    return &it->second;
+  }
+  return nullptr;
+}
+
 // Look up WDL value, searching through capture positions as needed.
 // Since captures are irreversible, the recursion depth is bounded by
 // the number of pieces on the board (at most ~24).
 Value CompressedTablebaseManager::lookup_wdl(const Board& b) {
+  // Use thread-safe path if preloaded
+  if (preloaded_) {
+    return lookup_wdl_preloaded(b);
+  }
+
   Material m = get_material(b);
 
   // Terminal: opponent has no pieces
@@ -2079,6 +2144,33 @@ Value CompressedTablebaseManager::lookup_wdl(const Board& b) {
   auto lookup = [this](const Board& pos) -> int {
     Material pos_m = get_material(pos);
     CompressedTablebase* pos_tb = load_or_get(pos_m, false);
+    if (!pos_tb) {
+      return SCORE_DRAW;  // Missing tablebase - conservative
+    }
+    std::size_t idx = board_to_index(pos, pos_m);
+    return value_to_score(lookup_compressed(*pos_tb, idx));
+  };
+
+  int score = negamax(b, SCORE_LOSS, SCORE_WIN, lookup);
+  return score_to_value(score);
+}
+
+Value CompressedTablebaseManager::lookup_wdl_preloaded(const Board& b) const {
+  Material m = get_material(b);
+
+  // Terminal: opponent has no pieces
+  if (m.white_pieces() == 0) {
+    return Value::LOSS;
+  }
+
+  const CompressedTablebase* tb = get_preloaded(m);
+  if (!tb) {
+    return Value::UNKNOWN;
+  }
+
+  auto lookup = [this](const Board& pos) -> int {
+    Material pos_m = get_material(pos);
+    const CompressedTablebase* pos_tb = get_preloaded(pos_m);
     if (!pos_tb) {
       return SCORE_DRAW;  // Missing tablebase - conservative
     }

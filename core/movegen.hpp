@@ -18,9 +18,9 @@ struct FullMove {
 };
 
 // Generate all legal moves for the side to move (white).
-// Moves are added to the provided vector (cleared first).
+// Moves are added to the provided MoveList (cleared first).
 // Returns the number of moves generated.
-std::size_t generateMoves(const Board& board, std::vector<Move>& moves);
+std::size_t generateMoves(const Board& board, MoveList& moves);
 
 // Generate all legal moves with full path information for notation.
 std::size_t generateFullMoves(const Board& board, std::vector<FullMove>& moves);

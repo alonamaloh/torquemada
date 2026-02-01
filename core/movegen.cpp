@@ -7,8 +7,8 @@ namespace {
 // Collector for compact moves (no path tracking)
 struct MoveCollector {
   static constexpr bool tracks_path = false;
-  std::vector<Move>& moves;
-  explicit MoveCollector(std::vector<Move>& m) : moves(m) {}
+  MoveList& moves;
+  explicit MoveCollector(MoveList& m) : moves(m) {}
   void add(const Move& m) { moves.push_back(m); }
   void add(const Move& m, const std::vector<int>&) { moves.push_back(m); }
 };
@@ -317,7 +317,7 @@ void addQuietMoves(const Board& board, Collector& collector) {
 
 } // namespace
 
-std::size_t generateMoves(const Board& board, std::vector<Move>& moves) {
+std::size_t generateMoves(const Board& board, MoveList& moves) {
   moves.clear();
   MoveCollector collector(moves);
 
@@ -329,12 +329,24 @@ std::size_t generateMoves(const Board& board, std::vector<Move>& moves) {
     for (const auto& m : moves)
       maxCaptures = std::max(maxCaptures, std::popcount(m.captures));
 
-    std::erase_if(moves, [maxCaptures](const Move& m) {
-      return std::popcount(m.captures) < maxCaptures;
-    });
+    // Filter: keep only moves with max captures
+    int writeIdx = 0;
+    for (int i = 0; i < moves.size(); ++i) {
+      if (std::popcount(moves[i].captures) == maxCaptures) {
+        moves[writeIdx++] = moves[i];
+      }
+    }
+    moves.count = writeIdx;
 
+    // Sort and deduplicate
     std::sort(moves.begin(), moves.end());
-    moves.erase(std::unique(moves.begin(), moves.end()), moves.end());
+    int uniqueIdx = 0;
+    for (int i = 0; i < moves.size(); ++i) {
+      if (i == 0 || !(moves[i] == moves[uniqueIdx - 1])) {
+        moves[uniqueIdx++] = moves[i];
+      }
+    }
+    moves.count = uniqueIdx;
   }
 
   // Quiet moves (only if no captures)
@@ -348,7 +360,7 @@ std::size_t generateMoves(const Board& board, std::vector<Move>& moves) {
 uint64_t perft(const Board& board, int depth) {
   if (depth == 0) return 1;
 
-  std::vector<Move> moves;
+  MoveList moves;
   generateMoves(board, moves);
 
   if (depth == 1) return moves.size();

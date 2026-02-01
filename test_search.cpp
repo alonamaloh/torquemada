@@ -85,7 +85,7 @@ void test_capture_position() {
 
   std::cout << board << "\n";
 
-  std::vector<Move> moves;
+  MoveList moves;
   generateMoves(board, moves);
 
   std::cout << "Legal moves: " << moves.size() << "\n";

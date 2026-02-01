@@ -368,11 +368,23 @@ public:
   // Returns Value::UNKNOWN if the tablebase is not available.
   Value lookup_wdl(const Board& board);
 
+  // Thread-safe lookup using only preloaded tables (const, no lazy loading).
+  // Call preload() first, then use this from multiple threads.
+  Value lookup_wdl_preloaded(const Board& board) const;
+
   // Get a loaded tablebase (or nullptr if not available)
   const CompressedTablebase* get_tablebase(const Material& m);
 
+  // Get a preloaded tablebase (read-only, thread-safe after preload).
+  // Returns nullptr if not preloaded. Does NOT attempt to load.
+  const CompressedTablebase* get_preloaded(const Material& m) const;
+
   // Clear loaded tablebases
   void clear();
+
+  // Preload all tablebases up to max_pieces.
+  // Call this before parallel use to avoid any locking/caching overhead.
+  void preload(int max_pieces = 7);
 
   // Get the directory being used
   const std::string& directory() const { return directory_; }
@@ -380,6 +392,7 @@ public:
 private:
   std::string directory_;
   std::unordered_map<Material, CompressedTablebase> tb_cache_;
+  bool preloaded_ = false;  // Set by preload(), makes lookup_wdl thread-safe
 
   // Load a compressed tablebase (or return cached)
   CompressedTablebase* load_or_get(const Material& m, bool warn_if_missing = true);

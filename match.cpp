@@ -12,7 +12,7 @@
 Board generate_opening(RandomBits& rng, int random_plies) {
     Board board;
     for (int ply = 0; ply < random_plies; ++ply) {
-        std::vector<Move> moves;
+        MoveList moves;
         generateMoves(board, moves);
         if (moves.empty()) break;
         std::uint64_t idx = rng() % moves.size();
@@ -24,7 +24,7 @@ Board generate_opening(RandomBits& rng, int random_plies) {
 // Play a single game between two searchers from a given position
 // Returns: +1 if white wins, -1 if black wins, 0 if draw
 int play_game(const Board& start, search::Searcher& white, search::Searcher& black,
-              int depth, bool verbose) {
+              std::uint64_t max_nodes, bool verbose) {
     Board board = start;
     int ply = 0;
 
@@ -36,7 +36,7 @@ int play_game(const Board& start, search::Searcher& white, search::Searcher& bla
         }
 
         // Generate moves
-        std::vector<Move> moves;
+        MoveList moves;
         generateMoves(board, moves);
 
         if (moves.empty()) {
@@ -53,7 +53,7 @@ int play_game(const Board& start, search::Searcher& white, search::Searcher& bla
         bool white_to_move = (ply % 2 == 0);
         search::Searcher& searcher = white_to_move ? white : black;
 
-        auto result = searcher.search(board, depth);
+        auto result = searcher.search_nodes(board, max_nodes);
 
         if (result.best_move.from_xor_to == 0) {
             // No move found (shouldn't happen)
@@ -77,7 +77,7 @@ int main(int argc, char** argv) {
     std::string model2_path;
     std::string tb_dir = "/home/alvaro/claude/damas";
     int num_pairs = 50;  // 50 pairs = 100 games
-    int depth = 6;
+    std::uint64_t max_nodes = 10000;
     int random_plies = 10;
     bool verbose = false;
 
@@ -93,7 +93,7 @@ int main(int argc, char** argv) {
                       << "Options:\n"
                       << "  -h, --help          Show this help message\n"
                       << "  --pairs N           Number of game pairs (default: 50 = 100 games)\n"
-                      << "  --depth N           Search depth (default: 6)\n"
+                      << "  --nodes N           Node limit per move (default: 10000)\n"
                       << "  --random-plies N    Random opening moves (default: 10)\n"
                       << "  --tb-path PATH      Tablebase directory\n"
                       << "  --no-tb             Disable tablebases\n"
@@ -103,8 +103,8 @@ int main(int argc, char** argv) {
             num_pairs = std::atoi(argv[++i]);
         } else if (arg == "--random-plies" && i + 1 < argc) {
             random_plies = std::atoi(argv[++i]);
-        } else if (arg == "--depth" && i + 1 < argc) {
-            depth = std::atoi(argv[++i]);
+        } else if (arg == "--nodes" && i + 1 < argc) {
+            max_nodes = std::atoll(argv[++i]);
         } else if (arg == "--tb-path" && i + 1 < argc) {
             tb_dir = argv[++i];
         } else if (arg == "--no-tb") {
@@ -129,7 +129,7 @@ int main(int argc, char** argv) {
     std::cout << "Model 2: " << model2_path << "\n";
     std::cout << "Game pairs: " << num_pairs << " (" << (num_pairs * 2) << " games)\n";
     std::cout << "Random opening plies: " << random_plies << "\n";
-    std::cout << "Depth: " << depth << "\n";
+    std::cout << "Node limit: " << max_nodes << "\n";
     std::cout << "Tablebases: " << (tb_dir.empty() ? "disabled" : tb_dir) << "\n\n";
 
     // Initialize RNG
@@ -167,7 +167,7 @@ int main(int argc, char** argv) {
             searcher1.clear_tt();
             searcher2.clear_tt();
 
-            int result = play_game(opening, white, black, depth, verbose);
+            int result = play_game(opening, white, black, max_nodes, verbose);
 
             // Update statistics
             if (result == +1) {

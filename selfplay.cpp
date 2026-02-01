@@ -91,12 +91,12 @@ public:
     searcher_.set_tt_size(128);
   }
 
-  // Search and print PV with proper perspective
+  // Search with node limit and print PV after each depth
   // ply: current ply (0 = white's first move, 1 = black's first move, etc.)
-  search::SearchResult search(const Board& board, int max_depth, int ply) {
+  search::SearchResult search(const Board& board, std::uint64_t max_nodes, int ply) {
     search::SearchResult best_result;
 
-    for (int depth = 1; depth <= max_depth; ++depth) {
+    for (int depth = 1; depth <= 100; ++depth) {
       auto result = searcher_.search(board, depth);
       best_result = result;
       best_result.depth = depth;
@@ -131,8 +131,13 @@ public:
 
       std::cout << "\n";
 
-      // Early exit on mate
-      if (search::is_mate_score(result.score)) {
+      // Stop if we've exceeded the node limit
+      if (result.nodes >= max_nodes) {
+        break;
+      }
+
+      // Early exit on forced move (nodes == 0) or mate score
+      if (result.nodes == 0 || search::is_mate_score(result.score)) {
         break;
       }
     }
@@ -150,7 +155,7 @@ int main(int argc, char** argv) {
   std::string tb_dir = "/home/alvaro/claude/damas";
   std::string nn_model = "";
   int tb_limit = 7;
-  int max_depth = 8;
+  std::uint64_t max_nodes = 100000;
 
   // Parse arguments
   for (int i = 1; i < argc; ++i) {
@@ -160,16 +165,16 @@ int main(int argc, char** argv) {
                 << "Play a self-play game with search\n\n"
                 << "Options:\n"
                 << "  -h, --help          Show this help message\n"
-                << "  --depth N           Search depth (default: 8)\n"
+                << "  --nodes N           Node limit per move (default: 100000)\n"
                 << "  --model FILE        Neural network model file (.bin)\n"
-                << "  --dtm-path PATH     Tablebase directory (default: /home/alvaro/claude/damas)\n"
+                << "  --tb-path PATH      Tablebase directory (default: /home/alvaro/claude/damas)\n"
                 << "  --no-tb             Disable tablebases\n";
       return 0;
-    } else if (arg == "--depth" && i + 1 < argc) {
-      max_depth = std::atoi(argv[++i]);
+    } else if (arg == "--nodes" && i + 1 < argc) {
+      max_nodes = std::atoll(argv[++i]);
     } else if (arg == "--no-tb") {
       tb_dir = "";
-    } else if (arg == "--dtm-path" && i + 1 < argc) {
+    } else if (arg == "--tb-path" && i + 1 < argc) {
       tb_dir = argv[++i];
     } else if (arg == "--model" && i + 1 < argc) {
       nn_model = argv[++i];
@@ -177,7 +182,7 @@ int main(int argc, char** argv) {
   }
 
   std::cout << "=== Torquemada Self-Play Game ===\n";
-  std::cout << "Search depth: " << max_depth << "\n";
+  std::cout << "Node limit: " << max_nodes << "\n";
   std::cout << "Tablebases: " << (tb_dir.empty() ? "disabled" : tb_dir) << "\n";
   std::cout << "Evaluation: " << (nn_model.empty() ? "random" : nn_model) << "\n";
   std::cout << "\n";
@@ -205,7 +210,7 @@ int main(int argc, char** argv) {
     }
 
     // Generate moves
-    std::vector<Move> moves;
+    MoveList moves;
     generateMoves(board, moves);
 
     if (moves.empty()) {
@@ -225,7 +230,7 @@ int main(int argc, char** argv) {
     std::cout << (white_to_move ? "White" : "Black") << " to move\n";
     std::cout << "Searching...\n";
 
-    auto result = searcher.search(board, max_depth, ply);
+    auto result = searcher.search(board, max_nodes, ply);
 
     // Find full move for proper notation
     FullMove bestFullMove = findFullMove(board, result.best_move);

@@ -1,3 +1,10 @@
+// Training data generator for neural network training.
+//
+// NOTE: This program only needs WDL (win/draw/loss) tablebases, NOT DTM
+// (distance-to-mate) tablebases. DTM tables are for optimal play; here we
+// only need WDL to determine game outcomes when positions reach tablebase
+// territory. Do not add DTM preloading or usage here.
+
 #include "core/board.hpp"
 #include "core/movegen.hpp"
 #include "core/notation.hpp"
@@ -8,6 +15,7 @@
 #include <omp.h>
 #include <atomic>
 #include <chrono>
+#include <mutex>
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -21,9 +29,12 @@ struct TrainingPosition {
   int outcome;       // Game outcome from side-to-move perspective: -1, 0, +1
 };
 
+// Fixed-size buffer for positions within a single game (max ~250 positions per game)
+using GamePositions = FixedVector<TrainingPosition, 300>;
+
 // Check if position is quiet (no captures available)
 bool is_quiet(const Board& board) {
-  std::vector<Move> moves;
+  MoveList moves;
   generateMoves(board, moves);
   return moves.empty() || !moves[0].isCapture();
 }
@@ -31,16 +42,16 @@ bool is_quiet(const Board& board) {
 // Generate a single game and collect training positions
 // Returns: outcome from white's perspective at game start (+1 win, 0 draw, -1 loss)
 int play_game(RandomBits& rng, search::Searcher& searcher,
-              CompressedTablebaseManager& tb_mgr,
+              const CompressedTablebaseManager& tb_mgr,
               std::vector<TrainingPosition>& positions,
-              int random_plies, int search_depth) {
+              int random_plies, std::uint64_t max_nodes) {
   Board board;  // Starting position
   int ply = 0;
-  std::vector<TrainingPosition> game_positions;  // Positions from this game
+  GamePositions game_positions;  // Positions from this game (fixed-size, no heap allocation)
 
   // Phase 1: Random opening
   while (ply < random_plies) {
-    std::vector<Move> moves;
+    MoveList moves;
     generateMoves(board, moves);
 
     if (moves.empty()) {
@@ -54,7 +65,7 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
 
   // Phase 2: Play with search until tablebase or game end
   while (true) {
-    std::vector<Move> moves;
+    MoveList moves;
     generateMoves(board, moves);
 
     if (moves.empty()) {
@@ -69,7 +80,7 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
     // Check for tablebase hit (≤7 pieces)
     int piece_count = std::popcount(board.allPieces());
     if (piece_count <= 7 && board.n_reversible == 0) {
-      Value wdl = tb_mgr.lookup_wdl(board);
+      Value wdl = tb_mgr.lookup_wdl_preloaded(board);
       if (wdl != Value::UNKNOWN) {
         int result;
         if (wdl == Value::WIN) result = +1;
@@ -95,7 +106,7 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
     }
 
     // Search for best move
-    auto result = searcher.search(board, search_depth);
+    auto result = searcher.search_nodes(board, max_nodes);
     if (result.best_move.from_xor_to == 0) {
       int outcome = (ply % 2 == 0) ? -1 : +1;
       for (auto& pos : game_positions) {
@@ -176,7 +187,7 @@ int main(int argc, char** argv) {
   std::string tb_dir = "/home/alvaro/claude/damas";
   std::string output_file = "training_data.h5";
   std::string nn_model = "";  // empty = random eval
-  int search_depth = 8;
+  std::uint64_t max_nodes = 10000;
   int random_plies = 10;
   std::size_t target_positions = 1000;
   int num_threads = omp_get_max_threads();
@@ -189,7 +200,7 @@ int main(int argc, char** argv) {
                 << "Generate training data for neural network\n\n"
                 << "Options:\n"
                 << "  -h, --help          Show this help message\n"
-                << "  --depth N           Search depth (default: 8)\n"
+                << "  --nodes N           Node limit per move (default: 10000)\n"
                 << "  --random-plies N    Random opening moves (default: 10)\n"
                 << "  --tb-path PATH      Tablebase directory (default: /home/alvaro/claude/damas)\n"
                 << "  --output FILE       Output HDF5 file (default: training_data.h5)\n"
@@ -199,8 +210,8 @@ int main(int argc, char** argv) {
       return 0;
     } else if (arg == "--model" && i + 1 < argc) {
       nn_model = argv[++i];
-    } else if (arg == "--depth" && i + 1 < argc) {
-      search_depth = std::atoi(argv[++i]);
+    } else if (arg == "--nodes" && i + 1 < argc) {
+      max_nodes = std::atoll(argv[++i]);
     } else if (arg == "--random-plies" && i + 1 < argc) {
       random_plies = std::atoi(argv[++i]);
     } else if (arg == "--tb-path" && i + 1 < argc) {
@@ -226,7 +237,7 @@ int main(int argc, char** argv) {
   std::cout << "Threads: " << num_threads << "\n";
   std::cout << "RNG base seed: " << base_seed << "\n";
   std::cout << "Random opening plies: " << random_plies << "\n";
-  std::cout << "Search depth: " << search_depth << "\n";
+  std::cout << "Node limit: " << max_nodes << "\n";
   std::cout << "Evaluation: " << (nn_model.empty() ? "random" : nn_model) << "\n";
   std::cout << "Tablebases: " << tb_dir << "\n";
   std::cout << "Output: " << output_file << "\n";
@@ -237,8 +248,9 @@ int main(int argc, char** argv) {
   std::atomic<int> num_games{0};
   std::atomic<int> white_wins{0}, black_wins{0}, draws{0};
 
-  // Shared WDL tablebase manager
-  CompressedTablebaseManager tb_mgr(tb_dir);
+  // Shared, preloaded WDL tablebase manager (read-only after preload)
+  CompressedTablebaseManager tb_wdl(tb_dir);
+  tb_wdl.preload(7);
 
   // Progress reporting
   std::atomic<double> last_report_time{0.0};
@@ -246,23 +258,28 @@ int main(int argc, char** argv) {
   // Thread-local storage for positions
   std::vector<std::vector<TrainingPosition>> thread_positions(num_threads);
 
+  // Mutex for merging thread-local positions into shared storage
+  std::mutex merge_mutex;
+  std::vector<TrainingPosition> all_positions;
+  // Pre-reserve to avoid reallocations (estimate ~30 positions per game)
+  all_positions.reserve(target_positions + target_positions / 10);
+
   auto start_time = std::chrono::steady_clock::now();
 
   #pragma omp parallel
   {
     int tid = omp_get_thread_num();
 
-    // Each thread gets its own RNG and searcher, but shares DTM manager
-    // Use small TT (8MB) since games are short
+    // Each thread gets its own RNG and searcher, sharing preloaded WDL tablebases
     RandomBits rng(base_seed + tid * 0x9e3779b97f4a7c15ULL);
-    search::Searcher searcher(tb_dir, 7, 6, nn_model);
-    searcher.set_tt_size(8);
+    search::Searcher searcher(&tb_wdl, nullptr, 7, 0, nn_model);
+    searcher.set_tt_size(32);
 
     auto& local_positions = thread_positions[tid];
 
     while (total_positions.load(std::memory_order_relaxed) < target_positions) {
       std::size_t before = local_positions.size();
-      int outcome = play_game(rng, searcher, tb_mgr, local_positions, random_plies, search_depth);
+      int outcome = play_game(rng, searcher, tb_wdl, local_positions, random_plies, max_nodes);
       std::size_t added = local_positions.size() - before;
 
       // Update atomic counters
@@ -272,6 +289,16 @@ int main(int argc, char** argv) {
       if (outcome > 0) white_wins.fetch_add(1, std::memory_order_relaxed);
       else if (outcome < 0) black_wins.fetch_add(1, std::memory_order_relaxed);
       else draws.fetch_add(1, std::memory_order_relaxed);
+
+      // Periodically flush local positions to shared storage to avoid memory pressure
+      if (local_positions.size() >= 10000) {
+        std::lock_guard<std::mutex> lock(merge_mutex);
+        all_positions.insert(all_positions.end(),
+                             std::make_move_iterator(local_positions.begin()),
+                             std::make_move_iterator(local_positions.end()));
+        local_positions.clear();
+        local_positions.reserve(10000);  // Keep reasonable capacity
+      }
 
       // Progress report (any thread, every 10 seconds)
       auto now = std::chrono::steady_clock::now();
@@ -292,17 +319,12 @@ int main(int argc, char** argv) {
   auto end_time = std::chrono::steady_clock::now();
   double total_secs = std::chrono::duration<double>(end_time - start_time).count();
 
-  // Merge all thread-local positions
-  std::vector<TrainingPosition> all_positions;
-  std::size_t total_size = 0;
-  for (const auto& tp : thread_positions) {
-    total_size += tp.size();
-  }
-  all_positions.reserve(total_size);
+  // Merge remaining thread-local positions
   for (auto& tp : thread_positions) {
     all_positions.insert(all_positions.end(),
                          std::make_move_iterator(tp.begin()),
                          std::make_move_iterator(tp.end()));
+    tp.clear();
   }
 
   // Stats

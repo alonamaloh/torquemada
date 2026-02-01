@@ -39,6 +39,33 @@ struct Move {
   }
 };
 
+// Fixed-size vector to avoid heap allocations in hot paths
+template<typename T, int MaxSize>
+struct FixedVector {
+  using value_type = T;
+  using iterator = T*;
+  using const_iterator = const T*;
+
+  T data[MaxSize];
+  int count = 0;
+
+  T const& operator[](std::size_t i) const { return data[i]; }
+  T& operator[](std::size_t i) { return data[i]; }
+
+  void push_back(const T& val) { data[count++] = val; }
+
+  void clear() { count = 0; }
+  bool empty() const { return count == 0; }
+  int size() const { return count; }
+
+  iterator begin() { return data; }
+  iterator end() { return data + count; }
+  const_iterator begin() const { return data; }
+  const_iterator end() const { return data + count; }
+};
+
+// Move list with fixed capacity (256 is an upper bound for legal moves)
+using MoveList = FixedVector<Move, 256>;
 
 // Board state - white is always the side to move
 // After each move, the board is flipped so white remains to move
