@@ -1,6 +1,6 @@
 CXX = g++
-CXXFLAGS = -std=c++20 -O3 -march=native -Wall -Wextra -mbmi2 -mavx2 -fopenmp
-LDFLAGS = -fopenmp
+CXXFLAGS = -std=c++20 -O3 -march=native -Wall -Wextra -mbmi2 -mavx2
+LDFLAGS =
 
 # HDF5 flags
 HDF5_CFLAGS = -I/usr/include/hdf5/serial
@@ -53,7 +53,7 @@ $(BINDIR)/selfplay: $(ALL_OBJS) $(OBJDIR)/selfplay.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 $(BINDIR)/generate_training: $(ALL_OBJS) $(OBJDIR)/generate_training.o
-	$(CXX) $(LDFLAGS) -o $@ $^ $(HDF5_LDFLAGS)
+	$(CXX) $(LDFLAGS) -fopenmp -o $@ $^ $(HDF5_LDFLAGS)
 
 $(BINDIR)/test_nn: $(CORE_OBJS) $(NN_OBJS) $(OBJDIR)/test_nn.o
 	$(CXX) $(LDFLAGS) -o $@ $^
@@ -79,7 +79,7 @@ $(OBJDIR)/selfplay.o: selfplay.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR)/generate_training.o: generate_training.cpp
-	$(CXX) $(CXXFLAGS) $(HDF5_CFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -fopenmp $(HDF5_CFLAGS) -c $< -o $@
 
 $(OBJDIR)/test_nn.o: test_nn.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
