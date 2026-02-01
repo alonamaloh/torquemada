@@ -294,9 +294,6 @@ void Searcher::extract_pv(const Board& board, std::vector<Move>& pv, int max_dep
 }
 
 SearchResult Searcher::search(const Board& board, int depth) {
-  stats_ = SearchStats{};
-  tt_.new_search();
-
   SearchResult result;
   result.depth = depth;
 
@@ -379,6 +376,9 @@ SearchResult Searcher::search(const Board& board, int depth) {
 }
 
 SearchResult Searcher::search_iterative(const Board& board, int max_depth) {
+  stats_ = SearchStats{};
+  tt_.new_search();
+
   SearchResult result;
 
   for (int depth = 1; depth <= max_depth; ++depth) {
@@ -395,6 +395,9 @@ SearchResult Searcher::search_iterative(const Board& board, int max_depth) {
 }
 
 SearchResult Searcher::search_nodes(const Board& board, std::uint64_t max_nodes) {
+  stats_ = SearchStats{};
+  tt_.new_search();
+
   SearchResult result;
 
   for (int depth = 1; depth <= 100; ++depth) {  // Max depth 100 as safety limit
