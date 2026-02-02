@@ -124,8 +124,15 @@ function updateLoadingStatus(message) {
 function setupEventHandlers() {
     // New game button
     const newGameBtn = document.getElementById('btn-new-game');
+    const sideSelect = document.getElementById('select-side');
     if (newGameBtn) {
-        newGameBtn.addEventListener('click', () => gameController.newGame());
+        newGameBtn.addEventListener('click', async () => {
+            await gameController.newGame();
+            // Sync UI with controller's humanColor (may have changed if engine was white)
+            if (sideSelect) {
+                sideSelect.value = gameController.humanColor;
+            }
+        });
     }
 
     // Undo button
