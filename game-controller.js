@@ -370,9 +370,6 @@ export class GameController {
         // Format PV for display
         const pvStr = result.pv && result.pv.length > 0 ? result.pv.join(' ') : '';
 
-        // Update status with basic info
-        this._updateStatus(`Depth: ${result.depth || '?'}, Score: ${scoreStr}, Nodes: ${result.nodes || '?'}`);
-
         // Call search info callback with full details
         if (this.onSearchInfo) {
             this.onSearchInfo({
