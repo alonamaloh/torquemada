@@ -23,7 +23,10 @@ struct FullMove {
 std::size_t generateMoves(const Board& board, MoveList& moves);
 
 // Generate all legal moves with full path information for notation.
-std::size_t generateFullMoves(const Board& board, std::vector<FullMove>& moves);
+// If keepAllPaths is true, keeps all paths even for moves with same from_xor_to/captures.
+// This is useful for UI where the user should be able to choose the capture order.
+std::size_t generateFullMoves(const Board& board, std::vector<FullMove>& moves,
+                              bool keepAllPaths = false);
 
 // Perft: count leaf nodes at given depth (for testing/debugging)
 uint64_t perft(const Board& board, int depth);

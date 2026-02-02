@@ -37,11 +37,12 @@ int main(int argc, char** argv) {
     const int iterations = 100000;
 
     auto start = std::chrono::high_resolution_clock::now();
-    volatile int dummy = 0;
+    int dummy = 0;
     for (int i = 0; i < iterations; ++i) {
         dummy += model.evaluate(board);
     }
     auto end = std::chrono::high_resolution_clock::now();
+    (void) dummy;
 
     double elapsed = std::chrono::duration<double>(end - start).count();
     double evals_per_sec = iterations / elapsed;

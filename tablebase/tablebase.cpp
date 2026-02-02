@@ -1,5 +1,11 @@
 #include "tablebase.hpp"
+
+#ifdef WASM_BUILD
+#include "../web/src/wasm/pext_polyfill.hpp"
+#else
 #include <x86intrin.h>
+#endif
+
 #include <fstream>
 #include <sstream>
 #include <iomanip>

@@ -108,4 +108,14 @@ $(PIC_OBJDIR)/dtm_sampler_py.o: dtm_sampler_py.cpp dtm_sampler.hpp
 clean:
 	rm -rf $(OBJDIR) $(PIC_OBJDIR) $(BINDIR) dtm_sampler*.so
 
-.PHONY: all dirs clean python pic_dirs
+# WebAssembly build
+wasm:
+	$(MAKE) -C web -f Makefile.wasm
+
+wasm-clean:
+	$(MAKE) -C web -f Makefile.wasm clean
+
+wasm-debug:
+	$(MAKE) -C web -f Makefile.wasm debug
+
+.PHONY: all dirs clean python pic_dirs wasm wasm-clean wasm-debug

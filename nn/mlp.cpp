@@ -1,5 +1,11 @@
 #include "mlp.hpp"
+
+#ifdef WASM_BUILD
+#include <wasm_simd128.h>
+#else
 #include <immintrin.h>
+#endif
+
 #include <cmath>
 #include <fstream>
 #include <stdexcept>
@@ -82,6 +88,93 @@ void MLP::board_to_features(const Board& board, float* features) const {
     }
 }
 
+#ifdef WASM_BUILD
+
+// WASM SIMD128 implementation (128-bit vectors, 4 floats at a time)
+void MLP::matvec_avx(const float* weights, const float* bias,
+                     const float* input, float* output,
+                     std::uint32_t in_size, std::uint32_t out_size) {
+    // Process 4 output elements at a time
+    std::uint32_t out_vec = out_size & ~3u;
+
+    for (std::uint32_t o = 0; o < out_vec; o += 4) {
+        v128_t acc0 = wasm_f32x4_splat(0.0f);
+        v128_t acc1 = wasm_f32x4_splat(0.0f);
+        v128_t acc2 = wasm_f32x4_splat(0.0f);
+        v128_t acc3 = wasm_f32x4_splat(0.0f);
+
+        // Process input in chunks of 4
+        std::uint32_t in_vec = in_size & ~3u;
+        for (std::uint32_t i = 0; i < in_vec; i += 4) {
+            v128_t in_v = wasm_v128_load(&input[i]);
+
+            // Each row of weights - use fma (multiply-add)
+            acc0 = wasm_f32x4_add(acc0, wasm_f32x4_mul(wasm_v128_load(&weights[(o + 0) * in_size + i]), in_v));
+            acc1 = wasm_f32x4_add(acc1, wasm_f32x4_mul(wasm_v128_load(&weights[(o + 1) * in_size + i]), in_v));
+            acc2 = wasm_f32x4_add(acc2, wasm_f32x4_mul(wasm_v128_load(&weights[(o + 2) * in_size + i]), in_v));
+            acc3 = wasm_f32x4_add(acc3, wasm_f32x4_mul(wasm_v128_load(&weights[(o + 3) * in_size + i]), in_v));
+        }
+
+        // Horizontal sum for each accumulator
+        auto hsum = [](v128_t v) -> float {
+            // v = [a, b, c, d]
+            // Step 1: shuffle to get [c, d, ?, ?] and add
+            v128_t hi = wasm_i32x4_shuffle(v, v, 2, 3, 0, 1);  // [c, d, a, b]
+            v = wasm_f32x4_add(v, hi);  // [a+c, b+d, ?, ?]
+            // Step 2: shuffle to get [b+d, ?, ?, ?] and add
+            hi = wasm_i32x4_shuffle(v, v, 1, 0, 3, 2);  // [b+d, a+c, ?, ?]
+            v = wasm_f32x4_add(v, hi);  // [a+b+c+d, ?, ?, ?]
+            return wasm_f32x4_extract_lane(v, 0);
+        };
+
+        float sums[4] = {
+            hsum(acc0), hsum(acc1), hsum(acc2), hsum(acc3)
+        };
+
+        // Handle remaining input elements
+        for (std::uint32_t i = in_vec; i < in_size; ++i) {
+            float in_val = input[i];
+            for (int k = 0; k < 4; ++k) {
+                sums[k] += weights[(o + k) * in_size + i] * in_val;
+            }
+        }
+
+        // Add bias and store
+        for (int k = 0; k < 4; ++k) {
+            output[o + k] = sums[k] + bias[o + k];
+        }
+    }
+
+    // Handle remaining output elements (scalar)
+    for (std::uint32_t o = out_vec; o < out_size; ++o) {
+        v128_t acc = wasm_f32x4_splat(0.0f);
+
+        std::uint32_t in_vec = in_size & ~3u;
+        for (std::uint32_t i = 0; i < in_vec; i += 4) {
+            v128_t w = wasm_v128_load(&weights[o * in_size + i]);
+            v128_t in_v = wasm_v128_load(&input[i]);
+            acc = wasm_f32x4_add(acc, wasm_f32x4_mul(w, in_v));
+        }
+
+        // Horizontal sum
+        v128_t hi = wasm_i32x4_shuffle(acc, acc, 2, 3, 0, 1);
+        acc = wasm_f32x4_add(acc, hi);
+        hi = wasm_i32x4_shuffle(acc, acc, 1, 0, 3, 2);
+        acc = wasm_f32x4_add(acc, hi);
+        float sum = wasm_f32x4_extract_lane(acc, 0);
+
+        // Handle remaining input elements
+        for (std::uint32_t i = in_vec; i < in_size; ++i) {
+            sum += weights[o * in_size + i] * input[i];
+        }
+
+        output[o] = sum + bias[o];
+    }
+}
+
+#else
+
+// AVX2 implementation (256-bit vectors, 8 floats at a time)
 void MLP::matvec_avx(const float* weights, const float* bias,
                      const float* input, float* output,
                      std::uint32_t in_size, std::uint32_t out_size) {
@@ -175,7 +268,19 @@ void MLP::matvec_avx(const float* weights, const float* bias,
     }
 }
 
+#endif // WASM_BUILD
+
 void MLP::relu_avx(float* data, std::uint32_t size) {
+#ifdef WASM_BUILD
+    v128_t zero = wasm_f32x4_splat(0.0f);
+
+    std::uint32_t vec_size = size & ~3u;
+    for (std::uint32_t i = 0; i < vec_size; i += 4) {
+        v128_t v = wasm_v128_load(&data[i]);
+        v = wasm_f32x4_max(v, zero);
+        wasm_v128_store(&data[i], v);
+    }
+#else
     __m256 zero = _mm256_setzero_ps();
 
     std::uint32_t vec_size = size & ~7u;
@@ -184,6 +289,7 @@ void MLP::relu_avx(float* data, std::uint32_t size) {
         v = _mm256_max_ps(v, zero);
         _mm256_storeu_ps(&data[i], v);
     }
+#endif
 
     for (std::uint32_t i = vec_size; i < size; ++i) {
         if (data[i] < 0.0f) data[i] = 0.0f;

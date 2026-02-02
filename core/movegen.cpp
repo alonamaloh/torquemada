@@ -372,7 +372,8 @@ uint64_t perft(const Board& board, int depth) {
   return nodes;
 }
 
-std::size_t generateFullMoves(const Board& board, std::vector<FullMove>& moves) {
+std::size_t generateFullMoves(const Board& board, std::vector<FullMove>& moves,
+                              bool keepAllPaths) {
   moves.clear();
   FullMoveCollector collector(moves);
 
@@ -389,20 +390,23 @@ std::size_t generateFullMoves(const Board& board, std::vector<FullMove>& moves) 
     });
 
     // Deduplicate by Move (keep first path for each unique move)
-    std::vector<FullMove> unique;
-    for (auto& m : moves) {
-      bool found = false;
-      for (const auto& u : unique) {
-        if (u.move == m.move) {
-          found = true;
-          break;
+    // Skip deduplication if keepAllPaths is true (for UI purposes)
+    if (!keepAllPaths) {
+      std::vector<FullMove> unique;
+      for (auto& m : moves) {
+        bool found = false;
+        for (const auto& u : unique) {
+          if (u.move == m.move) {
+            found = true;
+            break;
+          }
+        }
+        if (!found) {
+          unique.push_back(std::move(m));
         }
       }
-      if (!found) {
-        unique.push_back(std::move(m));
-      }
+      moves = std::move(unique);
     }
-    moves = std::move(unique);
   }
 
   // Quiet moves (only if no captures)
