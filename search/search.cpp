@@ -339,7 +339,7 @@ void Searcher::extract_pv(const Board& board, std::vector<Move>& pv, int max_dep
   int seen_count = 0;
 
   for (int i = 0; i < max_depth && seen_count < 64; ++i) {
-    std::uint64_t key = pos.hash();
+    std::uint64_t key = pos.position_hash();  // Use position_hash to match TT key
 
     // Check for cycle
     for (int j = 0; j < seen_count; ++j) {

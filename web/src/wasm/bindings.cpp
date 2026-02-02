@@ -515,7 +515,9 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
     if (has_callback) {
         searcher.set_progress_callback([&](const search::SearchResult& sr) {
             val update = buildSearchResultVal(sr, jsboard.board, jsboard.white_to_move);
-            progress_callback(update);
+            // Use call<void> to indicate we don't care about the return value
+            // This avoids issues with undefined return values from JS
+            progress_callback.call<void>("call", val::null(), update);
         });
     }
 
