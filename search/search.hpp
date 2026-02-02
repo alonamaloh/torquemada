@@ -224,6 +224,10 @@ private:
   // History heuristic: indexed by [from_sq][to_sq]
   // Lower values are better (moves that cause cutoffs get decremented)
   std::int16_t history_[32][32] = {};
+
+  // Position hash history for repetition detection (indexed by ply)
+  // Stores position_hash() (without n_reversible) for each position in the search path
+  std::uint64_t pos_hash_history_[MAX_PLY] = {};
 };
 
 } // namespace search

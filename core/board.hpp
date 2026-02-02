@@ -86,8 +86,9 @@ struct Board {
   Bb allPieces() const { return white | black; }
   Bb empty() const { return ~allPieces(); }
 
-  // 64-bit hash using arithmetic mixing
-  std::uint64_t hash() const {
+  // 64-bit hash of the position only (without n_reversible)
+  // Used for repetition detection where we care about piece placement
+  std::uint64_t position_hash() const {
     std::uint64_t h = white * 0x9d82c4a44a2de231ull;
     h ^= h >> 32;
     h += black;
@@ -96,6 +97,13 @@ struct Board {
     h += kings;
     h *= 0xb3fc4d1b1770e375ull;
     h ^= h >> 32;
+    return h;
+  }
+
+  // 64-bit hash including n_reversible (for TT keying)
+  // This makes positions with different halfmove clocks distinct in TT
+  std::uint64_t hash() const {
+    std::uint64_t h = position_hash();
     h += n_reversible;
     h *= 0x3a2a8392d61061d7ull;
     h ^= h >> 32;

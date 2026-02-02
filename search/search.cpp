@@ -134,23 +134,43 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
 
   stats_.nodes++;
 
+  // Store position hash for repetition detection (hash without n_reversible)
+  std::uint64_t pos_hash = board.position_hash();
+  if (ply < MAX_PLY) {
+    pos_hash_history_[ply] = pos_hash;
+  }
+
+  // Check for repetition: scan back through the search path
+  // Start 4 plies back (minimum for a repetition), step by 2, up to n_reversible plies
+  // Note: we can only have a repetition if no irreversible move was made
+  if (board.n_reversible >= 4 && ply >= 4) {
+    int max_back = std::min(static_cast<int>(board.n_reversible), ply);
+    for (int back = 4; back <= max_back; back += 2) {
+      if (pos_hash_history_[ply - back] == pos_hash) {
+        // Found a repetition - return draw score
+        return effective_draw_score(ply);
+      }
+    }
+  }
+
   // Check for tablebase hit (before TT to get exact values)
   int tb_score;
   if (probe_tb(board, ply, tb_score)) {
     return tb_score;
   }
 
-  // Probe transposition table
-  std::uint64_t key = board.hash();
+  // Probe transposition table (using position hash without n_reversible)
+  std::uint64_t key = pos_hash;
   TTEntry tt_entry;
   CompactMove tt_compact_move = 0;
 
   if (tt_.probe(key, tt_entry)) {
     stats_.tt_hits++;
-    tt_compact_move = tt_entry.best_move;
+    tt_compact_move = tt_entry.best_move;  // Always use best move for ordering
 
-    // Can we use the TT score?
-    if (tt_entry.depth >= depth) {
+    // Only use TT scores when n_reversible == 0 to avoid search instability
+    // from history-dependent effects (repetition detection, score scaling)
+    if (board.n_reversible == 0 && tt_entry.depth >= depth) {
       int tt_score = tt_entry.score;
 
       switch (tt_entry.flag) {
@@ -190,7 +210,16 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   // If captures exist, continue searching (quiescence)
   bool has_captures = moves[0].isCapture();
   if (depth <= 0 && !has_captures) {
-    return eval_(board, ply);
+    int score = eval_(board, ply);
+    // Scale score towards draw based on n_reversible to encourage progress
+    // The more reversible moves without progress, the smaller the score
+    // Scale factor: (256 - n_reversible) / 256, capped at 50 reversible moves
+    if (board.n_reversible > 0 && !is_special_score(score)) {
+      int scale = std::max(256 - static_cast<int>(board.n_reversible) * 4, 56);  // Min 56/256 ~= 22%
+      int draw = effective_draw_score(ply);
+      score = draw + (score - draw) * scale / 256;
+    }
+    return score;
   }
 
   // Move ordering: TT move first, then killers
@@ -283,15 +312,22 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   }
 
   // Store in transposition table
-  // For special scores (mate/TB), only store bounds, not exact values,
-  // because these scores are relative to the root and may not be valid
-  // when accessed from a different search path
-  TTFlag store_flag = flag;
-  if (is_special_score(best_score) && flag == TTFlag::EXACT) {
-    // Convert exact to the appropriate bound
-    store_flag = (best_score > 0) ? TTFlag::LOWER_BOUND : TTFlag::UPPER_BOUND;
+  // When n_reversible > 0, store with a trivial bound (>= -INF) so the best move
+  // is preserved for ordering, but the score won't cause any cutoffs.
+  // This avoids search instability from history-dependent effects.
+  if (board.n_reversible == 0) {
+    // For special scores (mate/TB), only store bounds, not exact values,
+    // because these scores are relative to the root and may not be valid
+    // when accessed from a different search path.
+    TTFlag store_flag = flag;
+    if (is_special_score(best_score) && flag == TTFlag::EXACT) {
+      store_flag = (best_score > 0) ? TTFlag::LOWER_BOUND : TTFlag::UPPER_BOUND;
+    }
+    tt_.store(key, best_score, depth, store_flag, best_move);
+  } else {
+    // Store with trivial lower bound - preserves best move for ordering
+    tt_.store(key, -SCORE_INFINITE, depth, TTFlag::LOWER_BOUND, best_move);
   }
-  tt_.store(key, best_score, depth, store_flag, best_move);
 
   return best_score;
 }
@@ -337,6 +373,9 @@ SearchResult Searcher::search_root(const Board& board, MoveList& moves, int dept
   SearchResult result;
   result.depth = depth;
 
+  // Store root position hash for repetition detection
+  pos_hash_history_[0] = board.position_hash();
+
   int alpha = -SCORE_INFINITE;
   int beta = SCORE_INFINITE;
 
@@ -378,6 +417,7 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
   hard_node_limit_ = (max_nodes > 0) ? max_nodes * 5 : 0;
   std::memset(killers_, 0, sizeof(killers_));
   std::memset(history_, 0, sizeof(history_));
+  std::memset(pos_hash_history_, 0, sizeof(pos_hash_history_));
 
   SearchResult result;
 
