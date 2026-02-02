@@ -489,7 +489,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
     }
 
     // Set up evaluation function with small random noise for variety
-    auto eval_func = [piece_count](const Board& board, int ply) -> int {
+    auto eval_func = [piece_count](const Board& board, int /*ply*/) -> int {
         int score;
         if (piece_count <= 7 && g_dtm_nn_model) {
             score = g_dtm_nn_model->evaluate(board, 0);

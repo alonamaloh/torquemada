@@ -6,7 +6,7 @@ EMCC = emcc
 EMCXX = em++
 
 # C++ standard and optimization flags
-WASM_CXXFLAGS = -std=c++20 -O3 -DWASM_BUILD -Wall -Wextra
+WASM_CXXFLAGS = -std=c++20 -O3 -DWASM_BUILD -Wall -Wextra -Werror
 
 # SIMD support (WASM SIMD128)
 WASM_CXXFLAGS += -msimd128
