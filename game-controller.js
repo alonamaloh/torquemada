@@ -260,7 +260,7 @@ export class GameController {
      * Make a move (human or engine)
      * @param {boolean} triggerAutoPlay - whether to auto-play engine's response
      */
-    async _makeMove(move, triggerAutoPlay = true) {
+    async _makeMove(move, triggerAutoPlay = true, animate = false) {
         // Clear redo stack since we're making a new move
         this.redoStack = [];
 
@@ -273,8 +273,8 @@ export class GameController {
         });
         this.currentIndex = this.history.length - 1;
 
-        // Animate multi-capture moves step by step
-        if (move.path && move.path.length > 2) {
+        // Animate multi-capture moves step by step (only for engine moves)
+        if (animate && move.path && move.path.length > 2) {
             // Show each jump with a delay
             for (let i = 1; i < move.path.length; i++) {
                 const partialPath = move.path.slice(0, i + 1);
@@ -357,7 +357,7 @@ export class GameController {
                 // Reset thinking state BEFORE making move, so recursive engine moves can proceed
                 this.isThinking = false;
                 if (this.onThinkingEnd) this.onThinkingEnd();
-                await this._makeMove(result.bestMove, this._triggerAutoPlay);
+                await this._makeMove(result.bestMove, this._triggerAutoPlay, true);  // animate=true for engine moves
                 return;  // _makeMove handles the next engine move if needed
             } else {
                 console.warn('No valid bestMove in result:', result.bestMove);
