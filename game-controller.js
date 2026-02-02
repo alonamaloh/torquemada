@@ -19,7 +19,7 @@ export class GameController {
 
         // Settings
         this.humanColor = 'white';   // 'white', 'black', or 'both' (human vs human)
-        this.engineDepth = 20;
+        this.engineDepth = 100;
         this.engineNodes = 100000;
         this.autoPlay = true;        // Engine plays automatically
 
