@@ -192,15 +192,6 @@ function setupEventHandlers() {
         flipBtn.addEventListener('click', () => gameController.flipBoard());
     }
 
-    // Engine move button
-    const engineBtn = document.getElementById('btn-engine-move');
-    if (engineBtn) {
-        engineBtn.addEventListener('click', async () => {
-            await gameController.engineMoveNow();
-            updateModeButtons();
-        });
-    }
-
     // Mode toggle buttons
     const btnEngineWhite = document.getElementById('btn-engine-white');
     const btnEngineBlack = document.getElementById('btn-engine-black');
@@ -225,23 +216,19 @@ function setupEventHandlers() {
         });
     }
 
-    // Depth setting
-    const depthInput = document.getElementById('input-depth');
-    if (depthInput) {
-        depthInput.addEventListener('change', (e) => {
-            const depth = parseInt(e.target.value) || 20;
-            const nodes = gameController.engineNodes;
-            gameController.setEngineParams(depth, nodes);
+    // Strength buttons (Fast/Slow)
+    const fastBtn = document.getElementById('btn-nodes-fast');
+    const slowBtn = document.getElementById('btn-nodes-slow');
+    if (fastBtn && slowBtn) {
+        fastBtn.addEventListener('click', () => {
+            gameController.setEngineParams(100, 100000);
+            fastBtn.classList.add('active');
+            slowBtn.classList.remove('active');
         });
-    }
-
-    // Nodes setting
-    const nodesInput = document.getElementById('input-nodes');
-    if (nodesInput) {
-        nodesInput.addEventListener('change', (e) => {
-            const nodes = parseInt(e.target.value) || 100000;
-            const depth = gameController.engineDepth;
-            gameController.setEngineParams(depth, nodes);
+        slowBtn.addEventListener('click', () => {
+            gameController.setEngineParams(100, 1000000);
+            slowBtn.classList.add('active');
+            fastBtn.classList.remove('active');
         });
     }
 
@@ -249,22 +236,6 @@ function setupEventHandlers() {
     const downloadBtn = document.getElementById('btn-download-tb');
     if (downloadBtn) {
         downloadBtn.addEventListener('click', showDownloadDialog);
-    }
-
-    // Move input
-    const moveInput = document.getElementById('input-move');
-    if (moveInput) {
-        moveInput.addEventListener('keypress', async (e) => {
-            if (e.key === 'Enter') {
-                const success = await gameController.inputMove(moveInput.value);
-                if (success) {
-                    moveInput.value = '';
-                } else {
-                    moveInput.classList.add('error');
-                    setTimeout(() => moveInput.classList.remove('error'), 500);
-                }
-            }
-        });
     }
 }
 
@@ -384,11 +355,6 @@ function setThinkingIndicator(thinking) {
     const indicator = document.getElementById('thinking-indicator');
     if (indicator) {
         indicator.style.display = thinking ? 'inline' : 'none';
-    }
-
-    const engineBtn = document.getElementById('btn-engine-move');
-    if (engineBtn) {
-        engineBtn.disabled = thinking;
     }
 
     // Show/hide search info panel

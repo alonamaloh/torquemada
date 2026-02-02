@@ -64,28 +64,24 @@
                 <!-- Engine controls -->
                 <div class="control-group">
                     <h3>Engine</h3>
-                    <button id="btn-engine-move" class="btn btn-primary">Engine Move</button>
                     <div class="toggle-group">
                         <button id="btn-engine-white" class="toggle-btn">Engine White</button>
                         <button id="btn-engine-black" class="toggle-btn active">Engine Black</button>
                         <button id="btn-two-player" class="toggle-btn">2 Player</button>
                     </div>
                     <div class="input-group">
-                        <label for="input-depth">Depth:</label>
-                        <input type="number" id="input-depth" value="20" min="1" max="50">
-                    </div>
-                    <div class="input-group">
-                        <label for="input-nodes">Nodes:</label>
-                        <input type="number" id="input-nodes" value="100000" min="1000" step="10000">
+                        <label>Strength:</label>
+                        <div class="btn-group">
+                            <button id="btn-nodes-fast" class="btn btn-small active">Fast</button>
+                            <button id="btn-nodes-slow" class="btn btn-small">Slow</button>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Move input -->
+                <!-- Move history -->
                 <div class="control-group">
-                    <h3>Move Input</h3>
-                    <div class="input-group">
-                        <input type="text" id="input-move" placeholder="e.g., 9-13 or 9x18">
-                    </div>
+                    <h3>Move History</h3>
+                    <div id="move-history" class="move-history"></div>
                 </div>
 
                 <!-- Tablebases -->
@@ -93,12 +89,6 @@
                     <h3>Tablebases</h3>
                     <button id="btn-download-tb" class="btn">Download Tablebases</button>
                     <p class="help-text">5-piece DTM tables (~140 MB)</p>
-                </div>
-
-                <!-- Move history -->
-                <div class="control-group">
-                    <h3>Move History</h3>
-                    <div id="move-history" class="move-history"></div>
                 </div>
             </section>
         </main>

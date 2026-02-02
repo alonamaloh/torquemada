@@ -224,6 +224,22 @@ body {
     border-color: var(--accent-hover);
 }
 
+.btn-small {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.85rem;
+    margin: 0;
+}
+
+.btn-small.active {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.btn-group {
+    display: flex;
+    gap: 0.25rem;
+}
+
 /* Input groups */
 .input-group {
     margin: 0.5rem 0;
