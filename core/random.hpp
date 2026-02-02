@@ -1,7 +1,6 @@
 #pragma once
 #include <cstdint>
 #include <limits>
-#include <xmmintrin.h>
 
 inline std::uint64_t avalanche(std::uint64_t x) {
   unsigned __int128 tmp;
