@@ -230,12 +230,54 @@ async function exitEditMode() {
 }
 
 /**
+ * Get the piece type at a given square
+ */
+function getPieceAt(square) {
+    const bit = 1 << (square - 1);
+    const isWhite = (editBoard.white & bit) !== 0;
+    const isBlack = (editBoard.black & bit) !== 0;
+    const isKing = (editBoard.kings & bit) !== 0;
+
+    if (isWhite && isKing) return 'white-king';
+    if (isWhite) return 'white-man';
+    if (isBlack && isKing) return 'black-king';
+    if (isBlack) return 'black-man';
+    return 'empty';
+}
+
+/**
+ * Rotate to the next piece type
+ */
+function nextPieceType(current) {
+    const order = ['empty', 'white-man', 'white-king', 'black-man', 'black-king'];
+    const idx = order.indexOf(current);
+    return order[(idx + 1) % order.length];
+}
+
+/**
+ * Update the piece selector UI to reflect current selection
+ */
+function updatePieceSelector() {
+    document.querySelectorAll('.piece-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.piece === editPieceType);
+    });
+}
+
+/**
  * Handle board click in edit mode
  */
 function handleEditClick(square) {
     if (!editMode || square < 1 || square > 32) return;
 
     const bit = 1 << (square - 1);
+
+    // Check if square already has the selected piece type
+    const currentPiece = getPieceAt(square);
+    if (currentPiece === editPieceType) {
+        // Rotate to next piece type
+        editPieceType = nextPieceType(editPieceType);
+        updatePieceSelector();
+    }
 
     // Remove piece from current position
     editBoard.white &= ~bit;
