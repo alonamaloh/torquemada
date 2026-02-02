@@ -74,6 +74,10 @@ struct SearchStats {
 // Returns a score from the perspective of the side to move in the stored board
 using EvalFunc = std::function<int(const Board&, int ply)>;
 
+// Callback for iterative deepening progress updates
+// Called after each depth is completed with the current result
+using SearchProgressCallback = std::function<void(const SearchResult&)>;
+
 // Exception thrown when search is interrupted
 struct SearchInterrupted : std::exception {
   const char* what() const noexcept override { return "search interrupted"; }
@@ -131,6 +135,9 @@ public:
 
   // Set external stop flag (for SIGINT handling)
   void set_stop_flag(std::atomic<bool>* flag) { stop_flag_ = flag; }
+
+  // Set callback for iterative deepening progress updates
+  void set_progress_callback(SearchProgressCallback cb) { progress_callback_ = std::move(cb); }
 
   // Check if search should stop and throw if so
   void check_stop() const {
@@ -204,6 +211,9 @@ private:
 
   // External stop flag (for SIGINT handling)
   std::atomic<bool>* stop_flag_ = nullptr;
+
+  // Progress callback for iterative deepening
+  SearchProgressCallback progress_callback_;
 
   // Hard node limit (0 = no limit)
   std::uint64_t hard_node_limit_ = 0;

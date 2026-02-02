@@ -308,7 +308,13 @@ export class GameController {
 
         try {
             console.log('Starting search with depth:', this.engineDepth, 'nodes:', this.engineNodes);
-            const result = await this.engine.search(this.engineDepth, this.engineNodes);
+
+            // Progress callback for iterative deepening updates
+            const onProgress = (progressResult) => {
+                this._reportSearchInfo(progressResult);
+            };
+
+            const result = await this.engine.search(this.engineDepth, this.engineNodes, onProgress);
             console.log('Search result:', result);
 
             if (result.error) {
@@ -317,35 +323,8 @@ export class GameController {
                 return;
             }
 
-            // Format score for display
-            let scoreStr = '?';
-            if (result.score !== undefined) {
-                if (Math.abs(result.score) > 29000) {
-                    const mateIn = Math.ceil((30000 - Math.abs(result.score)) / 2);
-                    scoreStr = result.score > 0 ? `M${mateIn}` : `-M${mateIn}`;
-                } else {
-                    scoreStr = (result.score / 100).toFixed(2);
-                }
-            }
-
-            // Format PV for display
-            const pvStr = result.pv && result.pv.length > 0 ? result.pv.join(' ') : '';
-
-            // Update status with basic info
-            this._updateStatus(`Depth: ${result.depth || '?'}, Score: ${scoreStr}, Nodes: ${result.nodes || '?'}`);
-
-            // Call search info callback with full details
-            if (this.onSearchInfo) {
-                this.onSearchInfo({
-                    depth: result.depth,
-                    score: result.score,
-                    scoreStr: scoreStr,
-                    nodes: result.nodes,
-                    tbHits: result.tbHits,
-                    pv: result.pv || [],
-                    pvStr: pvStr
-                });
-            }
+            // Report final result
+            this._reportSearchInfo(result);
 
             // Make the move
             if (result.bestMove && result.bestMove.from_xor_to && result.bestMove.from_xor_to !== 0) {
@@ -365,6 +344,41 @@ export class GameController {
         } finally {
             this.isThinking = false;
             if (this.onThinkingEnd) this.onThinkingEnd();
+        }
+    }
+
+    /**
+     * Report search info (used for both progress updates and final result)
+     */
+    _reportSearchInfo(result) {
+        // Format score for display
+        let scoreStr = '?';
+        if (result.score !== undefined) {
+            if (Math.abs(result.score) > 29000) {
+                const mateIn = Math.ceil((30000 - Math.abs(result.score)) / 2);
+                scoreStr = result.score > 0 ? `M${mateIn}` : `-M${mateIn}`;
+            } else {
+                scoreStr = (result.score / 100).toFixed(2);
+            }
+        }
+
+        // Format PV for display
+        const pvStr = result.pv && result.pv.length > 0 ? result.pv.join(' ') : '';
+
+        // Update status with basic info
+        this._updateStatus(`Depth: ${result.depth || '?'}, Score: ${scoreStr}, Nodes: ${result.nodes || '?'}`);
+
+        // Call search info callback with full details
+        if (this.onSearchInfo) {
+            this.onSearchInfo({
+                depth: result.depth,
+                score: result.score,
+                scoreStr: scoreStr,
+                nodes: result.nodes,
+                tbHits: result.tbHits,
+                pv: result.pv || [],
+                pvStr: pvStr
+            });
         }
     }
 

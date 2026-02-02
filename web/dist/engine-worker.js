@@ -93,21 +93,49 @@ function getBoardState() {
     };
 }
 
+// Current search request ID for progress updates
+let currentSearchId = null;
+
 /**
- * Perform search
+ * Perform search with progress updates
  */
-function search(maxDepth, maxNodes) {
+function search(maxDepth, maxNodes, requestId) {
     if (!engine || !board) {
         return { error: 'Engine not ready' };
     }
 
     console.log('Worker: starting search, depth:', maxDepth, 'nodes:', maxNodes);
+    currentSearchId = requestId;
 
     try {
-        // search now returns a plain JS object directly
-        const result = engine.search(board, maxDepth || 20, maxNodes || 0);
+        // Progress callback - sends updates as search progresses
+        const progressCallback = (result) => {
+            if (currentSearchId !== null) {
+                postMessage({
+                    id: currentSearchId,
+                    type: 'searchProgress',
+                    result: {
+                        bestMove: result.best_move,
+                        score: result.score,
+                        depth: result.depth,
+                        nodes: result.nodes,
+                        tbHits: result.tb_hits,
+                        pv: result.pv || []
+                    }
+                });
+            }
+        };
+
+        // Use searchWithCallback if available, otherwise fall back to search
+        let result;
+        if (engine.searchWithCallback) {
+            result = engine.searchWithCallback(board, maxDepth || 20, maxNodes || 0, progressCallback);
+        } else {
+            result = engine.search(board, maxDepth || 20, maxNodes || 0);
+        }
         console.log('Worker: search returned:', result);
 
+        currentSearchId = null;
         return {
             bestMove: result.best_move,
             score: result.score,
@@ -118,6 +146,7 @@ function search(maxDepth, maxNodes) {
         };
     } catch (err) {
         console.error('Worker: search error:', err);
+        currentSearchId = null;
         return { error: err.message || 'Search failed' };
     }
 }
@@ -199,7 +228,7 @@ self.onmessage = function(e) {
                 break;
 
             case 'search':
-                response.result = search(data.maxDepth, data.maxNodes);
+                response.result = search(data.maxDepth, data.maxNodes, id);
                 break;
 
             case 'probeDTM':

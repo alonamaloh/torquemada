@@ -436,6 +436,11 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
       break;  // Return best result from previous depth
     }
 
+    // Call progress callback if set
+    if (progress_callback_) {
+      progress_callback_(result);
+    }
+
     if (verbose_) {
       std::cout << ". depth " << depth << " score " << result.score
                 << " nodes " << result.nodes;
