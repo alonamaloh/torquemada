@@ -174,6 +174,12 @@ function setupEventHandlers() {
         undoBtn.addEventListener('click', () => gameController.undo());
     }
 
+    // Redo button
+    const redoBtn = document.getElementById('btn-redo');
+    if (redoBtn) {
+        redoBtn.addEventListener('click', () => gameController.redo());
+    }
+
     // Flip board button
     const flipBtn = document.getElementById('btn-flip');
     if (flipBtn) {
