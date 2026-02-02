@@ -71,6 +71,7 @@ async function init() {
         // Set up callbacks
         gameController.onMove = (move, board) => {
             updateMoveHistory();
+            updateUndoRedoButtons();
         };
 
         gameController.onGameOver = (winner, reason) => {
@@ -79,10 +80,12 @@ async function init() {
 
         gameController.onThinkingStart = () => {
             setThinkingIndicator(true);
+            updateUndoRedoButtons();
         };
 
         gameController.onThinkingEnd = () => {
             setThinkingIndicator(false);
+            updateUndoRedoButtons();
         };
 
         gameController.onSearchInfo = (info) => {
@@ -96,6 +99,7 @@ async function init() {
         // Set up UI event handlers
         setupEventHandlers();
         updateModeButtons();
+        updateUndoRedoButtons();
 
         // Resize board to fit
         resizeBoard();
@@ -156,6 +160,20 @@ function updateModeButtons() {
 }
 
 /**
+ * Update undo/redo button states
+ */
+function updateUndoRedoButtons() {
+    if (!gameController) return;
+
+    const undoBtn = document.getElementById('btn-undo');
+    const redoBtn = document.getElementById('btn-redo');
+    const { canUndo, canRedo } = gameController.getUndoRedoState();
+
+    if (undoBtn) undoBtn.disabled = !canUndo;
+    if (redoBtn) redoBtn.disabled = !canRedo;
+}
+
+/**
  * Set up UI event handlers
  */
 function setupEventHandlers() {
@@ -165,6 +183,8 @@ function setupEventHandlers() {
         newGameBtn.addEventListener('click', async () => {
             await gameController.newGame();
             updateModeButtons();
+            updateUndoRedoButtons();
+            updateMoveHistory();
         });
     }
 
@@ -174,6 +194,7 @@ function setupEventHandlers() {
         undoBtn.addEventListener('click', async () => {
             await gameController.undo();
             updateMoveHistory();
+            updateUndoRedoButtons();
         });
     }
 
@@ -183,6 +204,7 @@ function setupEventHandlers() {
         redoBtn.addEventListener('click', async () => {
             await gameController.redo();
             updateMoveHistory();
+            updateUndoRedoButtons();
         });
     }
 

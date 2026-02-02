@@ -582,6 +582,17 @@ export class GameController {
     }
 
     /**
+     * Check if undo/redo are available
+     * Returns { canUndo: boolean, canRedo: boolean }
+     */
+    getUndoRedoState() {
+        return {
+            canUndo: this.history.length > 0 && !this.isThinking,
+            canRedo: this.redoStack.length > 0 && !this.isThinking
+        };
+    }
+
+    /**
      * Get DTM for current position
      */
     async getDTM() {
