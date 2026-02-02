@@ -316,12 +316,14 @@ export class GameController {
             this.onMove(move, newBoard);
         }
 
-        // Update legal moves
+        // Update legal moves (also checks for game over)
         await this._updateLegalMoves();
 
-        // Update status
-        const side = newBoard.whiteToMove ? 'White' : 'Black';
-        this._updateStatus(`${side} to move`);
+        // Update status only if game is not over
+        if (!this.gameOver) {
+            const side = newBoard.whiteToMove ? 'White' : 'Black';
+            this._updateStatus(`${side} to move`);
+        }
 
         // If game not over and it's engine's turn, make engine move
         if (triggerAutoPlay && !this.gameOver && this.autoPlay && !this._isHumanTurn(newBoard.whiteToMove)) {
