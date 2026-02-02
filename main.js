@@ -354,16 +354,18 @@ function hideNewGameDialog() {
 async function startNewGame(playAsWhite) {
     hideNewGameDialog();
 
-    // Set the human color (opposite of engine color)
+    // Start the new game first
+    await gameController.newGame();
+
+    // Set the human color after newGame() (which resets it)
     if (playAsWhite) {
-        gameController.humanColor = 'white';
         gameController.boardUI.setFlipped(false);
+        gameController.setHumanColor('white');  // Engine plays black
     } else {
-        gameController.humanColor = 'black';
         gameController.boardUI.setFlipped(true);
+        gameController.setHumanColor('black');  // Engine plays white
     }
 
-    await gameController.newGame();
     updateModeButtons();
     updateUndoRedoButtons();
     updateMoveHistory();
