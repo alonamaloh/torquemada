@@ -171,13 +171,19 @@ function setupEventHandlers() {
     // Undo button
     const undoBtn = document.getElementById('btn-undo');
     if (undoBtn) {
-        undoBtn.addEventListener('click', () => gameController.undo());
+        undoBtn.addEventListener('click', async () => {
+            await gameController.undo();
+            updateMoveHistory();
+        });
     }
 
     // Redo button
     const redoBtn = document.getElementById('btn-redo');
     if (redoBtn) {
-        redoBtn.addEventListener('click', () => gameController.redo());
+        redoBtn.addEventListener('click', async () => {
+            await gameController.redo();
+            updateMoveHistory();
+        });
     }
 
     // Flip board button
@@ -328,13 +334,38 @@ async function showDownloadDialog() {
 
 /**
  * Update move history display
+ * Shows played moves in white, undone moves (redo stack) in gray
  */
 function updateMoveHistory() {
     const historyEl = document.getElementById('move-history');
-    if (historyEl && gameController) {
-        historyEl.textContent = gameController.getGameNotation();
-        historyEl.scrollTop = historyEl.scrollHeight;
+    if (!historyEl || !gameController) return;
+
+    const { history, redo } = gameController.getMoveHistoryForDisplay();
+    const allMoves = [...history, ...redo];
+
+    if (allMoves.length === 0) {
+        historyEl.innerHTML = '';
+        return;
     }
+
+    let html = '';
+    for (let i = 0; i < allMoves.length; i++) {
+        const moveNum = Math.floor(i / 2) + 1;
+        const isRedo = i >= history.length;
+
+        if (i % 2 === 0) {
+            html += `${moveNum}. `;
+        }
+
+        if (isRedo) {
+            html += `<span class="redo-move">${allMoves[i]}</span> `;
+        } else {
+            html += `${allMoves[i]} `;
+        }
+    }
+
+    historyEl.innerHTML = html.trim();
+    historyEl.scrollTop = historyEl.scrollHeight;
 }
 
 /**
