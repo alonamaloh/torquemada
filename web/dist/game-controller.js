@@ -273,6 +273,19 @@ export class GameController {
         });
         this.currentIndex = this.history.length - 1;
 
+        // Animate multi-capture moves step by step
+        if (move.path && move.path.length > 2) {
+            // Show each jump with a delay
+            for (let i = 1; i < move.path.length; i++) {
+                const partialPath = move.path.slice(0, i + 1);
+                this.boardUI.setPartialPath(partialPath);
+                this.boardUI.render();
+                await this._sleep(200);
+            }
+            // Clear partial path before final update
+            this.boardUI.setPartialPath([]);
+        }
+
         // Make the move
         const newBoard = await this.engine.makeMove(move);
         this._updateFromBoard(newBoard);
@@ -297,6 +310,13 @@ export class GameController {
         if (triggerAutoPlay && !this.gameOver && this.autoPlay && !this._isHumanTurn(newBoard.whiteToMove)) {
             await this._engineMove();
         }
+    }
+
+    /**
+     * Sleep helper for animations
+     */
+    _sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**
