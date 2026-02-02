@@ -13,6 +13,7 @@ export class GameController {
 
         // Game state
         this.history = [];           // Array of { board, move, notation }
+        this.redoStack = [];         // Stack of undone moves for redo
         this.currentIndex = -1;      // Current position in history
         this.legalMoves = [];        // Current legal moves
 
@@ -68,6 +69,7 @@ export class GameController {
         }
 
         this.history = [];
+        this.redoStack = [];
         this.currentIndex = -1;
         this.gameOver = false;
         this.winner = null;
@@ -259,6 +261,9 @@ export class GameController {
      * @param {boolean} triggerAutoPlay - whether to auto-play engine's response
      */
     async _makeMove(move, triggerAutoPlay = true) {
+        // Clear redo stack since we're making a new move
+        this.redoStack = [];
+
         // Store current position in history
         const prevBoard = await this.engine.getBoard();
         this.history.push({
@@ -388,8 +393,9 @@ export class GameController {
     async undo() {
         if (this.history.length === 0 || this.isThinking) return;
 
-        // Pop last move
+        // Pop last move and save it for redo
         const last = this.history.pop();
+        this.redoStack.push(last);
         this.currentIndex = this.history.length - 1;
 
         // Restore board
@@ -431,6 +437,40 @@ export class GameController {
     }
 
     /**
+     * Redo last undone move
+     */
+    async redo() {
+        if (this.redoStack.length === 0 || this.isThinking) return;
+
+        // Pop move from redo stack
+        const entry = this.redoStack.pop();
+
+        // Re-add to history
+        this.history.push(entry);
+        this.currentIndex = this.history.length - 1;
+
+        // Make the move on the engine
+        const newBoard = await this.engine.makeMove(entry.move);
+        this._updateFromBoard(newBoard);
+        this.partialPath = [];
+        this.boardUI.setPartialPath([]);
+        this.boardUI.setSelected(null);
+        this.boardUI.setLastMove(entry.move.from, entry.move.to);
+
+        // Update legal moves
+        await this._updateLegalMoves();
+
+        // Switch mode so human can play the side that's now to move
+        // (unless in 2-player mode)
+        if (this.humanColor !== 'both') {
+            this.humanColor = newBoard.whiteToMove ? 'white' : 'black';
+            if (this.onModeChange) this.onModeChange(this.humanColor);
+        }
+
+        this._updateStatus('Move redone');
+    }
+
+    /**
      * Set up a custom board position
      * @param {number} white - White pieces bitboard
      * @param {number} black - Black pieces bitboard
@@ -439,6 +479,7 @@ export class GameController {
      */
     async setPosition(white, black, kings, whiteToMove) {
         this.history = [];
+        this.redoStack = [];
         this.currentIndex = -1;
         this.gameOver = false;
         this.winner = null;
