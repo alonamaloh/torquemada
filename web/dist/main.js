@@ -329,17 +329,78 @@ function updateSideToMoveButtons() {
 }
 
 /**
+ * Show new game dialog
+ */
+function showNewGameDialog() {
+    const dialog = document.getElementById('new-game-dialog');
+    if (dialog) {
+        dialog.style.display = 'flex';
+    }
+}
+
+/**
+ * Hide new game dialog
+ */
+function hideNewGameDialog() {
+    const dialog = document.getElementById('new-game-dialog');
+    if (dialog) {
+        dialog.style.display = 'none';
+    }
+}
+
+/**
+ * Start a new game with the player as the specified color
+ */
+async function startNewGame(playAsWhite) {
+    hideNewGameDialog();
+
+    // Set the human color (opposite of engine color)
+    if (playAsWhite) {
+        gameController.humanColor = 'white';
+        gameController.boardUI.setFlipped(false);
+    } else {
+        gameController.humanColor = 'black';
+        gameController.boardUI.setFlipped(true);
+    }
+
+    await gameController.newGame();
+    updateModeButtons();
+    updateUndoRedoButtons();
+    updateMoveHistory();
+}
+
+/**
  * Set up UI event handlers
  */
 function setupEventHandlers() {
-    // New game button
+    // New game button - show dialog
     const newGameBtn = document.getElementById('btn-new-game');
     if (newGameBtn) {
-        newGameBtn.addEventListener('click', async () => {
-            await gameController.newGame();
-            updateModeButtons();
-            updateUndoRedoButtons();
-            updateMoveHistory();
+        newGameBtn.addEventListener('click', showNewGameDialog);
+    }
+
+    // New game dialog buttons
+    const playWhiteBtn = document.getElementById('btn-play-white');
+    const playBlackBtn = document.getElementById('btn-play-black');
+    const playRandomBtn = document.getElementById('btn-play-random');
+
+    if (playWhiteBtn) {
+        playWhiteBtn.addEventListener('click', () => startNewGame(true));
+    }
+    if (playBlackBtn) {
+        playBlackBtn.addEventListener('click', () => startNewGame(false));
+    }
+    if (playRandomBtn) {
+        playRandomBtn.addEventListener('click', () => startNewGame(Math.random() < 0.5));
+    }
+
+    // Close dialog when clicking outside
+    const newGameDialog = document.getElementById('new-game-dialog');
+    if (newGameDialog) {
+        newGameDialog.addEventListener('click', (e) => {
+            if (e.target === newGameDialog) {
+                hideNewGameDialog();
+            }
         });
     }
 

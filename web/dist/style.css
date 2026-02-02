@@ -488,6 +488,26 @@ body {
     color: var(--text-secondary);
 }
 
+.dialog-narrow {
+    min-width: 200px;
+}
+
+.dialog-label {
+    color: var(--text-secondary);
+    margin-bottom: 1rem;
+}
+
+.dialog-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.dialog-buttons .btn {
+    margin: 0;
+    width: 100%;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .main-content {
