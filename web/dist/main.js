@@ -190,6 +190,10 @@ async function enterEditMode() {
     editBoard = { white: board.white, black: board.black, kings: board.kings };
     editWhiteToMove = board.whiteToMove;
 
+    // Always reset piece type to 'empty' when entering edit mode
+    editPieceType = 'empty';
+    updatePieceSelector();
+
     // Update UI
     document.getElementById('game-controls').style.display = 'none';
     document.getElementById('edit-controls').style.display = 'block';
@@ -212,8 +216,23 @@ async function enterEditMode() {
 async function exitEditMode() {
     editMode = false;
 
+    // Temporarily disable autoPlay to prevent engine from moving immediately
+    const savedAutoPlay = gameController.autoPlay;
+    gameController.autoPlay = false;
+
     // Apply the edited position
     await gameController.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
+
+    // Restore autoPlay
+    gameController.autoPlay = savedAutoPlay;
+
+    // Swap player color assignments (unless in 2-player mode)
+    if (gameController.humanColor === 'white') {
+        gameController.humanColor = 'black';
+    } else if (gameController.humanColor === 'black') {
+        gameController.humanColor = 'white';
+    }
+    // 'both' stays as 'both'
 
     // Update UI
     document.getElementById('game-controls').style.display = 'block';
@@ -227,6 +246,7 @@ async function exitEditMode() {
 
     updateMoveHistory();
     updateUndoRedoButtons();
+    updateModeButtons();
 }
 
 /**
