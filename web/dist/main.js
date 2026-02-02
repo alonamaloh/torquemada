@@ -91,6 +91,7 @@ async function init() {
 
         // Set up UI event handlers
         setupEventHandlers();
+        updateModeButtons();
 
         // Resize board to fit
         resizeBoard();
@@ -119,19 +120,47 @@ function updateLoadingStatus(message) {
 }
 
 /**
+ * Update toggle buttons to reflect current mode
+ */
+function updateModeButtons() {
+    const btnEngineWhite = document.getElementById('btn-engine-white');
+    const btnEngineBlack = document.getElementById('btn-engine-black');
+    const btnTwoPlayer = document.getElementById('btn-two-player');
+
+    if (!btnEngineWhite || !btnEngineBlack || !btnTwoPlayer) return;
+
+    // Remove active from all
+    btnEngineWhite.classList.remove('active');
+    btnEngineBlack.classList.remove('active');
+    btnTwoPlayer.classList.remove('active');
+
+    // Set active based on humanColor
+    // humanColor='black' means engine plays white
+    // humanColor='white' means engine plays black
+    // humanColor='both' means two-player mode
+    switch (gameController.humanColor) {
+        case 'black':
+            btnEngineWhite.classList.add('active');
+            break;
+        case 'white':
+            btnEngineBlack.classList.add('active');
+            break;
+        case 'both':
+            btnTwoPlayer.classList.add('active');
+            break;
+    }
+}
+
+/**
  * Set up UI event handlers
  */
 function setupEventHandlers() {
     // New game button
     const newGameBtn = document.getElementById('btn-new-game');
-    const sideSelect = document.getElementById('select-side');
     if (newGameBtn) {
         newGameBtn.addEventListener('click', async () => {
             await gameController.newGame();
-            // Sync UI with controller's humanColor (may have changed if engine was white)
-            if (sideSelect) {
-                sideSelect.value = gameController.humanColor;
-            }
+            updateModeButtons();
         });
     }
 
@@ -150,14 +179,33 @@ function setupEventHandlers() {
     // Engine move button
     const engineBtn = document.getElementById('btn-engine-move');
     if (engineBtn) {
-        engineBtn.addEventListener('click', () => gameController.engineMoveNow());
+        engineBtn.addEventListener('click', async () => {
+            await gameController.engineMoveNow();
+            updateModeButtons();
+        });
     }
 
-    // Side selection
-    const sideSelect = document.getElementById('select-side');
-    if (sideSelect) {
-        sideSelect.addEventListener('change', (e) => {
-            gameController.setHumanColor(e.target.value);
+    // Mode toggle buttons
+    const btnEngineWhite = document.getElementById('btn-engine-white');
+    const btnEngineBlack = document.getElementById('btn-engine-black');
+    const btnTwoPlayer = document.getElementById('btn-two-player');
+
+    if (btnEngineWhite) {
+        btnEngineWhite.addEventListener('click', () => {
+            gameController.setHumanColor('black'); // human plays black = engine plays white
+            updateModeButtons();
+        });
+    }
+    if (btnEngineBlack) {
+        btnEngineBlack.addEventListener('click', () => {
+            gameController.setHumanColor('white'); // human plays white = engine plays black
+            updateModeButtons();
+        });
+    }
+    if (btnTwoPlayer) {
+        btnTwoPlayer.addEventListener('click', () => {
+            gameController.setHumanColor('both');
+            updateModeButtons();
         });
     }
 
