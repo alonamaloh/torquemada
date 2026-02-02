@@ -1,0 +1,119 @@
+# WebAssembly build for Torquemada checkers engine
+# Requires Emscripten SDK (emcc)
+
+# Emscripten compiler
+EMCC = emcc
+EMCXX = em++
+
+# C++ standard and optimization flags
+WASM_CXXFLAGS = -std=c++20 -O3 -DWASM_BUILD -Wall -Wextra
+
+# SIMD support (WASM SIMD128)
+WASM_CXXFLAGS += -msimd128
+
+# Emscripten link flags
+WASM_LDFLAGS = \
+    -lembind \
+    -s MODULARIZE=1 \
+    -s EXPORT_NAME='CheckersEngine' \
+    -s ALLOW_MEMORY_GROWTH=1 \
+    -s INITIAL_MEMORY=268435456 \
+    -s MAXIMUM_MEMORY=536870912 \
+    -s ENVIRONMENT='worker' \
+    -s FILESYSTEM=1 \
+    -s EXPORTED_RUNTIME_METHODS='["FS"]' \
+    -s NO_EXIT_RUNTIME=1 \
+    -s SINGLE_FILE=0
+
+# Directories
+SRCDIR = ..
+WEBDIR = .
+DISTDIR = $(WEBDIR)/dist
+OBJDIR = $(WEBDIR)/obj
+
+# Source files
+CORE_SRCS = \
+    $(SRCDIR)/core/board.cpp \
+    $(SRCDIR)/core/movegen.cpp \
+    $(SRCDIR)/core/notation.cpp
+
+SEARCH_SRCS = \
+    $(SRCDIR)/search/search.cpp \
+    $(SRCDIR)/search/tt.cpp
+
+TB_SRCS = \
+    $(SRCDIR)/tablebase/tablebase.cpp \
+    $(SRCDIR)/tablebase/compression.cpp
+
+NN_SRCS = \
+    $(SRCDIR)/nn/mlp.cpp
+
+WASM_SRCS = \
+    $(WEBDIR)/src/wasm/bindings.cpp
+
+ALL_SRCS = $(CORE_SRCS) $(SEARCH_SRCS) $(TB_SRCS) $(NN_SRCS) $(WASM_SRCS)
+
+# Object files
+OBJS = $(patsubst $(SRCDIR)/%.cpp,$(OBJDIR)/%.o,$(CORE_SRCS) $(SEARCH_SRCS) $(TB_SRCS) $(NN_SRCS))
+OBJS += $(patsubst $(WEBDIR)/%.cpp,$(OBJDIR)/%.o,$(WASM_SRCS))
+
+# Output files
+WASM_OUT = $(DISTDIR)/engine.js
+
+# Default target
+all: dirs $(WASM_OUT)
+
+# Create directories
+dirs:
+	@mkdir -p $(DISTDIR)
+	@mkdir -p $(OBJDIR)/core
+	@mkdir -p $(OBJDIR)/search
+	@mkdir -p $(OBJDIR)/tablebase
+	@mkdir -p $(OBJDIR)/nn
+	@mkdir -p $(OBJDIR)/src/wasm
+
+# Link final WASM module
+$(WASM_OUT): $(OBJS)
+	$(EMCXX) $(WASM_CXXFLAGS) $(WASM_LDFLAGS) -o $@ $^
+	@echo "Built: $(WASM_OUT)"
+	@ls -lh $(DISTDIR)/engine.*
+
+# Compile core sources
+$(OBJDIR)/core/%.o: $(SRCDIR)/core/%.cpp
+	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+# Compile search sources
+$(OBJDIR)/search/%.o: $(SRCDIR)/search/%.cpp
+	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+# Compile tablebase sources
+$(OBJDIR)/tablebase/%.o: $(SRCDIR)/tablebase/%.cpp
+	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+# Compile NN sources
+$(OBJDIR)/nn/%.o: $(SRCDIR)/nn/%.cpp
+	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+# Compile WASM binding sources
+$(OBJDIR)/src/wasm/%.o: $(WEBDIR)/src/wasm/%.cpp
+	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+# Clean
+clean:
+	rm -rf $(OBJDIR) $(DISTDIR)
+
+# Debug build (no optimization, with debug info)
+debug: WASM_CXXFLAGS = -std=c++20 -O0 -g -DWASM_BUILD -Wall -Wextra -msimd128
+debug: WASM_LDFLAGS += -s ASSERTIONS=2 -s SAFE_HEAP=1
+debug: all
+
+# Copy JS files to dist (for development)
+copy-js:
+	cp $(WEBDIR)/src/js/*.js $(DISTDIR)/
+	cp $(WEBDIR)/public/* $(DISTDIR)/
+
+# Development server (requires Python 3)
+serve: all copy-js
+	cd $(DISTDIR) && python3 -m http.server 8080
+
+.PHONY: all dirs clean debug copy-js serve
