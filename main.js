@@ -10,6 +10,12 @@ import { TablebaseLoader, loadNNModelFile } from './tablebase-loader.js';
 let gameController = null;
 let tablebaseLoader = null;
 
+// Edit mode state
+let editMode = false;
+let editPieceType = 'empty';  // 'empty', 'white-man', 'white-king', 'black-man', 'black-king'
+let editWhiteToMove = true;
+let editBoard = { white: 0, black: 0, kings: 0 };  // Bitboards for editing
+
 /**
  * Initialize the application
  */
@@ -174,6 +180,113 @@ function updateUndoRedoButtons() {
 }
 
 /**
+ * Enter edit mode
+ */
+async function enterEditMode() {
+    editMode = true;
+
+    // Copy current position to edit board
+    const board = await gameController.getBoard();
+    editBoard = { white: board.white, black: board.black, kings: board.kings };
+    editWhiteToMove = board.whiteToMove;
+
+    // Update UI
+    document.getElementById('game-controls').style.display = 'none';
+    document.getElementById('edit-controls').style.display = 'block';
+    document.querySelectorAll('.controls-section .control-group:not(#game-controls):not(#edit-controls)').forEach(el => {
+        el.style.display = 'none';
+    });
+
+    // Update side to move buttons
+    updateSideToMoveButtons();
+
+    // Set up edit click handler
+    gameController.boardUI.onClick = handleEditClick;
+    gameController.boardUI.setLegalMoves([]);  // Clear move highlights
+    gameController.boardUI.setSelected(null);
+}
+
+/**
+ * Exit edit mode and apply position
+ */
+async function exitEditMode() {
+    editMode = false;
+
+    // Apply the edited position
+    await gameController.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
+
+    // Update UI
+    document.getElementById('game-controls').style.display = 'block';
+    document.getElementById('edit-controls').style.display = 'none';
+    document.querySelectorAll('.controls-section .control-group:not(#game-controls):not(#edit-controls)').forEach(el => {
+        el.style.display = 'block';
+    });
+
+    // Restore normal click handler (bind to gameController context)
+    gameController.boardUI.onClick = (square) => gameController._handleSquareClick.call(gameController, square);
+
+    updateMoveHistory();
+    updateUndoRedoButtons();
+}
+
+/**
+ * Handle board click in edit mode
+ */
+function handleEditClick(square) {
+    if (!editMode || square < 1 || square > 32) return;
+
+    const bit = 1 << (square - 1);
+
+    // Remove piece from current position
+    editBoard.white &= ~bit;
+    editBoard.black &= ~bit;
+    editBoard.kings &= ~bit;
+
+    // Add new piece based on selected type
+    switch (editPieceType) {
+        case 'white-man':
+            editBoard.white |= bit;
+            break;
+        case 'white-king':
+            editBoard.white |= bit;
+            editBoard.kings |= bit;
+            break;
+        case 'black-man':
+            editBoard.black |= bit;
+            break;
+        case 'black-king':
+            editBoard.black |= bit;
+            editBoard.kings |= bit;
+            break;
+        // 'empty' - already cleared above
+    }
+
+    // Update board display
+    gameController.boardUI.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
+}
+
+/**
+ * Clear the board in edit mode
+ */
+function clearEditBoard() {
+    editBoard = { white: 0, black: 0, kings: 0 };
+    gameController.boardUI.setPosition(0, 0, 0, editWhiteToMove);
+}
+
+/**
+ * Update side to move toggle buttons
+ */
+function updateSideToMoveButtons() {
+    const whiteBtn = document.getElementById('btn-white-to-move');
+    const blackBtn = document.getElementById('btn-black-to-move');
+
+    if (whiteBtn && blackBtn) {
+        whiteBtn.classList.toggle('active', editWhiteToMove);
+        blackBtn.classList.toggle('active', !editWhiteToMove);
+    }
+}
+
+/**
  * Set up UI event handlers
  */
 function setupEventHandlers() {
@@ -258,6 +371,49 @@ function setupEventHandlers() {
     const downloadBtn = document.getElementById('btn-download-tb');
     if (downloadBtn) {
         downloadBtn.addEventListener('click', showDownloadDialog);
+    }
+
+    // Edit mode button
+    const editBtn = document.getElementById('btn-edit');
+    if (editBtn) {
+        editBtn.addEventListener('click', enterEditMode);
+    }
+
+    // Piece selector buttons
+    document.querySelectorAll('.piece-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.piece-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            editPieceType = btn.dataset.piece;
+        });
+    });
+
+    // Clear board button
+    const clearBtn = document.getElementById('btn-clear-board');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', clearEditBoard);
+    }
+
+    // Side to move buttons
+    const whiteToMoveBtn = document.getElementById('btn-white-to-move');
+    const blackToMoveBtn = document.getElementById('btn-black-to-move');
+    if (whiteToMoveBtn) {
+        whiteToMoveBtn.addEventListener('click', () => {
+            editWhiteToMove = true;
+            updateSideToMoveButtons();
+        });
+    }
+    if (blackToMoveBtn) {
+        blackToMoveBtn.addEventListener('click', () => {
+            editWhiteToMove = false;
+            updateSideToMoveButtons();
+        });
+    }
+
+    // Done button
+    const doneBtn = document.getElementById('btn-edit-done');
+    if (doneBtn) {
+        doneBtn.addEventListener('click', exitEditMode);
     }
 }
 

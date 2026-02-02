@@ -53,12 +53,46 @@
             <!-- Controls section -->
             <section class="controls-section">
                 <!-- Game controls -->
-                <div class="control-group">
+                <div id="game-controls" class="control-group">
                     <h3>Game</h3>
                     <button id="btn-new-game" class="btn">New Game</button>
                     <button id="btn-undo" class="btn" title="Undo" disabled>&#x2190;</button>
                     <button id="btn-redo" class="btn" title="Redo" disabled>&#x2192;</button>
                     <button id="btn-flip" class="btn">Flip Board</button>
+                    <button id="btn-edit" class="btn">Edit</button>
+                </div>
+
+                <!-- Edit mode controls (hidden by default) -->
+                <div id="edit-controls" class="control-group" style="display: none;">
+                    <h3>Edit Position</h3>
+                    <div class="piece-selector">
+                        <button class="piece-btn active" data-piece="empty" title="Empty">
+                            <span class="piece-icon empty"></span>
+                        </button>
+                        <button class="piece-btn" data-piece="white-man" title="White Man">
+                            <span class="piece-icon white-man"></span>
+                        </button>
+                        <button class="piece-btn" data-piece="white-king" title="White King">
+                            <span class="piece-icon white-king"></span>
+                        </button>
+                        <button class="piece-btn" data-piece="black-man" title="Black Man">
+                            <span class="piece-icon black-man"></span>
+                        </button>
+                        <button class="piece-btn" data-piece="black-king" title="Black King">
+                            <span class="piece-icon black-king"></span>
+                        </button>
+                    </div>
+                    <div class="edit-actions">
+                        <button id="btn-clear-board" class="btn btn-small">Clear</button>
+                    </div>
+                    <div class="side-to-move">
+                        <label>Side to move:</label>
+                        <div class="toggle-group">
+                            <button id="btn-white-to-move" class="toggle-btn active">White</button>
+                            <button id="btn-black-to-move" class="toggle-btn">Black</button>
+                        </div>
+                    </div>
+                    <button id="btn-edit-done" class="btn btn-primary">Done</button>
                 </div>
 
                 <!-- Engine controls -->
