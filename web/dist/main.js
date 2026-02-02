@@ -89,6 +89,10 @@ async function init() {
             updateSearchInfo(info);
         };
 
+        gameController.onModeChange = () => {
+            updateModeButtons();
+        };
+
         // Set up UI event handlers
         setupEventHandlers();
         updateModeButtons();

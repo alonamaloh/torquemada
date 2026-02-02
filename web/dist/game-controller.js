@@ -34,6 +34,7 @@ export class GameController {
         this.onThinkingEnd = null;
         this.onStatusUpdate = null;
         this.onSearchInfo = null;    // (info) => void - called with search results
+        this.onModeChange = null;    // (humanColor) => void - called when mode changes
 
         // Step-by-step capture state
         this.partialPath = [];       // Squares clicked so far in a multi-capture
@@ -63,6 +64,7 @@ export class GameController {
         // This prevents auto-start and lets the user make the first move
         if (this.humanColor === 'black') {
             this.humanColor = 'white';
+            if (this.onModeChange) this.onModeChange(this.humanColor);
         }
 
         this.history = [];
@@ -404,6 +406,13 @@ export class GameController {
         this.gameOver = false;
         this.winner = null;
 
+        // Switch mode so human can play the side that's now to move
+        // (unless in 2-player mode)
+        if (this.humanColor !== 'both') {
+            this.humanColor = board.whiteToMove ? 'white' : 'black';
+            if (this.onModeChange) this.onModeChange(this.humanColor);
+        }
+
         this._updateStatus('Move undone');
     }
 
@@ -455,6 +464,7 @@ export class GameController {
         // Assign engine to current side (like 'm' command in play.cpp)
         // humanColor becomes the OTHER side
         this.humanColor = board.whiteToMove ? 'black' : 'white';
+        if (this.onModeChange) this.onModeChange(this.humanColor);
 
         // Now make the engine move with auto-play enabled
         // Since we've assigned engine to current side, it will continue playing that side
