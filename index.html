@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Torquemada Checkers</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Loading screen -->
+    <div id="loading" class="loading-container">
+        <div class="loading-content">
+            <h1>Torquemada Checkers</h1>
+            <div class="spinner"></div>
+            <p id="loading-status">Loading...</p>
+        </div>
+    </div>
+
+    <!-- Main game container -->
+    <div id="game-container" class="game-container" style="display: none;">
+        <!-- Header -->
+        <header class="header">
+            <h1>Torquemada Checkers</h1>
+            <span id="thinking-indicator" class="thinking" style="display: none;">Thinking...</span>
+        </header>
+
+        <!-- Main content -->
+        <main class="main-content">
+            <!-- Board section -->
+            <section class="board-section">
+                <div id="board-container" class="board-container">
+                    <canvas id="board" width="480" height="480"></canvas>
+                </div>
+                <p id="status" class="status-text">White to move</p>
+
+                <!-- Search info display -->
+                <div id="search-info" class="search-info" style="display: none;">
+                    <div class="search-info-row">
+                        <span class="search-label">Depth:</span>
+                        <span id="search-depth">-</span>
+                        <span class="search-label">Score:</span>
+                        <span id="search-score">-</span>
+                        <span class="search-label">Nodes:</span>
+                        <span id="search-nodes">-</span>
+                    </div>
+                    <div class="search-info-row">
+                        <span class="search-label">PV:</span>
+                        <span id="search-pv" class="search-pv">-</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Controls section -->
+            <section class="controls-section">
+                <!-- Game controls -->
+                <div class="control-group">
+                    <h3>Game</h3>
+                    <button id="btn-new-game" class="btn">New Game</button>
+                    <button id="btn-undo" class="btn">Undo</button>
+                    <button id="btn-flip" class="btn">Flip Board</button>
+                </div>
+
+                <!-- Engine controls -->
+                <div class="control-group">
+                    <h3>Engine</h3>
+                    <button id="btn-engine-move" class="btn btn-primary">Engine Move</button>
+                    <div class="toggle-group">
+                        <button id="btn-engine-white" class="toggle-btn">Engine White</button>
+                        <button id="btn-engine-black" class="toggle-btn active">Engine Black</button>
+                        <button id="btn-two-player" class="toggle-btn">2 Player</button>
+                    </div>
+                    <div class="input-group">
+                        <label for="input-depth">Depth:</label>
+                        <input type="number" id="input-depth" value="20" min="1" max="50">
+                    </div>
+                    <div class="input-group">
+                        <label for="input-nodes">Nodes:</label>
+                        <input type="number" id="input-nodes" value="100000" min="1000" step="10000">
+                    </div>
+                </div>
+
+                <!-- Move input -->
+                <div class="control-group">
+                    <h3>Move Input</h3>
+                    <div class="input-group">
+                        <input type="text" id="input-move" placeholder="e.g., 9-13 or 9x18">
+                    </div>
+                </div>
+
+                <!-- Tablebases -->
+                <div class="control-group">
+                    <h3>Tablebases</h3>
+                    <button id="btn-download-tb" class="btn">Download Tablebases</button>
+                    <p class="help-text">5-piece DTM tables (~140 MB)</p>
+                </div>
+
+                <!-- Move history -->
+                <div class="control-group">
+                    <h3>Move History</h3>
+                    <div id="move-history" class="move-history"></div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <p>Torquemada Checkers Engine - WebAssembly Edition</p>
+        </footer>
+    </div>
+
+    <!-- Download dialog -->
+    <div id="download-dialog" class="dialog" style="display: none;">
+        <div class="dialog-content">
+            <h2>Downloading Tablebases</h2>
+            <div class="progress-bar">
+                <div class="progress" style="width: 0%"></div>
+            </div>
+            <p class="status">Preparing...</p>
+            <button class="btn cancel-btn">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script type="module" src="main.js"></script>
+</body>
+</html>
