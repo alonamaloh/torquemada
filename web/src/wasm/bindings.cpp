@@ -7,10 +7,12 @@
 #include <vector>
 #include <cstdint>
 #include <bit>
+#include <chrono>
 
 #include "../../../core/board.hpp"
 #include "../../../core/movegen.hpp"
 #include "../../../core/notation.hpp"
+#include "../../../core/random.hpp"
 #include "../../../search/search.hpp"
 #include "../../../tablebase/tablebase.hpp"
 #include "../../../nn/mlp.hpp"
@@ -20,6 +22,9 @@ using namespace emscripten;
 // Global tablebase data storage
 // Tablebases are loaded from JS and stored here as raw bytes
 namespace {
+    // Global RNG for evaluation noise, seeded with system clock
+    RandomBits g_rng(std::chrono::steady_clock::now().time_since_epoch().count());
+
     // Map from material config string to DTM data
     std::unordered_map<std::string, std::vector<tablebase::DTM>> g_tablebase_data;
 
@@ -483,19 +488,23 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
         }
     }
 
-    // Set up evaluation function
+    // Set up evaluation function with small random noise for variety
     auto eval_func = [piece_count](const Board& board, int ply) -> int {
+        int score;
         if (piece_count <= 7 && g_dtm_nn_model) {
-            return g_dtm_nn_model->evaluate(board, 0);
+            score = g_dtm_nn_model->evaluate(board, 0);
+        } else if (g_nn_model) {
+            score = g_nn_model->evaluate(board, 0);
+        } else {
+            int white_men = std::popcount(board.whitePawns());
+            int white_kings = std::popcount(board.whiteQueens());
+            int black_men = std::popcount(board.blackPawns());
+            int black_kings = std::popcount(board.blackQueens());
+            score = (white_men - black_men) * 100 + (white_kings - black_kings) * 300;
         }
-        if (g_nn_model) {
-            return g_nn_model->evaluate(board, 0);
-        }
-        int white_men = std::popcount(board.whitePawns());
-        int white_kings = std::popcount(board.whiteQueens());
-        int black_men = std::popcount(board.blackPawns());
-        int black_kings = std::popcount(board.blackQueens());
-        return (white_men - black_men) * 100 + (white_kings - black_kings) * 300;
+        // Add small noise for variety: -5 to +5
+        int noise = -5 + static_cast<int>(g_rng() % 11);
+        return score + noise;
     };
 
     search::Searcher searcher("", 0, "", "");
