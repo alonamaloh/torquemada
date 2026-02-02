@@ -352,6 +352,7 @@ export class GameController {
 
         try {
             console.log('Starting search with depth:', this.engineDepth, 'nodes:', this.engineNodes);
+            const startTime = Date.now();
 
             // Progress callback for iterative deepening updates
             const onProgress = (progressResult) => {
@@ -369,6 +370,12 @@ export class GameController {
 
             // Report final result
             this._reportSearchInfo(result);
+
+            // Ensure minimum 200ms so user can see what happened
+            const elapsed = Date.now() - startTime;
+            if (elapsed < 200) {
+                await this._sleep(200 - elapsed);
+            }
 
             // Make the move
             if (result.bestMove && result.bestMove.from_xor_to && result.bestMove.from_xor_to !== 0) {
