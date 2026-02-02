@@ -329,7 +329,12 @@ body {
     font-family: monospace;
     font-size: 0.85rem;
     line-height: 1.5;
+    color: var(--text-primary);
+}
+
+.move-history .redo-move {
     color: var(--text-secondary);
+    opacity: 0.6;
 }
 
 /* Footer */

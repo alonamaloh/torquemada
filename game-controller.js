@@ -574,6 +574,17 @@ export class GameController {
     }
 
     /**
+     * Get move history with redo information for display
+     * Returns { history: string[], redo: string[] }
+     */
+    getMoveHistoryForDisplay() {
+        const historyMoves = this.history.map(h => h.notation);
+        // Redo stack is in reverse order (last undone is first to redo)
+        const redoMoves = this.redoStack.slice().reverse().map(h => h.notation);
+        return { history: historyMoves, redo: redoMoves };
+    }
+
+    /**
      * Get DTM for current position
      */
     async getDTM() {
