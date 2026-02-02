@@ -105,15 +105,32 @@ export class GameController {
         this.legalMoves = await this.engine.getLegalMoves();
         this.boardUI.setLegalMoves(this.legalMoves);
 
-        // Check for game over
+        // Check for game over (no legal moves = loss for side to move)
         if (this.legalMoves.length === 0) {
-            this.gameOver = true;
             const board = await this.engine.getBoard();
-            this.winner = board.whiteToMove ? 'black' : 'white';
-            this._updateStatus(`Game over: ${this.winner} wins!`);
-            if (this.onGameOver) {
-                this.onGameOver(this.winner, 'no moves');
-            }
+            this._setGameOver(board.whiteToMove ? 'black' : 'white', 'no moves');
+        }
+    }
+
+    /**
+     * Set game over state and update status
+     * @param {string} winner - 'white', 'black', or 'draw'
+     * @param {string} reason - reason for game end (for callback)
+     */
+    _setGameOver(winner, reason) {
+        this.gameOver = true;
+        this.winner = winner;
+
+        // Format status message
+        if (winner === 'draw') {
+            this._updateStatus('Draw!');
+        } else {
+            const winnerName = winner.charAt(0).toUpperCase() + winner.slice(1);
+            this._updateStatus(`${winnerName} wins!`);
+        }
+
+        if (this.onGameOver) {
+            this.onGameOver(winner, reason);
         }
     }
 
