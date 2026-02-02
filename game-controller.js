@@ -282,15 +282,15 @@ export class GameController {
                 this.boardUI.render();
                 await this._sleep(200);
             }
-            // Clear partial path before final update
-            this.boardUI.setPartialPath([]);
+            // Keep partial path set until board is updated to avoid flash
         }
 
         // Make the move
         const newBoard = await this.engine.makeMove(move);
-        this._updateFromBoard(newBoard);
+        // Clear partial path before updating board (no render yet)
         this.partialPath = [];
-        this.boardUI.setPartialPath([]);
+        this.boardUI.partialPath = [];
+        this._updateFromBoard(newBoard);
         this.boardUI.setSelected(null);
         this.boardUI.setLastMove(move.from, move.to);
 
