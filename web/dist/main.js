@@ -674,13 +674,15 @@ function updateSearchInfo(info) {
  * Resize board to fit container
  */
 function resizeBoard() {
-    const container = document.getElementById('board-container');
+    const section = document.querySelector('.board-section');
     const canvas = document.getElementById('board');
 
-    if (container && canvas && gameController) {
-        // Use width as primary dimension, with fallback to canvas default
-        const containerWidth = container.clientWidth || 480;
-        const size = Math.min(containerWidth - 32, 600);  // -32 for padding
+    if (section && canvas && gameController) {
+        // Measure the section width (stable, not affected by canvas size)
+        const sectionWidth = section.clientWidth;
+        // Account for container padding (0.5rem = ~8px each side on desktop, less on mobile)
+        const padding = window.innerWidth <= 768 ? 8 : 16;
+        const size = Math.min(sectionWidth - padding, 480);
         if (size > 0) {
             gameController.resize(size);
         }
