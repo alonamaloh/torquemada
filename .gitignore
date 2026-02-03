@@ -16,3 +16,6 @@ Thumbs.db
 *.h5
 *.bin
 *.pt
+
+# Opening books
+*.openings
