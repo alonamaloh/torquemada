@@ -2,6 +2,7 @@
 
 #include "../core/board.hpp"
 #include "../core/movegen.hpp"
+#include "../core/random.hpp"
 #include "../nn/mlp.hpp"
 #include "../tablebase/tb_probe.hpp"
 #include "tt.hpp"
@@ -13,6 +14,15 @@
 #include <string>
 
 namespace search {
+
+// Variety mode for opening play
+// Controls how much randomness is applied when selecting among good moves
+enum class VarietyMode {
+  NONE,    // Always play the best move (no variety)
+  SAFE,    // Small variety: 100 points → 9x probability difference
+  CURIOUS, // Medium variety: 100 points → 3x probability difference
+  WILD     // Large variety: 100 points → 1.4x probability difference
+};
 
 // Search limits
 constexpr int MAX_PLY = 128;
@@ -38,6 +48,14 @@ inline bool is_mate_score(int score) {
   return score > SCORE_TB_WIN || score < -SCORE_TB_WIN;
 }
 
+// Variety candidate info (for debugging)
+struct VarietyCandidate {
+  Move move;
+  int score;
+  double probability;  // 0.0 to 1.0
+  bool selected;       // true if this was the selected move
+};
+
 // Search result
 struct SearchResult {
   Move best_move;
@@ -46,6 +64,7 @@ struct SearchResult {
   std::uint64_t nodes;
   std::uint64_t tb_hits;
   std::vector<Move> pv;  // Principal variation
+  std::vector<VarietyCandidate> variety_candidates;  // Populated when variety search is used
 
   SearchResult() : score(0), depth(0), nodes(0), tb_hits(0) {}
 };
@@ -150,6 +169,13 @@ public:
   // Set callback for iterative deepening progress updates
   void set_progress_callback(SearchProgressCallback cb) { progress_callback_ = std::move(cb); }
 
+  // Set variety mode for opening play (adds controlled randomness in first 10 moves)
+  void set_variety_mode(VarietyMode mode) { variety_mode_ = mode; }
+  VarietyMode variety_mode() const { return variety_mode_; }
+
+  // Set RNG for variety selection (if not set, uses a default seeded RNG)
+  void set_rng(RandomBits* rng) { rng_ = rng; }
+
   // Check if search should stop and throw if so
   void check_stop() const {
     if (stop_flag_ && stop_flag_->load(std::memory_order_relaxed)) throw SearchInterrupted{};
@@ -159,7 +185,9 @@ public:
   // Search with iterative deepening
   // max_depth: maximum search depth (default 100)
   // max_nodes: soft node limit, stops after completing a depth (0 = no limit)
-  SearchResult search(const Board& board, int max_depth = 100, std::uint64_t max_nodes = 0);
+  // game_ply: current game ply (0 = start of game), used for opening variety
+  SearchResult search(const Board& board, int max_depth = 100, std::uint64_t max_nodes = 0,
+                      int game_ply = 100);
 
   // Get statistics from last search
   const SearchStats& stats() const { return stats_; }
@@ -168,6 +196,11 @@ private:
   // Root search at a fixed depth
   // root_moves is reordered to put the best move first
   SearchResult search_root(const Board& board, MoveList& root_moves, int depth);
+
+  // Root search with variety selection for opening play
+  // Uses PVS-style null-window search to find moves within threshold of best,
+  // then applies softmax sampling to select among them
+  SearchResult search_root_variety(const Board& board, MoveList& root_moves, int depth);
 
   // Negamax alpha-beta search
   // Returns score from the perspective of the side to move (white, since board is always flipped)
@@ -241,6 +274,13 @@ private:
   // Position hash history for repetition detection (indexed by ply)
   // Stores position_hash() (without n_reversible) for each position in the search path
   std::uint64_t pos_hash_history_[MAX_PLY] = {};
+
+  // Variety mode for opening play
+  VarietyMode variety_mode_ = VarietyMode::NONE;
+
+  // RNG for variety selection (external, or owned default)
+  RandomBits* rng_ = nullptr;
+  std::unique_ptr<RandomBits> owned_rng_;
 };
 
 } // namespace search

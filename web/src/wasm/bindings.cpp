@@ -372,21 +372,23 @@ val createMoveObject(const Move& m, const std::vector<int>& path, bool white_to_
 }
 
 // Forward declaration
-val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes_d, val progress_callback);
+val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes_d,
+                         int game_ply, int variety_mode, val progress_callback);
 
 // Perform search without callback - wrapper for backwards compatibility
 val doSearch(const JSBoard& jsboard, int max_depth, double max_nodes_d) {
-    return doSearchWithCallback(jsboard, max_depth, max_nodes_d, val::null());
+    return doSearchWithCallback(jsboard, max_depth, max_nodes_d, 100, 0, val::null());
 }
 
 // Helper to build a result val from SearchResult and board
 val buildSearchResultVal(const search::SearchResult& sr, const Board& board, bool white_to_move) {
     val result = val::object();
 
-    if (sr.best_move.from_xor_to != 0) {
-        std::vector<FullMove> full_moves;
-        generateFullMoves(board, full_moves);
+    // Generate full moves for path resolution
+    std::vector<FullMove> full_moves;
+    generateFullMoves(board, full_moves);
 
+    if (sr.best_move.from_xor_to != 0) {
         for (const auto& fm : full_moves) {
             if (fm.move.from_xor_to == sr.best_move.from_xor_to &&
                 fm.move.captures == sr.best_move.captures) {
@@ -400,6 +402,31 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
     result.set("depth", sr.depth);
     result.set("nodes", static_cast<double>(sr.nodes));
     result.set("tb_hits", static_cast<double>(sr.tb_hits));
+
+    // Log variety selection info to console if present
+    if (!sr.variety_candidates.empty()) {
+        val console = val::global("console");
+        std::string log_msg = "Variety selection (" + std::to_string(sr.variety_candidates.size()) + " candidates):";
+        console.call<void>("log", log_msg);
+
+        for (const auto& vc : sr.variety_candidates) {
+            // Find the notation for this move
+            std::string notation = "?";
+            for (const auto& fm : full_moves) {
+                if (fm.move.from_xor_to == vc.move.from_xor_to &&
+                    fm.move.captures == vc.move.captures) {
+                    notation = buildNotation(fm.path, vc.move.isCapture(), white_to_move);
+                    break;
+                }
+            }
+
+            char buf[128];
+            snprintf(buf, sizeof(buf), "  %s: score=%d, prob=%.1f%%%s",
+                     notation.c_str(), vc.score, vc.probability * 100.0,
+                     vc.selected ? " [SELECTED]" : "");
+            console.call<void>("log", std::string(buf));
+        }
+    }
 
     // Build PV with full paths for captures
     val pv = val::array();
@@ -445,7 +472,9 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
 }
 
 // Perform search with optional progress callback
-val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes_d, val progress_callback) {
+// variety_mode: 0=none, 1=safe, 2=curious, 3=wild
+val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes_d,
+                         int game_ply, int variety_mode, val progress_callback) {
     uint64_t max_nodes = static_cast<uint64_t>(max_nodes_d);
     val result = val::object();
     int piece_count = jsboard.pieceCount();
@@ -484,27 +513,34 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
         }
     }
 
-    // Set up evaluation function with small random noise for variety
+    // Set up evaluation function (no noise - variety handled by search)
     auto eval_func = [piece_count](const Board& board, int /*ply*/) -> int {
-        int score;
         if (piece_count <= 7 && g_dtm_nn_model) {
-            score = g_dtm_nn_model->evaluate(board, 0);
+            return g_dtm_nn_model->evaluate(board, 0);
         } else if (g_nn_model) {
-            score = g_nn_model->evaluate(board, 0);
+            return g_nn_model->evaluate(board, 0);
         } else {
             int white_men = std::popcount(board.whitePawns());
             int white_kings = std::popcount(board.whiteQueens());
             int black_men = std::popcount(board.blackPawns());
             int black_kings = std::popcount(board.blackQueens());
-            score = (white_men - black_men) * 100 + (white_kings - black_kings) * 300;
+            return (white_men - black_men) * 100 + (white_kings - black_kings) * 300;
         }
-        // Add small noise for variety: -5 to +5
-        int noise = -5 + static_cast<int>(g_rng() % 11);
-        return score + noise;
     };
 
     search::Searcher searcher("", 0, "", "");
     searcher.set_eval(eval_func);
+
+    // Set variety mode
+    switch (variety_mode) {
+        case 1: searcher.set_variety_mode(search::VarietyMode::SAFE); break;
+        case 2: searcher.set_variety_mode(search::VarietyMode::CURIOUS); break;
+        case 3: searcher.set_variety_mode(search::VarietyMode::WILD); break;
+        default: searcher.set_variety_mode(search::VarietyMode::NONE); break;
+    }
+
+    // Set RNG for variety selection
+    searcher.set_rng(&g_rng);
 
     // Set up DTM probe function if tablebases are available
     if (tb_available) {
@@ -522,7 +558,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
         });
     }
 
-    search::SearchResult sr = searcher.search(jsboard.board, max_depth, max_nodes);
+    search::SearchResult sr = searcher.search(jsboard.board, max_depth, max_nodes, game_ply);
     return buildSearchResultVal(sr, jsboard.board, jsboard.white_to_move);
 }
 
@@ -572,7 +608,7 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("getLegalMoves", &getLegalMoves);
     function("makeMove", &makeJSMove);
     function("search", &doSearch);
-    function("searchWithCallback", &doSearchWithCallback);
+    function("searchWithCallback", &doSearchWithCallback);  // (board, depth, nodes, ply, variety, callback)
     function("probeDTM", &probeDTM);
     function("parseMove", &doParseMove);
     function("loadNNModel", &loadNNModel);
