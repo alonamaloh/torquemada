@@ -358,20 +358,25 @@ function hideNewGameDialog() {
 
 /**
  * Start a new game with the player as the specified color
+ * @param {string} playAs - 'white', 'black', or 'both'
  */
-async function startNewGame(playAsWhite) {
+async function startNewGame(playAs) {
     hideNewGameDialog();
 
     // Start the new game first
     await gameController.newGame();
 
-    // Set the human color after newGame() (which resets it)
-    if (playAsWhite) {
+    // Set the human color and board orientation after newGame() (which resets it)
+    if (playAs === 'white') {
         gameController.boardUI.setFlipped(false);
         gameController.setHumanColor('white');  // Engine plays black
-    } else {
+    } else if (playAs === 'black') {
         gameController.boardUI.setFlipped(true);
         gameController.setHumanColor('black');  // Engine plays white
+    } else {
+        // 'both' - 2-player mode, board not flipped
+        gameController.boardUI.setFlipped(false);
+        gameController.setHumanColor('both');
     }
 
     updateModeButtons();
@@ -392,16 +397,16 @@ function setupEventHandlers() {
     // New game dialog buttons
     const playWhiteBtn = document.getElementById('btn-play-white');
     const playBlackBtn = document.getElementById('btn-play-black');
-    const playRandomBtn = document.getElementById('btn-play-random');
+    const playBothBtn = document.getElementById('btn-play-both');
 
     if (playWhiteBtn) {
-        playWhiteBtn.addEventListener('click', () => startNewGame(true));
+        playWhiteBtn.addEventListener('click', () => startNewGame('white'));
     }
     if (playBlackBtn) {
-        playBlackBtn.addEventListener('click', () => startNewGame(false));
+        playBlackBtn.addEventListener('click', () => startNewGame('black'));
     }
-    if (playRandomBtn) {
-        playRandomBtn.addEventListener('click', () => startNewGame(Math.random() < 0.5));
+    if (playBothBtn) {
+        playBothBtn.addEventListener('click', () => startNewGame('both'));
     }
 
     // Close dialog when clicking outside
