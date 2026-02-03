@@ -191,8 +191,13 @@ let currentSearchId = null;
 
 /**
  * Perform search with progress updates
+ * @param {number} maxDepth - Maximum search depth
+ * @param {number} maxNodes - Maximum nodes to search
+ * @param {number} gamePly - Current game ply (for opening variety)
+ * @param {number} varietyMode - Variety mode: 0=none, 1=safe, 2=curious, 3=wild
+ * @param {number} requestId - Request ID for progress updates
  */
-function search(maxDepth, maxNodes, requestId) {
+function search(maxDepth, maxNodes, gamePly, varietyMode, requestId) {
     if (!engine || !board) {
         return { error: 'Engine not ready' };
     }
@@ -218,10 +223,17 @@ function search(maxDepth, maxNodes, requestId) {
             }
         };
 
-        // Use searchWithCallback if available, otherwise fall back to search
+        // Use searchWithCallback with game ply and variety mode
         let result;
         if (engine.searchWithCallback) {
-            result = engine.searchWithCallback(board, maxDepth || 20, maxNodes || 0, progressCallback);
+            result = engine.searchWithCallback(
+                board,
+                maxDepth || 20,
+                maxNodes || 0,
+                gamePly || 0,
+                varietyMode || 0,
+                progressCallback
+            );
         } else {
             result = engine.search(board, maxDepth || 20, maxNodes || 0);
         }
@@ -312,7 +324,7 @@ self.onmessage = function(e) {
                 break;
 
             case 'search':
-                response.result = search(data.maxDepth, data.maxNodes, id);
+                response.result = search(data.maxDepth, data.maxNodes, data.gamePly, data.varietyMode, id);
                 break;
 
             case 'probeDTM':
