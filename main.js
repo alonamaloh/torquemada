@@ -100,8 +100,8 @@ async function init() {
         updateUndoRedoButtons();
 
         // Resize board to fit
-        resizeBoard();
-        window.addEventListener('resize', resizeBoard);
+        // Board sizing is handled by CSS (width: 100%, max-width: 480px)
+        // No JavaScript resize needed
 
         // Hide loading, show game
         if (loadingEl) loadingEl.style.display = 'none';
