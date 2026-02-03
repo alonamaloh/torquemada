@@ -74,6 +74,10 @@ struct SearchStats {
 // Returns a score from the perspective of the side to move in the stored board
 using EvalFunc = std::function<int(const Board&, int ply)>;
 
+// DTM probe function type for custom tablebase implementations
+// Returns DTM value (DTM_UNKNOWN if not found)
+using DTMProbeFunc = std::function<tablebase::DTM(const Board&)>;
+
 // Callback for iterative deepening progress updates
 // Called after each depth is completed with the current result
 using SearchProgressCallback = std::function<void(const SearchResult&)>;
@@ -110,6 +114,13 @@ public:
 
   // Set the evaluation function (default is material_eval)
   void set_eval(EvalFunc eval) { eval_ = std::move(eval); }
+
+  // Set a custom DTM probe function (for WASM or other custom tablebase implementations)
+  // This overrides the built-in DTMTablebaseManager lookup
+  void set_dtm_probe(DTMProbeFunc probe, int piece_limit) {
+    dtm_probe_func_ = std::move(probe);
+    tb_piece_limit_ = piece_limit;
+  }
 
   // Set transposition table size in MB
   void set_tt_size(std::size_t mb) { tt_ = TranspositionTable(mb); }
@@ -193,6 +204,8 @@ private:
   std::unique_ptr<tablebase::DTMTablebaseManager> dtm_manager_owned_;
   // Const pointer for thread-safe read-only access (either points to owned or external)
   const tablebase::DTMTablebaseManager* dtm_manager_ = nullptr;
+  // Custom DTM probe function (alternative to dtm_manager_)
+  DTMProbeFunc dtm_probe_func_;
   int tb_piece_limit_;  // Use DTM tablebases when <= this many pieces
 
   // Neural network evaluation

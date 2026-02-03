@@ -112,7 +112,8 @@ int Searcher::dtm_to_score(tablebase::DTM dtm, int ply) {
 }
 
 bool Searcher::probe_tb(const Board& board, int ply, int& score) {
-  if (!dtm_manager_) return false;
+  // Check if we have any DTM source available
+  if (!dtm_manager_ && !dtm_probe_func_) return false;
 
   // Only probe when n_reversible == 0 (after a capture or pawn move)
   // This forces the winning side to find moves that make progress
@@ -121,7 +122,13 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   int piece_count = std::popcount(board.allPieces());
   if (piece_count > tb_piece_limit_) return false;
 
-  tablebase::DTM dtm = dtm_manager_->lookup_dtm(board);
+  // Try custom probe function first (for WASM), then fall back to manager
+  tablebase::DTM dtm;
+  if (dtm_probe_func_) {
+    dtm = dtm_probe_func_(board);
+  } else {
+    dtm = dtm_manager_->lookup_dtm(board);
+  }
   if (dtm == tablebase::DTM_UNKNOWN) return false;
 
   stats_.tb_hits++;
