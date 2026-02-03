@@ -530,6 +530,13 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
     search::Searcher searcher("", 0, "", "");
     searcher.set_eval(eval_func);
 
+    // Set up DTM probe function if tablebases are loaded
+    if (!g_tablebase_data.empty()) {
+        searcher.set_dtm_probe([](const Board& b) {
+            return g_tb_manager.lookup_dtm(b);
+        }, 5);  // 5-piece tablebases
+    }
+
     // Set progress callback if provided
     bool has_callback = !progress_callback.isNull() && !progress_callback.isUndefined();
     if (has_callback) {
