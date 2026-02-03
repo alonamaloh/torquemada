@@ -111,10 +111,10 @@ body {
 .board-section {
     flex: 1;
     min-width: 0;
+    width: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
-    max-width: 100%;
 }
 
 .board-container {
@@ -122,14 +122,16 @@ body {
     padding: 0.5rem;
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-    max-width: 100%;
+    width: 100%;
+    max-width: calc(480px + 1rem);
     box-sizing: border-box;
 }
 
 #board {
     display: block;
     border-radius: 4px;
-    max-width: 100%;
+    width: 100%;
+    max-width: 480px;
     height: auto;
     touch-action: manipulation;
 }
@@ -519,7 +521,7 @@ body {
     .main-content {
         flex-direction: column;
         align-items: center;
-        padding: 0.5rem;
+        padding: 0.25rem;
     }
 
     .controls-section {
@@ -527,8 +529,13 @@ body {
         max-width: 100%;
     }
 
+    .board-section {
+        width: 100%;
+    }
+
     .board-container {
         padding: 0.25rem;
+        max-width: 100%;
     }
 
     .header {
