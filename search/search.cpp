@@ -435,6 +435,12 @@ SearchResult Searcher::search_root_variety(const Board& board, MoveList& moves, 
   SearchResult result;
   result.depth = depth;
 
+  // Safety check - should never happen but guard against it
+  if (moves.empty()) {
+    result.score = mated_score(0);
+    return result;
+  }
+
   // Store root position hash for repetition detection
   pos_hash_history_[0] = board.position_hash();
 
@@ -466,34 +472,46 @@ SearchResult Searcher::search_root_variety(const Board& board, MoveList& moves, 
 
   // Step 1: Search first move with full window to establish baseline
   int best_score = -SCORE_INFINITE;
-  {
+  try {
     const Move& move = moves[0];
     Board child = makeMove(board, move);
     int score = -negamax(child, depth - 1, -SCORE_INFINITE, SCORE_INFINITE, 1);
     best_score = score;
     candidates.push_back({move, score});
+  } catch (const SearchInterrupted&) {
+    // If interrupted on first move, just return it without a score
+    result.best_move = moves[0];
+    result.score = 0;
+    result.nodes = stats_.nodes;
+    result.tb_hits = stats_.tb_hits;
+    return result;
   }
 
   // Step 2: For remaining moves, use null-window search at threshold
   // If a move might be within variety_threshold of best, re-search with full window
   int threshold = best_score - variety_threshold;
   for (std::size_t i = 1; i < moves.size(); ++i) {
-    const Move& move = moves[i];
-    Board child = makeMove(board, move);
+    try {
+      const Move& move = moves[i];
+      Board child = makeMove(board, move);
 
-    // Null-window search: check if score > threshold
-    int score = -negamax(child, depth - 1, -threshold - 1, -threshold, 1);
+      // Null-window search: check if score > threshold
+      int score = -negamax(child, depth - 1, -threshold - 1, -threshold, 1);
 
-    if (score > threshold) {
-      // Move might be good enough - re-search with full window
-      score = -negamax(child, depth - 1, -SCORE_INFINITE, SCORE_INFINITE, 1);
-      candidates.push_back({move, score});
+      if (score > threshold) {
+        // Move might be good enough - re-search with full window
+        score = -negamax(child, depth - 1, -SCORE_INFINITE, SCORE_INFINITE, 1);
+        candidates.push_back({move, score});
 
-      // Update best_score and threshold if we found a better move
-      if (score > best_score) {
-        best_score = score;
-        threshold = best_score - variety_threshold;
+        // Update best_score and threshold if we found a better move
+        if (score > best_score) {
+          best_score = score;
+          threshold = best_score - variety_threshold;
+        }
       }
+    } catch (const SearchInterrupted&) {
+      // If interrupted, stop searching more moves and use what we have
+      break;
     }
   }
 
