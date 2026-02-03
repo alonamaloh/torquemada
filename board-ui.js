@@ -117,8 +117,16 @@ export class BoardUI {
         // Event handling
         this.onClick = null;  // Callback: (square) => void
 
-        // Set up click handler
+        // Set up click handler (works for both mouse and touch)
         this.canvas.addEventListener('click', (e) => this._handleClick(e));
+        // Prevent double-tap zoom on mobile
+        this.canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            if (e.changedTouches.length > 0) {
+                const touch = e.changedTouches[0];
+                this._handleTouch(touch);
+            }
+        });
 
         // Initial render
         this.render();
@@ -390,8 +398,40 @@ export class BoardUI {
      */
     _handleClick(e) {
         const rect = this.canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left;
-        const y = e.clientY - rect.top;
+        // Account for CSS scaling (canvas may be displayed smaller than its internal size)
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        const x = (e.clientX - rect.left) * scaleX;
+        const y = (e.clientY - rect.top) * scaleY;
+
+        // Convert to row/col
+        let col = Math.floor(x / this.squareSize);
+        let row = Math.floor(y / this.squareSize);
+
+        // Handle flipped board
+        if (this.flipped) {
+            row = 7 - row;
+            col = 7 - col;
+        }
+
+        // Convert to square number
+        const square = rowColToSquare(row, col);
+
+        if (square > 0 && this.onClick) {
+            this.onClick(square);
+        }
+    }
+
+    /**
+     * Handle touch events
+     */
+    _handleTouch(touch) {
+        const rect = this.canvas.getBoundingClientRect();
+        // Account for CSS scaling (canvas may be displayed smaller than its internal size)
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        const x = (touch.clientX - rect.left) * scaleX;
+        const y = (touch.clientY - rect.top) * scaleY;
 
         // Convert to row/col
         let col = Math.floor(x / this.squareSize);

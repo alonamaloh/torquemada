@@ -121,11 +121,15 @@ body {
     padding: 1rem;
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    max-width: calc(100vw - 2rem);
 }
 
 #board {
     display: block;
     border-radius: 4px;
+    max-width: 100%;
+    height: auto;
+    touch-action: manipulation;
 }
 
 .status-text {
@@ -142,8 +146,8 @@ body {
     border-radius: 6px;
     font-family: monospace;
     font-size: 0.85rem;
-    max-width: 100%;
-    width: 480px;
+    width: 100%;
+    max-width: 480px;
 }
 
 .search-info-row {
