@@ -733,12 +733,27 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
     // If so, apply variety search and finish
     if (use_variety && !variety_applied && max_nodes > 0 && result.nodes >= max_nodes / 2) {
       // This is effectively the last depth - apply variety selection
+      if (verbose_) {
+        std::cout << ". variety search at depth " << (depth + 1) << std::endl;
+      }
       try {
         result = search_root_variety(board, root_moves, depth + 1);
         result.depth = depth + 1;
         variety_applied = true;
+        if (verbose_) {
+          std::cout << ". variety search completed, score=" << result.score << std::endl;
+        }
       } catch (const SearchInterrupted&) {
         // If interrupted during variety search, use previous result
+        if (verbose_) {
+          std::cout << ". variety search interrupted" << std::endl;
+        }
+      } catch (...) {
+        // Catch any other exception
+        if (verbose_) {
+          std::cout << ". variety search threw unknown exception" << std::endl;
+        }
+        throw;
       }
       break;
     }

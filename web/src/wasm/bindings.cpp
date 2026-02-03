@@ -528,6 +528,10 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
         }
     };
 
+    val console = val::global("console");
+    console.call<void>("log", std::string("DEBUG: Creating searcher, variety_mode=") + std::to_string(variety_mode) +
+                       ", game_ply=" + std::to_string(game_ply));
+
     search::Searcher searcher("", 0, "", "");
     searcher.set_eval(eval_func);
 
@@ -558,7 +562,9 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
         });
     }
 
+    console.call<void>("log", std::string("DEBUG: About to call search()"));
     search::SearchResult sr = searcher.search(jsboard.board, max_depth, max_nodes, game_ply);
+    console.call<void>("log", std::string("DEBUG: Search returned, score=") + std::to_string(sr.score));
     return buildSearchResultVal(sr, jsboard.board, jsboard.white_to_move);
 }
 
