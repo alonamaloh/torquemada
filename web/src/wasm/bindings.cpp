@@ -25,6 +25,20 @@ namespace {
     // Global RNG for evaluation noise, seeded with system clock
     RandomBits g_rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
+    // Helper to build notation string from path
+    // path: vector of 0-indexed internal squares
+    // is_capture: whether to use 'x' or '-' as separator
+    // white_view: if true, squares are (sq + 1), else (32 - sq)
+    std::string buildNotation(const std::vector<int>& path, bool is_capture, bool white_view) {
+        std::string result;
+        for (size_t i = 0; i < path.size(); ++i) {
+            if (i > 0) result += is_capture ? "x" : "-";
+            int sq = white_view ? (path[i] + 1) : (32 - path[i]);
+            result += std::to_string(sq);
+        }
+        return result;
+    }
+
     // Map from material config string to DTM data
     std::unordered_map<std::string, std::vector<tablebase::DTM>> g_tablebase_data;
 
@@ -336,13 +350,7 @@ val getLegalMoves(const JSBoard& jsboard) {
         move.set("isCapture", fm.move.isCapture());
 
         // Build notation string
-        std::string notation;
-        for (size_t i = 0; i < fm.path.size(); ++i) {
-            if (i > 0) notation += fm.move.isCapture() ? "x" : "-";
-            int sq = jsboard.white_to_move ? (fm.path[i] + 1) : (32 - fm.path[i]);
-            notation += std::to_string(sq);
-        }
-        move.set("notation", notation);
+        move.set("notation", buildNotation(fm.path, fm.move.isCapture(), jsboard.white_to_move));
 
         result.call<void>("push", move);
     }
@@ -385,14 +393,7 @@ val createMoveObject(const Move& m, const std::vector<int>& path, bool white_to_
         move.set("to", 0);
     }
     move.set("isCapture", m.isCapture());
-
-    std::string notation;
-    for (size_t i = 0; i < path.size(); ++i) {
-        if (i > 0) notation += m.isCapture() ? "x" : "-";
-        int sq = white_to_move ? (path[i] + 1) : (32 - path[i]);
-        notation += std::to_string(sq);
-    }
-    move.set("notation", notation);
+    move.set("notation", buildNotation(path, m.isCapture(), white_to_move));
 
     return move;
 }
@@ -442,12 +443,7 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
             for (const auto& fm : full_moves) {
                 if (fm.move.from_xor_to == m.from_xor_to &&
                     fm.move.captures == m.captures) {
-                    // Build notation from full path
-                    for (size_t i = 0; i < fm.path.size(); ++i) {
-                        if (i > 0) notation += m.isCapture() ? "x" : "-";
-                        int sq = white_view ? (fm.path[i] + 1) : (32 - fm.path[i]);
-                        notation += std::to_string(sq);
-                    }
+                    notation = buildNotation(fm.path, m.isCapture(), white_view);
                     found = true;
                     break;
                 }
