@@ -427,20 +427,44 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
     result.set("nodes", static_cast<double>(sr.nodes));
     result.set("tb_hits", static_cast<double>(sr.tb_hits));
 
-    // Build PV
+    // Build PV with full paths for captures
     val pv = val::array();
     if (!sr.pv.empty()) {
         Board pos = board;
         bool white_view = white_to_move;
         for (const Move& m : sr.pv) {
-            Bb occupied = pos.white | pos.black;
-            int from_bit = __builtin_ctz(m.from_xor_to & occupied);
-            int to_bit = __builtin_ctz(m.from_xor_to ^ (1u << from_bit));
-            int disp_from = white_view ? (from_bit + 1) : (32 - from_bit);
-            int disp_to = white_view ? (to_bit + 1) : (32 - to_bit);
-            std::string notation = std::to_string(disp_from) +
-                                   (m.isCapture() ? "x" : "-") +
-                                   std::to_string(disp_to);
+            // Generate full moves to get the complete path for captures
+            std::vector<FullMove> full_moves;
+            generateFullMoves(pos, full_moves);
+
+            std::string notation;
+            bool found = false;
+            for (const auto& fm : full_moves) {
+                if (fm.move.from_xor_to == m.from_xor_to &&
+                    fm.move.captures == m.captures) {
+                    // Build notation from full path
+                    for (size_t i = 0; i < fm.path.size(); ++i) {
+                        if (i > 0) notation += m.isCapture() ? "x" : "-";
+                        int sq = white_view ? (fm.path[i] + 1) : (32 - fm.path[i]);
+                        notation += std::to_string(sq);
+                    }
+                    found = true;
+                    break;
+                }
+            }
+
+            // Fallback to simple from-to notation if not found
+            if (!found) {
+                Bb occupied = pos.white | pos.black;
+                int from_bit = __builtin_ctz(m.from_xor_to & occupied);
+                int to_bit = __builtin_ctz(m.from_xor_to ^ (1u << from_bit));
+                int disp_from = white_view ? (from_bit + 1) : (32 - from_bit);
+                int disp_to = white_view ? (to_bit + 1) : (32 - to_bit);
+                notation = std::to_string(disp_from) +
+                           (m.isCapture() ? "x" : "-") +
+                           std::to_string(disp_to);
+            }
+
             pv.call<void>("push", notation);
             pos = makeMove(pos, m);
             white_view = !white_view;
