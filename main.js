@@ -216,23 +216,19 @@ async function enterEditMode() {
 async function exitEditMode() {
     editMode = false;
 
-    // Temporarily disable autoPlay to prevent engine from moving immediately
+    // Apply the edited position (with autoPlay disabled to prevent immediate engine move)
     const savedAutoPlay = gameController.autoPlay;
     gameController.autoPlay = false;
-
-    // Apply the edited position
     await gameController.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
-
-    // Restore autoPlay
     gameController.autoPlay = savedAutoPlay;
 
-    // Swap player color assignments (unless in 2-player mode)
-    if (gameController.humanColor === 'white') {
-        gameController.humanColor = 'black';
-    } else if (gameController.humanColor === 'black') {
-        gameController.humanColor = 'white';
+    // Set player assignments based on mode:
+    // - If in 2-player mode ('both'), stay in 2-player mode
+    // - Otherwise, make engine play the side NOT to move, so user can move or trigger engine
+    if (gameController.humanColor !== 'both') {
+        // Human plays the side to move, engine plays the other side
+        gameController.humanColor = editWhiteToMove ? 'white' : 'black';
     }
-    // 'both' stays as 'both'
 
     // Update UI
     document.getElementById('game-controls').style.display = 'block';
