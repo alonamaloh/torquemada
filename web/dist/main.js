@@ -36,18 +36,10 @@ async function init() {
         const engine = getEngine();
         await engine.init('./engine-worker.js');
 
-        // Initialize tablebase loader
-        updateLoadingStatus('Checking tablebases...');
+        // Initialize tablebase loader (for downloading only - loading is now lazy in worker)
         try {
             tablebaseLoader = new TablebaseLoader();
             await tablebaseLoader.init();
-
-            // Check if tablebases are already stored
-            const stored = await tablebaseLoader.checkStoredTablebases();
-            if (stored.length > 0) {
-                updateLoadingStatus(`Loading ${stored.length} tablebases...`);
-                await loadTablebases();
-            }
         } catch (err) {
             console.warn('OPFS not available:', err);
         }
@@ -538,21 +530,7 @@ function setupEventHandlers() {
     }
 }
 
-/**
- * Load tablebases from OPFS into engine
- */
-async function loadTablebases() {
-    if (!tablebaseLoader) return;
-
-    const engine = getEngine();
-    const tablebases = await tablebaseLoader.loadAllTablebases();
-
-    for (const [materialKey, data] of tablebases) {
-        await engine.loadTablebase(materialKey, data);
-    }
-
-    console.log(`Loaded ${tablebases.size} tablebases`);
-}
+// Tablebases are now loaded lazily by the worker - no need to load them here
 
 /**
  * Show tablebase download dialog
@@ -590,12 +568,12 @@ async function showDownloadDialog() {
         });
 
         if (!cancelled) {
-            statusEl.textContent = 'Loading into engine...';
-            await loadTablebases();
-            statusEl.textContent = 'Complete!';
+            statusEl.textContent = 'Complete! Tablebases will be used automatically.';
             setTimeout(() => {
                 dialog.style.display = 'none';
-            }, 1000);
+                // Reload to pick up the new tablebases
+                window.location.reload();
+            }, 1500);
         }
     } catch (err) {
         if (statusEl) statusEl.textContent = `Error: ${err.message}`;

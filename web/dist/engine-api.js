@@ -84,15 +84,6 @@ export class EngineAPI {
     }
 
     /**
-     * Load a tablebase into the engine
-     * @param {string} materialKey - Material configuration key (e.g., "000011")
-     * @param {Uint8Array} data - Raw tablebase data
-     */
-    async loadTablebase(materialKey, data) {
-        return this.request('loadTablebase', { materialKey, data });
-    }
-
-    /**
      * Load a neural network model
      * @param {Uint8Array} data - Raw model data
      * @param {boolean} isDTMModel - True if this is the DTM specialist model

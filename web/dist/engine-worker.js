@@ -10,11 +10,116 @@ let engine = null;
 let board = null;
 let isReady = false;
 
+// Tablebase lazy loading support
+const CHUNK_SIZE = 16384;  // 16 KB chunks
+let tbSyncHandles = new Map();  // materialKey -> FileSystemSyncAccessHandle
+let tbFileSizes = new Map();    // materialKey -> file size
+let chunkCache = new Map();     // materialKey -> Map<chunkIdx, Int8Array>
+let tablebasesAvailable = false;
+
+/**
+ * Initialize sync access handles for all tablebase files
+ * This is fast - just opens handles without reading data
+ */
+async function initTablebaseSyncHandles() {
+    try {
+        if (!('storage' in navigator) || !('getDirectory' in navigator.storage)) {
+            console.log('OPFS not available in worker');
+            return;
+        }
+
+        const opfsRoot = await navigator.storage.getDirectory();
+        let tbDir;
+        try {
+            tbDir = await opfsRoot.getDirectoryHandle('tablebases', { create: false });
+        } catch (e) {
+            console.log('No tablebases directory found');
+            return;
+        }
+
+        let count = 0;
+        for await (const entry of tbDir.values()) {
+            if (entry.kind === 'file' && entry.name.startsWith('dtm_') && entry.name.endsWith('.bin')) {
+                const materialKey = entry.name.slice(4, 10);  // Extract XXXXXX from dtm_XXXXXX.bin
+                try {
+                    const fileHandle = await tbDir.getFileHandle(entry.name);
+                    const syncHandle = await fileHandle.createSyncAccessHandle();
+                    const fileSize = syncHandle.getSize();
+
+                    tbSyncHandles.set(materialKey, syncHandle);
+                    tbFileSizes.set(materialKey, fileSize);
+                    count++;
+                } catch (e) {
+                    console.warn(`Failed to open sync handle for ${entry.name}:`, e);
+                }
+            }
+        }
+
+        if (count > 0) {
+            tablebasesAvailable = true;
+            console.log(`Opened sync handles for ${count} tablebase files`);
+        }
+    } catch (err) {
+        console.warn('Failed to init tablebase sync handles:', err);
+    }
+}
+
+/**
+ * Load a specific chunk from a tablebase file
+ * Called from WASM via globalThis.loadTablebaseChunk
+ */
+globalThis.loadTablebaseChunk = function(materialKey, chunkIdx) {
+    // Check cache first
+    if (!chunkCache.has(materialKey)) {
+        chunkCache.set(materialKey, new Map());
+    }
+    const fileCache = chunkCache.get(materialKey);
+    if (fileCache.has(chunkIdx)) {
+        return fileCache.get(chunkIdx);
+    }
+
+    // Load from OPFS
+    const handle = tbSyncHandles.get(materialKey);
+    if (!handle) {
+        return null;
+    }
+
+    const fileSize = tbFileSizes.get(materialKey);
+    const offset = chunkIdx * CHUNK_SIZE;
+    const readSize = Math.min(CHUNK_SIZE, fileSize - offset);
+
+    if (readSize <= 0) {
+        return null;
+    }
+
+    const buffer = new Uint8Array(readSize);
+    handle.read(buffer, { at: offset });
+
+    // Convert to Int8Array for signed interpretation
+    const signedBuffer = new Int8Array(buffer.buffer);
+
+    // Cache it
+    fileCache.set(chunkIdx, signedBuffer);
+
+    return signedBuffer;
+};
+
+/**
+ * Check if tablebases are available (have sync handles open)
+ */
+globalThis.tablebasesAvailable = function() {
+    return tablebasesAvailable;
+};
+
 /**
  * Initialize the WASM module
  */
 async function init() {
     try {
+        // First, init tablebase sync handles (fast)
+        await initTablebaseSyncHandles();
+
+        // Then init WASM engine
         engine = await CheckersEngine();
         board = engine.getInitialBoard();
         isReady = true;
@@ -22,14 +127,6 @@ async function init() {
     } catch (err) {
         postMessage({ type: 'error', message: `Failed to initialize engine: ${err.message}` });
     }
-}
-
-/**
- * Load tablebase data into the engine
- */
-function loadTablebase(materialKey, data) {
-    if (!engine) return;
-    engine.loadTablebaseData(materialKey, data);
 }
 
 /**
@@ -45,8 +142,6 @@ function loadNNModel(data, isDTMModel) {
  */
 function getLegalMoves() {
     if (!engine || !board) return [];
-
-    // getLegalMoves now returns plain JS objects directly
     const moves = engine.getLegalMoves(board);
     return moves;
 }
@@ -56,8 +151,6 @@ function getLegalMoves() {
  */
 function makeMove(moveData) {
     if (!engine || !board) return null;
-
-    // makeMove accepts a plain JS object with from_xor_to and captures
     board = engine.makeMove(board, moveData);
     return getBoardState();
 }
@@ -104,7 +197,6 @@ function search(maxDepth, maxNodes, requestId) {
         return { error: 'Engine not ready' };
     }
 
-    console.log('Worker: starting search, depth:', maxDepth, 'nodes:', maxNodes);
     currentSearchId = requestId;
 
     try {
@@ -133,7 +225,6 @@ function search(maxDepth, maxNodes, requestId) {
         } else {
             result = engine.search(board, maxDepth || 20, maxNodes || 0);
         }
-        console.log('Worker: search returned:', result);
 
         currentSearchId = null;
         return {
@@ -165,8 +256,6 @@ function probeDTM() {
  */
 function parseMove(notation) {
     if (!engine || !board) return null;
-
-    // parseMove now returns a plain JS object directly (or null)
     const move = engine.parseMove(board, notation);
     return move;
 }
@@ -177,7 +266,7 @@ function parseMove(notation) {
 function getLoadedStatus() {
     if (!engine) return { tablebases: false, nnModel: false, dtmNNModel: false };
     return {
-        tablebases: engine.hasTablebases(),
+        tablebases: tablebasesAvailable,
         nnModel: engine.hasNNModel(),
         dtmNNModel: engine.hasDTMNNModel()
     };
@@ -195,11 +284,6 @@ self.onmessage = function(e) {
                 // Init is async, will post 'ready' message when done
                 init();
                 return;
-
-            case 'loadTablebase':
-                loadTablebase(data.materialKey, data.data);
-                response.success = true;
-                break;
 
             case 'loadNNModel':
                 loadNNModel(data.data, data.isDTMModel);

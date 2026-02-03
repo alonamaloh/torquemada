@@ -19,16 +19,15 @@
 
 using namespace emscripten;
 
-// Global tablebase data storage
-// Tablebases are loaded from JS and stored here as raw bytes
 namespace {
+    // Constants for chunk-based tablebase loading
+    constexpr int CHUNK_SIZE = 16384;  // 16 KB chunks
+    constexpr int HEADER_SIZE = 33;    // DTM file header size
+
     // Global RNG for evaluation noise, seeded with system clock
     RandomBits g_rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
     // Helper to build notation string from path
-    // path: vector of 0-indexed internal squares
-    // is_capture: whether to use 'x' or '-' as separator
-    // white_view: if true, squares are (sq + 1), else (32 - sq)
     std::string buildNotation(const std::vector<int>& path, bool is_capture, bool white_view) {
         std::string result;
         for (size_t i = 0; i < path.size(); ++i) {
@@ -39,33 +38,54 @@ namespace {
         return result;
     }
 
-    // Map from material config string to DTM data
-    std::unordered_map<std::string, std::vector<tablebase::DTM>> g_tablebase_data;
+    // Helper to convert Material to string key
+    std::string material_key(const Material& m) {
+        char buf[16];
+        snprintf(buf, sizeof(buf), "%d%d%d%d%d%d",
+                 m.back_white_pawns, m.back_black_pawns,
+                 m.other_white_pawns, m.other_black_pawns,
+                 m.white_queens, m.black_queens);
+        return buf;
+    }
 
-    // Simple DTM tablebase manager for WASM that uses preloaded data
+    // Lazy-loading DTM tablebase manager
+    // Calls into JS to load chunks on demand
     class WasmDTMTablebaseManager {
     public:
         tablebase::DTM lookup_dtm(const Board& board) const {
-            Material m = get_material(board);
-            std::string key = material_key(m);
-
-            auto it = g_tablebase_data.find(key);
-            if (it == g_tablebase_data.end() || it->second.empty()) {
+            // Check if tablebases are available in JS
+            val tablebasesAvailable = val::global("tablebasesAvailable");
+            if (tablebasesAvailable.isUndefined() || !tablebasesAvailable().as<bool>()) {
                 return tablebase::DTM_UNKNOWN;
             }
 
+            Material m = get_material(board);
+            std::string key = material_key(m);
             std::size_t idx = board_to_index(board, m);
-            if (idx >= it->second.size()) {
+
+            // Compute chunk index and offset
+            // File layout: 33-byte header + DTM values (1 byte each)
+            int file_offset = HEADER_SIZE + static_cast<int>(idx);
+            int chunk_idx = file_offset / CHUNK_SIZE;
+            int offset_in_chunk = file_offset % CHUNK_SIZE;
+
+            // Call JS to get the chunk (it handles caching)
+            val loadChunk = val::global("loadTablebaseChunk");
+            val chunk = loadChunk(key, chunk_idx);
+
+            if (chunk.isNull() || chunk.isUndefined()) {
                 return tablebase::DTM_UNKNOWN;
             }
-            return it->second[idx];
-        }
 
-        bool has_dtm(const Board& board) const {
-            Material m = get_material(board);
-            std::string key = material_key(m);
-            auto it = g_tablebase_data.find(key);
-            return it != g_tablebase_data.end() && !it->second.empty();
+            // Check if offset is within chunk bounds
+            int chunk_length = chunk["length"].as<int>();
+            if (offset_in_chunk >= chunk_length) {
+                return tablebase::DTM_UNKNOWN;
+            }
+
+            // Get the DTM value (signed byte)
+            int dtm_value = chunk[offset_in_chunk].as<int>();
+            return static_cast<tablebase::DTM>(dtm_value);
         }
 
         // Find best move using DTM lookup
@@ -136,16 +156,6 @@ namespace {
 
             return found;
         }
-
-    private:
-        static std::string material_key(const Material& m) {
-            char buf[16];
-            snprintf(buf, sizeof(buf), "%d%d%d%d%d%d",
-                     m.back_white_pawns, m.back_black_pawns,
-                     m.other_white_pawns, m.other_black_pawns,
-                     m.white_queens, m.black_queens);
-            return buf;
-        }
     };
 
     WasmDTMTablebaseManager g_tb_manager;
@@ -153,44 +163,6 @@ namespace {
     // Neural network models
     std::unique_ptr<nn::MLP> g_nn_model;
     std::unique_ptr<nn::MLP> g_dtm_nn_model;
-}
-
-// Load tablebase data from a typed array (called from JS)
-void loadTablebaseData(const std::string& material_key, val typed_array) {
-    // Get the length and copy data
-    unsigned int length = typed_array["length"].as<unsigned int>();
-
-    // DTM files have a header: version (1) + material (24) + count (8) = 33 bytes
-    if (length < 33) {
-        return;
-    }
-
-    // Copy data from JS typed array
-    std::vector<uint8_t> buffer(length);
-    val memory = val::module_property("HEAPU8");
-    val memview = typed_array.call<val>("slice");
-    for (unsigned int i = 0; i < length; ++i) {
-        buffer[i] = memview[i].as<uint8_t>();
-    }
-
-    // Parse header
-    uint8_t version = buffer[0];
-    if (version != 1) {
-        return;
-    }
-
-    // Skip material verification (we trust JS to pass correct key)
-    // Read count (at offset 25)
-    std::size_t count;
-    std::memcpy(&count, buffer.data() + 25, sizeof(count));
-
-    // Parse DTM values (1 byte each, signed)
-    std::vector<tablebase::DTM> dtm_data(count);
-    for (std::size_t i = 0; i < count && 33 + i < length; ++i) {
-        dtm_data[i] = static_cast<tablebase::DTM>(static_cast<int8_t>(buffer[33 + i]));
-    }
-
-    g_tablebase_data[material_key] = std::move(dtm_data);
 }
 
 // Load neural network model from typed array
@@ -222,9 +194,13 @@ void loadNNModel(val typed_array, bool is_dtm_model) {
     }
 }
 
-// Check if tablebases are loaded
+// Check if tablebases are available (asks JS)
 bool hasTablebases() {
-    return !g_tablebase_data.empty();
+    val tablebasesAvailable = val::global("tablebasesAvailable");
+    if (tablebasesAvailable.isUndefined()) {
+        return false;
+    }
+    return tablebasesAvailable().as<bool>();
 }
 
 // Check if NN models are loaded
@@ -367,9 +343,6 @@ JSBoard makeJSMove(const JSBoard& jsboard, val jsmove) {
     return JSBoard(new_board, !jsboard.white_to_move);
 }
 
-// Search result - now returns plain JS object
-// (JSSearchResult struct kept for internal use but we return val)
-
 // Helper to create a move JS object from Move and path
 val createMoveObject(const Move& m, const std::vector<int>& path, bool white_to_move) {
     val jsPath = val::array();
@@ -477,8 +450,11 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
     val result = val::object();
     int piece_count = jsboard.pieceCount();
 
+    // Check if tablebases are available
+    bool tb_available = hasTablebases();
+
     // Try tablebase lookup first for endgame positions
-    if (piece_count <= 5 && !g_tablebase_data.empty()) {
+    if (piece_count <= 5 && tb_available) {
         Move best_move;
         tablebase::DTM best_dtm;
         if (g_tb_manager.find_best_move(jsboard.board, best_move, best_dtm)) {
@@ -530,8 +506,8 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
     search::Searcher searcher("", 0, "", "");
     searcher.set_eval(eval_func);
 
-    // Set up DTM probe function if tablebases are loaded
-    if (!g_tablebase_data.empty()) {
+    // Set up DTM probe function if tablebases are available
+    if (tb_available) {
         searcher.set_dtm_probe([](const Board& b) {
             return g_tb_manager.lookup_dtm(b);
         }, 5);  // 5-piece tablebases
@@ -542,8 +518,6 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
     if (has_callback) {
         searcher.set_progress_callback([&](const search::SearchResult& sr) {
             val update = buildSearchResultVal(sr, jsboard.board, jsboard.white_to_move);
-            // Use call<void> to indicate we don't care about the return value
-            // This avoids issues with undefined return values from JS
             progress_callback.call<void>("call", val::null(), update);
         });
     }
@@ -554,7 +528,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
 
 // Probe tablebase for current position (returns DTM or null)
 val probeDTM(const JSBoard& jsboard) {
-    if (g_tablebase_data.empty()) {
+    if (!hasTablebases()) {
         return val::null();
     }
 
@@ -593,8 +567,6 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
         .function("pieceCount", &JSBoard::pieceCount)
         .class_function("fromBitboards", &JSBoard::fromBitboards);
 
-    // Moves and SearchResults are returned as plain JS objects, not wrapped C++ classes
-
     // Free functions
     function("getInitialBoard", &getInitialBoard);
     function("getLegalMoves", &getLegalMoves);
@@ -603,7 +575,6 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("searchWithCallback", &doSearchWithCallback);
     function("probeDTM", &probeDTM);
     function("parseMove", &doParseMove);
-    function("loadTablebaseData", &loadTablebaseData);
     function("loadNNModel", &loadNNModel);
     function("hasTablebases", &hasTablebases);
     function("hasNNModel", &hasNNModel);
