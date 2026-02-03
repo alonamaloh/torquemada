@@ -674,15 +674,20 @@ function updateSearchInfo(info) {
  * Resize board to fit container
  */
 function resizeBoard() {
+    // On mobile, let CSS handle scaling (canvas stays at 480x480, CSS scales it down)
+    // This avoids feedback loops where measuring causes shrinking
+    if (window.innerWidth <= 768) {
+        return;
+    }
+
     const section = document.querySelector('.board-section');
     const canvas = document.getElementById('board');
 
     if (section && canvas && gameController) {
         // Measure the section width (stable, not affected by canvas size)
         const sectionWidth = section.clientWidth;
-        // Account for container padding (0.5rem = ~8px each side on desktop, less on mobile)
-        const padding = window.innerWidth <= 768 ? 8 : 16;
-        const size = Math.min(sectionWidth - padding, 480);
+        // Account for container padding
+        const size = Math.min(sectionWidth - 16, 480);
         if (size > 0) {
             gameController.resize(size);
         }
