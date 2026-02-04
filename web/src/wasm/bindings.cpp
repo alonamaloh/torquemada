@@ -20,7 +20,7 @@
 using namespace emscripten;
 
 // Engine version - update this when making changes to help debug caching issues
-#define ENGINE_VERSION "2026-02-04-v3"
+#define ENGINE_VERSION __DATE__ " " __TIME__
 
 namespace {
     // Constants for chunk-based tablebase loading
