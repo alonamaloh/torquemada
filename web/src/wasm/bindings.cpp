@@ -30,6 +30,9 @@ namespace {
     // Global RNG for evaluation noise, seeded with system clock
     RandomBits g_rng(std::chrono::steady_clock::now().time_since_epoch().count());
 
+    // Global stop flag for interrupting search
+    std::atomic<bool> g_stop_flag{false};
+
     // Helper to build notation string from path
     std::string buildNotation(const std::vector<int>& path, bool is_capture, bool white_view) {
         std::string result;
@@ -538,6 +541,10 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
     search::Searcher searcher("", 0, "", "");
     searcher.set_eval(eval_func);
 
+    // Reset and set stop flag for this search
+    g_stop_flag.store(false, std::memory_order_relaxed);
+    searcher.set_stop_flag(&g_stop_flag);
+
     // Set variety mode
     switch (variety_mode) {
         case 1: searcher.set_variety_mode(search::VarietyMode::SAFE); break;
@@ -624,6 +631,11 @@ std::string getEngineVersion() {
     return ENGINE_VERSION;
 }
 
+// Stop ongoing search
+void stopSearch() {
+    g_stop_flag.store(true, std::memory_order_relaxed);
+}
+
 // Emscripten bindings
 EMSCRIPTEN_BINDINGS(checkers_engine) {
     // JSBoard
@@ -649,4 +661,5 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("hasNNModel", &hasNNModel);
     function("getEngineVersion", &getEngineVersion);
     function("hasDTMNNModel", &hasDTMNNModel);
+    function("stopSearch", &stopSearch);
 }
