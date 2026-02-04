@@ -10,9 +10,12 @@ export class EngineAPI {
         this.isReady = false;
         this.onReady = null;
         this.onError = null;
-        // SharedArrayBuffer for stop flag (if available)
+        // SharedArrayBuffer for stop flag (legacy approach)
         this.stopFlag = null;
         this.stopFlagView = null;
+        // Direct WASM memory access (preferred)
+        this.wasmMemory = null;
+        this.wasmStopFlagAddress = 0;
     }
 
     /**
@@ -37,6 +40,14 @@ export class EngineAPI {
 
             this.worker.onmessage = (e) => {
                 const { id, type, ...data } = e.data;
+
+                // Handle WASM memory sharing for direct stop flag access
+                if (type === 'wasmMemory') {
+                    this.wasmMemory = new Uint8Array(data.buffer);
+                    this.wasmStopFlagAddress = data.stopFlagAddress;
+                    console.log(`Received WASM memory, stop flag at ${this.wasmStopFlagAddress}`);
+                    return;
+                }
 
                 // Handle ready message
                 if (type === 'ready') {
@@ -164,7 +175,9 @@ export class EngineAPI {
      */
     async search(maxDepth = 20, maxNodes = 0, gamePly = 100, varietyMode = 0, onProgress = null) {
         // Reset stop flag before starting search
-        if (this.stopFlagView) {
+        if (this.wasmMemory && this.wasmStopFlagAddress) {
+            this.wasmMemory[this.wasmStopFlagAddress] = 0;
+        } else if (this.stopFlagView) {
             Atomics.store(this.stopFlagView, 0, 0);
         }
         const response = await this.requestWithProgress('search', { maxDepth, maxNodes, gamePly, varietyMode }, onProgress);
@@ -175,11 +188,16 @@ export class EngineAPI {
      * Stop the current search
      */
     stopSearch() {
-        // Set stop flag via SharedArrayBuffer (immediate)
-        if (this.stopFlagView) {
+        // Write directly to WASM memory (immediate, works even when worker is blocked)
+        if (this.wasmMemory && this.wasmStopFlagAddress) {
+            this.wasmMemory[this.wasmStopFlagAddress] = 1;
+            console.log('Set stop flag via WASM memory');
+        }
+        // Fallback: SharedArrayBuffer approach
+        else if (this.stopFlagView) {
             Atomics.store(this.stopFlagView, 0, 1);
         }
-        // Also send message as fallback
+        // Also send message as fallback (processed after search completes)
         if (this.worker) {
             this.worker.postMessage({ type: 'stop' });
         }

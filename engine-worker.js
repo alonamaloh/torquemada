@@ -10,9 +10,13 @@ let engine = null;
 let board = null;
 let isReady = false;
 
-// SharedArrayBuffer for stop flag
+// SharedArrayBuffer for stop flag (legacy approach)
 let stopFlagBuffer = null;
 let stopFlagView = null;
+
+// Direct WASM memory access for stop flag
+let wasmStopFlagAddress = 0;
+let wasmMemory = null;
 
 // Tablebase lazy loading support
 const CHUNK_SIZE = 16384;  // 16 KB chunks
@@ -129,6 +133,19 @@ async function init() {
         // Log engine version for debugging cache issues
         const version = engine.getEngineVersion();
         console.log(`Engine version: ${version}`);
+
+        // Get stop flag address for direct memory access
+        if (engine.getStopFlagAddress && engine.wasmMemory) {
+            wasmStopFlagAddress = engine.getStopFlagAddress();
+            wasmMemory = engine.HEAPU8;
+            console.log(`Stop flag address: ${wasmStopFlagAddress}`);
+            // Send WASM memory buffer and stop flag address to main thread
+            postMessage({
+                type: 'wasmMemory',
+                buffer: engine.wasmMemory.buffer,
+                stopFlagAddress: wasmStopFlagAddress
+            });
+        }
 
         board = engine.getInitialBoard();
         isReady = true;
