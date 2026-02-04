@@ -410,12 +410,8 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
     result.set("tb_hits", static_cast<double>(sr.tb_hits));
 
     // Include variety selection info if present
-    val console = val::global("console");
-    console.call<void>("log", std::string("buildSearchResultVal: variety_candidates.size() = ") +
-                       std::to_string(sr.variety_candidates.size()));
     if (!sr.variety_candidates.empty()) {
         val candidates = val::array();
-        std::string log_msg = "Variety candidates: ";
         for (const auto& vc : sr.variety_candidates) {
             // Find the notation for this move
             std::string notation = "?";
@@ -427,11 +423,6 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
                 }
             }
 
-            char buf[64];
-            snprintf(buf, sizeof(buf), "%s (%.1f%%)%s ",
-                     notation.c_str(), vc.probability * 100.0, vc.selected ? "*" : "");
-            log_msg += buf;
-
             val candidate = val::object();
             candidate.set("notation", notation);
             candidate.set("score", vc.score);
@@ -439,7 +430,6 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
             candidate.set("selected", vc.selected);
             candidates.call<void>("push", candidate);
         }
-        console.call<void>("log", log_msg);
         result.set("varietyCandidates", candidates);
     }
 
