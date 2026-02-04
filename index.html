@@ -3,8 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- Prevent caching -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <title>Torquemada Checkers</title>
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=20260204">
     <!-- Enable SharedArrayBuffer for stop functionality -->
     <script src="coi-serviceworker.js"></script>
 </head>
@@ -175,6 +179,6 @@
     </div>
 
     <!-- Scripts -->
-    <script type="module" src="main.js"></script>
+    <script type="module" src="main.js?v=20260204"></script>
 </body>
 </html>
