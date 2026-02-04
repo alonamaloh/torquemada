@@ -722,6 +722,8 @@ function updateSearchInfo(info) {
 
     // Display variety candidates if present (only update when we have candidates,
     // don't hide during progress updates - let it persist until next search with candidates)
+    console.log('updateSearchInfo: varietyInfoEl=', varietyInfoEl, 'varietyCandidatesEl=', varietyCandidatesEl);
+    console.log('updateSearchInfo: info.varietyCandidates=', info.varietyCandidates);
     if (varietyInfoEl && varietyCandidatesEl) {
         if (info.varietyCandidates && info.varietyCandidates.length > 0) {
             // Sort by probability descending
@@ -732,10 +734,14 @@ function updateSearchInfo(info) {
                 const marker = c.selected ? '*' : '';
                 return `${c.notation}${marker} (${prob}%)`;
             }).join(' / ');
+            console.log('updateSearchInfo: setting variety text to:', text);
             varietyCandidatesEl.textContent = text;
             varietyInfoEl.style.display = 'block';
+            console.log('updateSearchInfo: varietyInfoEl.style.display is now:', varietyInfoEl.style.display);
         }
         // Don't hide variety info during progress updates - it persists until next variety selection
+    } else {
+        console.log('updateSearchInfo: variety elements not found!');
     }
 }
 
