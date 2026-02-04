@@ -121,6 +121,11 @@ async function init() {
 
         // Then init WASM engine
         engine = await CheckersEngine();
+
+        // Log engine version for debugging cache issues
+        const version = engine.getEngineVersion();
+        console.log(`Engine version: ${version}`);
+
         board = engine.getInitialBoard();
         isReady = true;
         postMessage({ type: 'ready' });
