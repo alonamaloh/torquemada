@@ -10,6 +10,10 @@ let engine = null;
 let board = null;
 let isReady = false;
 
+// SharedArrayBuffer for stop flag
+let stopFlagBuffer = null;
+let stopFlagView = null;
+
 // Tablebase lazy loading support
 const CHUNK_SIZE = 16384;  // 16 KB chunks
 let tbSyncHandles = new Map();  // materialKey -> FileSystemSyncAccessHandle
@@ -212,6 +216,11 @@ function search(maxDepth, maxNodes, gamePly, varietyMode, requestId) {
     try {
         // Progress callback - sends updates as search progresses
         const progressCallback = (result) => {
+            // Check stop flag from SharedArrayBuffer
+            if (stopFlagView && Atomics.load(stopFlagView, 0) !== 0) {
+                engine.stopSearch();
+            }
+
             if (currentSearchId !== null) {
                 postMessage({
                     id: currentSearchId,
@@ -291,7 +300,14 @@ function getLoadedStatus() {
 
 // Message handler
 self.onmessage = function(e) {
-    const { id, type, data } = e.data;
+    const { id, type, data, buffer } = e.data;
+
+    // Handle stop flag setup (no response needed)
+    if (type === 'setStopFlag') {
+        stopFlagBuffer = buffer;
+        stopFlagView = new Int32Array(buffer);
+        return;
+    }
 
     let response = { id, type };
 

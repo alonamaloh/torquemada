@@ -10,6 +10,9 @@ export class EngineAPI {
         this.isReady = false;
         this.onReady = null;
         this.onError = null;
+        // SharedArrayBuffer for stop flag (if available)
+        this.stopFlag = null;
+        this.stopFlagView = null;
     }
 
     /**
@@ -18,8 +21,19 @@ export class EngineAPI {
      * @returns {Promise<void>}
      */
     async init(workerPath = './engine-worker.js') {
+        // Create SharedArrayBuffer for stop flag if available
+        if (typeof SharedArrayBuffer !== 'undefined') {
+            this.stopFlag = new SharedArrayBuffer(4);
+            this.stopFlagView = new Int32Array(this.stopFlag);
+        }
+
         return new Promise((resolve, reject) => {
             this.worker = new Worker(workerPath);
+
+            // Send stop flag buffer to worker
+            if (this.stopFlag) {
+                this.worker.postMessage({ type: 'setStopFlag', buffer: this.stopFlag });
+            }
 
             this.worker.onmessage = (e) => {
                 const { id, type, ...data } = e.data;
@@ -149,6 +163,10 @@ export class EngineAPI {
      * @returns {Promise<Object>} Search result with bestMove, score, depth, nodes
      */
     async search(maxDepth = 20, maxNodes = 0, gamePly = 100, varietyMode = 0, onProgress = null) {
+        // Reset stop flag before starting search
+        if (this.stopFlagView) {
+            Atomics.store(this.stopFlagView, 0, 0);
+        }
         const response = await this.requestWithProgress('search', { maxDepth, maxNodes, gamePly, varietyMode }, onProgress);
         return response.result;
     }
@@ -157,6 +175,11 @@ export class EngineAPI {
      * Stop the current search
      */
     stopSearch() {
+        // Set stop flag via SharedArrayBuffer (immediate)
+        if (this.stopFlagView) {
+            Atomics.store(this.stopFlagView, 0, 1);
+        }
+        // Also send message as fallback
         if (this.worker) {
             this.worker.postMessage({ type: 'stop' });
         }
