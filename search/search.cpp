@@ -290,7 +290,19 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
 
   for (const Move& move : moves) {
     Board child = makeMove(board, move);
-    int score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
+    int score;
+
+    if (is_first) {
+      // Search first move with full window
+      score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
+    } else {
+      // PVS: try null-window search first
+      score = -negamax(child, depth - 1, -alpha - 1, -alpha, ply + 1);
+      // If it fails high, re-search with full window
+      if (score > alpha && score < beta) {
+        score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
+      }
+    }
 
     if (score > best_score) {
       best_score = score;
