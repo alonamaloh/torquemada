@@ -729,9 +729,9 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
       break;
     }
 
-    // Check if we've reached the variety threshold (50% of max_nodes)
+    // Check if we've reached the variety threshold (25% of max_nodes)
     // If so, apply variety search and finish
-    if (use_variety && !variety_applied && max_nodes > 0 && result.nodes >= max_nodes / 2) {
+    if (use_variety && !variety_applied && max_nodes > 0 && result.nodes >= max_nodes / 4) {
       // This is effectively the last depth - apply variety selection
       if (verbose_) {
         std::cout << ". variety search at depth " << (depth + 1) << std::endl;
