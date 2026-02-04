@@ -563,8 +563,27 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
     }
 
     console.call<void>("log", std::string("DEBUG: About to call search()"));
-    search::SearchResult sr = searcher.search(jsboard.board, max_depth, max_nodes, game_ply);
-    console.call<void>("log", std::string("DEBUG: Search returned, score=") + std::to_string(sr.score));
+    search::SearchResult sr;
+    try {
+        sr = searcher.search(jsboard.board, max_depth, max_nodes, game_ply);
+        console.call<void>("log", std::string("DEBUG: Search returned, score=") + std::to_string(sr.score));
+    } catch (const search::SearchInterrupted&) {
+        console.call<void>("log", std::string("DEBUG: Search was interrupted"));
+        // Return a minimal result - the search was interrupted
+        val result = val::object();
+        result.set("error", "Search interrupted");
+        return result;
+    } catch (const std::exception& e) {
+        console.call<void>("log", std::string("DEBUG: Search threw exception: ") + e.what());
+        val result = val::object();
+        result.set("error", std::string("Search exception: ") + e.what());
+        return result;
+    } catch (...) {
+        console.call<void>("log", std::string("DEBUG: Search threw unknown exception"));
+        val result = val::object();
+        result.set("error", "Search threw unknown exception");
+        return result;
+    }
     return buildSearchResultVal(sr, jsboard.board, jsboard.white_to_move);
 }
 
