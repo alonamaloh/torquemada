@@ -707,6 +707,8 @@ function updateSearchInfo(info) {
     const scoreEl = document.getElementById('search-score');
     const nodesEl = document.getElementById('search-nodes');
     const pvEl = document.getElementById('search-pv');
+    const varietyInfoEl = document.getElementById('variety-info');
+    const varietyCandidatesEl = document.getElementById('variety-candidates');
 
     if (depthEl) depthEl.textContent = info.depth || '-';
     if (scoreEl) scoreEl.textContent = info.scoreStr || '-';
@@ -716,6 +718,24 @@ function updateSearchInfo(info) {
         nodesEl.textContent = nodes.toLocaleString();
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
+
+    // Display variety candidates if present
+    if (varietyInfoEl && varietyCandidatesEl) {
+        if (info.varietyCandidates && info.varietyCandidates.length > 0) {
+            // Sort by probability descending
+            const sorted = [...info.varietyCandidates].sort((a, b) => b.probability - a.probability);
+            // Format: "21-17 (47.4%) / 32-28 (41.1%) / 19-15 (11.5%)"
+            const text = sorted.map(c => {
+                const prob = (c.probability * 100).toFixed(1);
+                const marker = c.selected ? '*' : '';
+                return `${c.notation}${marker} (${prob}%)`;
+            }).join(' / ');
+            varietyCandidatesEl.textContent = text;
+            varietyInfoEl.style.display = 'block';
+        } else {
+            varietyInfoEl.style.display = 'none';
+        }
+    }
 }
 
 /**

@@ -176,6 +176,12 @@ body {
     word-break: break-all;
 }
 
+.variety-candidates {
+    color: var(--accent);
+    font-size: 0.9em;
+    word-break: break-all;
+}
+
 /* Controls section */
 .controls-section {
     width: 280px;
