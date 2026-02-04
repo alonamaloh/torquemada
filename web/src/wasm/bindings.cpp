@@ -19,6 +19,9 @@
 
 using namespace emscripten;
 
+// Engine version - update this when making changes to help debug caching issues
+#define ENGINE_VERSION "2026-02-03-v2"
+
 namespace {
     // Constants for chunk-based tablebase loading
     constexpr int CHUNK_SIZE = 16384;  // 16 KB chunks
@@ -616,6 +619,11 @@ val doParseMove(const JSBoard& jsboard, const std::string& notation) {
     return createMoveObject(result->move, result->path, jsboard.white_to_move);
 }
 
+// Get engine version string
+std::string getEngineVersion() {
+    return ENGINE_VERSION;
+}
+
 // Emscripten bindings
 EMSCRIPTEN_BINDINGS(checkers_engine) {
     // JSBoard
@@ -639,5 +647,6 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("loadNNModel", &loadNNModel);
     function("hasTablebases", &hasTablebases);
     function("hasNNModel", &hasNNModel);
+    function("getEngineVersion", &getEngineVersion);
     function("hasDTMNNModel", &hasDTMNNModel);
 }
