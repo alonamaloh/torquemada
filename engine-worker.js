@@ -276,7 +276,8 @@ function search(maxDepth, maxNodes, gamePly, varietyMode, requestId) {
             depth: result.depth,
             nodes: result.nodes,
             tbHits: result.tb_hits,
-            pv: result.pv || []
+            pv: result.pv || [],
+            varietyCandidates: result.varietyCandidates || null
         };
     } catch (err) {
         console.error('Worker: search error:', err);
