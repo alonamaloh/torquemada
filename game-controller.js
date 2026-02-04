@@ -422,7 +422,7 @@ export class GameController {
 
         // Call search info callback with full details
         if (this.onSearchInfo) {
-            const info = {
+            this.onSearchInfo({
                 depth: result.depth,
                 score: result.score,
                 scoreStr: scoreStr,
@@ -431,11 +431,7 @@ export class GameController {
                 pv: result.pv || [],
                 pvStr: pvStr,
                 varietyCandidates: result.varietyCandidates || null
-            };
-            if (info.varietyCandidates) {
-                console.log('Variety candidates:', info.varietyCandidates);
-            }
-            this.onSearchInfo(info);
+            });
         }
     }
 

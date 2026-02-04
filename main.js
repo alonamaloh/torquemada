@@ -34,7 +34,7 @@ async function init() {
         // Initialize engine
         updateLoadingStatus('Initializing engine...');
         const engine = getEngine();
-        await engine.init('./engine-worker.js?v=20260204e');
+        await engine.init('./engine-worker.js?v=20260204f');
 
         // Initialize tablebase loader (for downloading only - loading is now lazy in worker)
         try {
@@ -79,6 +79,7 @@ async function init() {
         gameController.onThinkingStart = () => {
             setThinkingIndicator(true);
             updateUndoRedoButtons();
+            clearVarietyInfo();
         };
 
         gameController.onThinkingEnd = () => {
@@ -176,6 +177,7 @@ function updateUndoRedoButtons() {
  */
 async function enterEditMode() {
     editMode = true;
+    clearVarietyInfo();
 
     // Copy current position to edit board
     const board = await gameController.getBoard();
@@ -720,28 +722,18 @@ function updateSearchInfo(info) {
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
 
-    // Display variety candidates if present (only update when we have candidates,
-    // don't hide during progress updates - let it persist until next search with candidates)
-    console.log('updateSearchInfo: varietyInfoEl=', varietyInfoEl, 'varietyCandidatesEl=', varietyCandidatesEl);
-    console.log('updateSearchInfo: info.varietyCandidates=', info.varietyCandidates);
-    if (varietyInfoEl && varietyCandidatesEl) {
-        if (info.varietyCandidates && info.varietyCandidates.length > 0) {
-            // Sort by probability descending
-            const sorted = [...info.varietyCandidates].sort((a, b) => b.probability - a.probability);
-            // Format: "21-17* (47.4%) / 32-28 (41.1%) / 19-15 (11.5%)"
-            const text = sorted.map(c => {
-                const prob = (c.probability * 100).toFixed(1);
-                const marker = c.selected ? '*' : '';
-                return `${c.notation}${marker} (${prob}%)`;
-            }).join(' / ');
-            console.log('updateSearchInfo: setting variety text to:', text);
-            varietyCandidatesEl.textContent = text;
-            varietyInfoEl.style.display = 'block';
-            console.log('updateSearchInfo: varietyInfoEl.style.display is now:', varietyInfoEl.style.display);
-        }
-        // Don't hide variety info during progress updates - it persists until next variety selection
-    } else {
-        console.log('updateSearchInfo: variety elements not found!');
+    // Display variety candidates if present
+    if (varietyInfoEl && varietyCandidatesEl && info.varietyCandidates && info.varietyCandidates.length > 0) {
+        // Sort by probability descending
+        const sorted = [...info.varietyCandidates].sort((a, b) => b.probability - a.probability);
+        // Format: "21-17* (47.4%) / 32-28 (41.1%) / 19-15 (11.5%)"
+        const text = sorted.map(c => {
+            const prob = (c.probability * 100).toFixed(1);
+            const marker = c.selected ? '*' : '';
+            return `${c.notation}${marker} (${prob}%)`;
+        }).join(' / ');
+        varietyCandidatesEl.textContent = text;
+        varietyInfoEl.style.display = 'block';
     }
 }
 

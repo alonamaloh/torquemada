@@ -270,8 +270,7 @@ function search(maxDepth, maxNodes, gamePly, varietyMode, requestId) {
         }
 
         currentSearchId = null;
-        console.log('Worker: raw result.varietyCandidates =', result.varietyCandidates);
-        // Convert varietyCandidates from WASM array to plain JS array
+        // Convert varietyCandidates from WASM array to plain JS array for postMessage
         let varietyCandidates = null;
         if (result.varietyCandidates && result.varietyCandidates.length > 0) {
             varietyCandidates = [];
@@ -284,7 +283,6 @@ function search(maxDepth, maxNodes, gamePly, varietyMode, requestId) {
                     selected: c.selected
                 });
             }
-            console.log('Worker: converted varietyCandidates =', varietyCandidates);
         }
         return {
             bestMove: result.best_move,
