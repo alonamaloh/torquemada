@@ -469,19 +469,28 @@ function setupEventHandlers() {
         });
     }
 
-    // Strength buttons (Fast/Slow)
+    // Strength buttons (Fast/Slow/Deep)
     const fastBtn = document.getElementById('btn-nodes-fast');
     const slowBtn = document.getElementById('btn-nodes-slow');
-    if (fastBtn && slowBtn) {
+    const deepBtn = document.getElementById('btn-nodes-deep');
+    if (fastBtn && slowBtn && deepBtn) {
+        const setStrengthActive = (activeBtn) => {
+            fastBtn.classList.remove('active');
+            slowBtn.classList.remove('active');
+            deepBtn.classList.remove('active');
+            activeBtn.classList.add('active');
+        };
         fastBtn.addEventListener('click', () => {
             gameController.setEngineParams(100, 100000);
-            fastBtn.classList.add('active');
-            slowBtn.classList.remove('active');
+            setStrengthActive(fastBtn);
         });
         slowBtn.addEventListener('click', () => {
             gameController.setEngineParams(100, 1000000);
-            slowBtn.classList.add('active');
-            fastBtn.classList.remove('active');
+            setStrengthActive(slowBtn);
+        });
+        deepBtn.addEventListener('click', () => {
+            gameController.setEngineParams(100, 10000000);
+            setStrengthActive(deepBtn);
         });
     }
 
