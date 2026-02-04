@@ -409,12 +409,9 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
     result.set("nodes", static_cast<double>(sr.nodes));
     result.set("tb_hits", static_cast<double>(sr.tb_hits));
 
-    // Log variety selection info to console if present
+    // Include variety selection info if present
     if (!sr.variety_candidates.empty()) {
-        val console = val::global("console");
-        std::string log_msg = "Variety selection (" + std::to_string(sr.variety_candidates.size()) + " candidates):";
-        console.call<void>("log", log_msg);
-
+        val candidates = val::array();
         for (const auto& vc : sr.variety_candidates) {
             // Find the notation for this move
             std::string notation = "?";
@@ -426,12 +423,14 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
                 }
             }
 
-            char buf[128];
-            snprintf(buf, sizeof(buf), "  %s: score=%d, prob=%.1f%%%s",
-                     notation.c_str(), vc.score, vc.probability * 100.0,
-                     vc.selected ? " [SELECTED]" : "");
-            console.call<void>("log", std::string(buf));
+            val candidate = val::object();
+            candidate.set("notation", notation);
+            candidate.set("score", vc.score);
+            candidate.set("probability", vc.probability);
+            candidate.set("selected", vc.selected);
+            candidates.call<void>("push", candidate);
         }
+        result.set("varietyCandidates", candidates);
     }
 
     // Build PV with full paths for captures
