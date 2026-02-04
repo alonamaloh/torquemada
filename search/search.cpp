@@ -296,10 +296,12 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
       // Search first move with full window
       score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
     } else {
-      // PVS: try null-window search first
-      score = -negamax(child, depth - 1, -alpha - 1, -alpha, ply + 1);
-      // If it fails high, re-search with full window
-      if (score > alpha && score < beta) {
+      // LMR: reduce depth for late non-capture moves when depth is sufficient
+      int reduction = (depth >= 3 && !move.isCapture()) ? 1 : 0;
+      // PVS: try null-window search first, possibly at reduced depth
+      score = -negamax(child, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
+      // If it fails high, re-search with full window and full depth
+      if (score > alpha) {
         score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
       }
     }
