@@ -534,10 +534,6 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
         }
     };
 
-    val console = val::global("console");
-    console.call<void>("log", std::string("DEBUG: Creating searcher, variety_mode=") + std::to_string(variety_mode) +
-                       ", game_ply=" + std::to_string(game_ply));
-
     search::Searcher searcher("", 0, "", "");
     searcher.set_eval(eval_func);
 
@@ -572,24 +568,19 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
         });
     }
 
-    console.call<void>("log", std::string("DEBUG: About to call search()"));
     search::SearchResult sr;
     try {
         sr = searcher.search(jsboard.board, max_depth, max_nodes, game_ply);
-        console.call<void>("log", std::string("DEBUG: Search returned, score=") + std::to_string(sr.score));
     } catch (const search::SearchInterrupted&) {
-        console.call<void>("log", std::string("DEBUG: Search was interrupted"));
-        // Return a minimal result - the search was interrupted
+        // Search was interrupted - return minimal result
         val result = val::object();
         result.set("error", "Search interrupted");
         return result;
     } catch (const std::exception& e) {
-        console.call<void>("log", std::string("DEBUG: Search threw exception: ") + e.what());
         val result = val::object();
         result.set("error", std::string("Search exception: ") + e.what());
         return result;
     } catch (...) {
-        console.call<void>("log", std::string("DEBUG: Search threw unknown exception"));
         val result = val::object();
         result.set("error", "Search threw unknown exception");
         return result;
@@ -636,6 +627,11 @@ void stopSearch() {
     g_stop_flag.store(true, std::memory_order_relaxed);
 }
 
+// Get address of stop flag for direct memory access from JavaScript
+std::uintptr_t getStopFlagAddress() {
+    return reinterpret_cast<std::uintptr_t>(&g_stop_flag);
+}
+
 // Emscripten bindings
 EMSCRIPTEN_BINDINGS(checkers_engine) {
     // JSBoard
@@ -662,4 +658,5 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("getEngineVersion", &getEngineVersion);
     function("hasDTMNNModel", &hasDTMNNModel);
     function("stopSearch", &stopSearch);
+    function("getStopFlagAddress", &getStopFlagAddress);
 }

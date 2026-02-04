@@ -6,23 +6,24 @@ EMCC = emcc
 EMCXX = em++
 
 # C++ standard and optimization flags
-WASM_CXXFLAGS = -std=c++20 -O3 -DWASM_BUILD -Wall -Wextra -Werror -fexceptions
+WASM_CXXFLAGS = -std=c++20 -O3 -DWASM_BUILD -Wall -Wextra -Werror -fexceptions -pthread
 
 # SIMD support (WASM SIMD128)
 WASM_CXXFLAGS += -msimd128
 
 # Emscripten link flags
+# SHARED_MEMORY enables SharedArrayBuffer for WASM memory, allowing main thread to set stop flag
 WASM_LDFLAGS = \
     -lembind \
     -fexceptions \
+    -pthread \
     -s MODULARIZE=1 \
     -s EXPORT_NAME='CheckersEngine' \
-    -s ALLOW_MEMORY_GROWTH=1 \
-    -s INITIAL_MEMORY=268435456 \
-    -s MAXIMUM_MEMORY=536870912 \
+    -s ALLOW_MEMORY_GROWTH=0 \
+    -s INITIAL_MEMORY=536870912 \
     -s ENVIRONMENT='worker' \
     -s FILESYSTEM=1 \
-    -s EXPORTED_RUNTIME_METHODS='["FS"]' \
+    -s EXPORTED_RUNTIME_METHODS='["FS","HEAPU8","wasmMemory"]' \
     -s NO_EXIT_RUNTIME=1 \
     -s SINGLE_FILE=0
 
