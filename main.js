@@ -362,6 +362,7 @@ function hideNewGameDialog() {
  */
 async function startNewGame(playAs) {
     hideNewGameDialog();
+    clearVarietyInfo();
 
     // Start the new game first
     await gameController.newGame();
@@ -719,12 +720,13 @@ function updateSearchInfo(info) {
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
 
-    // Display variety candidates if present
+    // Display variety candidates if present (only update when we have candidates,
+    // don't hide during progress updates - let it persist until next search with candidates)
     if (varietyInfoEl && varietyCandidatesEl) {
         if (info.varietyCandidates && info.varietyCandidates.length > 0) {
             // Sort by probability descending
             const sorted = [...info.varietyCandidates].sort((a, b) => b.probability - a.probability);
-            // Format: "21-17 (47.4%) / 32-28 (41.1%) / 19-15 (11.5%)"
+            // Format: "21-17* (47.4%) / 32-28 (41.1%) / 19-15 (11.5%)"
             const text = sorted.map(c => {
                 const prob = (c.probability * 100).toFixed(1);
                 const marker = c.selected ? '*' : '';
@@ -732,9 +734,18 @@ function updateSearchInfo(info) {
             }).join(' / ');
             varietyCandidatesEl.textContent = text;
             varietyInfoEl.style.display = 'block';
-        } else {
-            varietyInfoEl.style.display = 'none';
         }
+        // Don't hide variety info during progress updates - it persists until next variety selection
+    }
+}
+
+/**
+ * Clear variety info display (called when starting a new game)
+ */
+function clearVarietyInfo() {
+    const varietyInfoEl = document.getElementById('variety-info');
+    if (varietyInfoEl) {
+        varietyInfoEl.style.display = 'none';
     }
 }
 

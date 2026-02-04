@@ -176,9 +176,14 @@ body {
     word-break: break-all;
 }
 
+.variety-info {
+    text-align: center;
+    margin: 0.25rem 0;
+    font-size: 0.9em;
+}
+
 .variety-candidates {
     color: var(--accent);
-    font-size: 0.9em;
     word-break: break-all;
 }
 
