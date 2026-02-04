@@ -746,14 +746,19 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
       } catch (const SearchInterrupted&) {
         // If interrupted during variety search, use previous result
         if (verbose_) {
-          std::cout << ". variety search interrupted" << std::endl;
+          std::cout << ". variety search interrupted, using previous result" << std::endl;
         }
       } catch (...) {
-        // Catch any other exception
+        // Catch any other exception - fall back to regular search
         if (verbose_) {
-          std::cout << ". variety search threw unknown exception" << std::endl;
+          std::cout << ". variety search threw exception, falling back to regular search" << std::endl;
         }
-        throw;
+        try {
+          result = search_root(board, root_moves, depth);
+          result.depth = depth;
+        } catch (const SearchInterrupted&) {
+          // If regular search also interrupted, use whatever result we had
+        }
       }
       break;
     }
