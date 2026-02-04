@@ -288,9 +288,11 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   Move first_move = moves[0];
   bool is_first = true;
 
+  int reduced_depth = depth - (moves.size() > 1);
+  
   for (const Move& move : moves) {
     Board child = makeMove(board, move);
-    int score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
+    int score = -negamax(child, reduced_depth, -beta, -alpha, ply + 1);
 
     if (score > best_score) {
       best_score = score;
