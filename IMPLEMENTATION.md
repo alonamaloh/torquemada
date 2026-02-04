@@ -12,7 +12,7 @@ This document tracks the implementation of the Torquemada Spanish Checkers engin
 - ✅ **Self-Play Infrastructure** - Position generation with HDF5 output
 - ✅ **Python Training** - PyTorch training pipeline with weight export
 - ✅ **Web/WASM Build** - Complete browser-based UI with WebAssembly engine
-- ✅ **GitHub Pages Hosting** - Live deployment at https://alvare52.github.io/torquemada/
+- ✅ **GitHub Pages Hosting** - Live deployment at https://alonamaloh.github.io/torquemada/
 
 ### Remaining Work
 
