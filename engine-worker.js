@@ -270,6 +270,22 @@ function search(maxDepth, maxNodes, gamePly, varietyMode, requestId) {
         }
 
         currentSearchId = null;
+        console.log('Worker: raw result.varietyCandidates =', result.varietyCandidates);
+        // Convert varietyCandidates from WASM array to plain JS array
+        let varietyCandidates = null;
+        if (result.varietyCandidates && result.varietyCandidates.length > 0) {
+            varietyCandidates = [];
+            for (let i = 0; i < result.varietyCandidates.length; i++) {
+                const c = result.varietyCandidates[i];
+                varietyCandidates.push({
+                    notation: c.notation,
+                    score: c.score,
+                    probability: c.probability,
+                    selected: c.selected
+                });
+            }
+            console.log('Worker: converted varietyCandidates =', varietyCandidates);
+        }
         return {
             bestMove: result.best_move,
             score: result.score,
@@ -277,7 +293,7 @@ function search(maxDepth, maxNodes, gamePly, varietyMode, requestId) {
             nodes: result.nodes,
             tbHits: result.tb_hits,
             pv: result.pv || [],
-            varietyCandidates: result.varietyCandidates || null
+            varietyCandidates: varietyCandidates
         };
     } catch (err) {
         console.error('Worker: search error:', err);
