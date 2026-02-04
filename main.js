@@ -34,7 +34,7 @@ async function init() {
         // Initialize engine
         updateLoadingStatus('Initializing engine...');
         const engine = getEngine();
-        await engine.init('./engine-worker.js');
+        await engine.init('./engine-worker.js?v=20260204e');
 
         // Initialize tablebase loader (for downloading only - loading is now lazy in worker)
         try {
