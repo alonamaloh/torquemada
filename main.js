@@ -519,6 +519,14 @@ function setupEventHandlers() {
         });
     }
 
+    // Stop button
+    const stopBtn = document.getElementById('btn-stop');
+    if (stopBtn) {
+        stopBtn.addEventListener('click', () => {
+            gameController.stopSearch();
+        });
+    }
+
     // Download tablebases button
     const downloadBtn = document.getElementById('btn-download-tb');
     if (downloadBtn) {
@@ -677,6 +685,12 @@ function setThinkingIndicator(thinking) {
     const searchInfo = document.getElementById('search-info');
     if (searchInfo) {
         searchInfo.style.display = thinking ? 'block' : 'block';  // Keep visible after search
+    }
+
+    // Enable/disable stop button
+    const stopBtn = document.getElementById('btn-stop');
+    if (stopBtn) {
+        stopBtn.disabled = !thinking;
     }
 }
 

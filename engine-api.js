@@ -154,6 +154,15 @@ export class EngineAPI {
     }
 
     /**
+     * Stop the current search
+     */
+    stopSearch() {
+        if (this.worker) {
+            this.worker.postMessage({ type: 'stop' });
+        }
+    }
+
+    /**
      * Send a request that may receive progress updates
      */
     async requestWithProgress(type, data = {}, onProgress = null) {

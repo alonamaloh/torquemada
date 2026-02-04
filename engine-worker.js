@@ -332,6 +332,13 @@ self.onmessage = function(e) {
                 response.result = search(data.maxDepth, data.maxNodes, data.gamePly, data.varietyMode, id);
                 break;
 
+            case 'stop':
+                if (engine) {
+                    engine.stopSearch();
+                }
+                response.success = true;
+                break;
+
             case 'probeDTM':
                 response.dtm = probeDTM();
                 break;

@@ -590,6 +590,15 @@ export class GameController {
     }
 
     /**
+     * Stop the current search
+     */
+    stopSearch() {
+        if (this.engine) {
+            this.engine.stopSearch();
+        }
+    }
+
+    /**
      * Set which side the human plays
      * If the human gives up their turn, trigger engine to play
      */
