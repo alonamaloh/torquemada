@@ -11,7 +11,7 @@ namespace search {
 // Temperature values for variety modes
 constexpr double TEMPERATURE_CURIOUS = 273.0;
 constexpr double TEMPERATURE_SAFE = TEMPERATURE_CURIOUS / 9.0;
-constexpr double TEMPERATURE_WILD = TEMPERATURE_CURIOUS * 9.0;
+constexpr double TEMPERATURE_WILD = TEMPERATURE_CURIOUS * 3.0;
 
 // Score threshold multiplier: threshold = T * ln(100) where moves at threshold
 // have 1% probability of being selected compared to the best move
