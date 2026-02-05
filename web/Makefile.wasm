@@ -96,9 +96,11 @@ $(OBJDIR)/tablebase/%.o: $(SRCDIR)/tablebase/%.cpp
 $(OBJDIR)/nn/%.o: $(SRCDIR)/nn/%.cpp
 	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
 
-# Compile WASM binding sources
-$(OBJDIR)/src/wasm/%.o: $(WEBDIR)/src/wasm/%.cpp
+# Compile WASM binding sources (always recompile for __DATE__ __TIME__ version)
+$(OBJDIR)/src/wasm/%.o: $(WEBDIR)/src/wasm/%.cpp FORCE
 	$(EMCXX) $(WASM_CXXFLAGS) -c $< -o $@
+
+FORCE:
 
 # Clean
 clean:
