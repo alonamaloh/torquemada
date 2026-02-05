@@ -13,9 +13,9 @@ constexpr double TEMPERATURE_CURIOUS = 273.0;
 constexpr double TEMPERATURE_SAFE = TEMPERATURE_CURIOUS / 9.0;
 constexpr double TEMPERATURE_WILD = TEMPERATURE_CURIOUS * 9.0;
 
-// Score threshold multiplier: threshold = T * ln(10) where moves at threshold
-// have 10% probability of being selected compared to the best move
-constexpr double THRESHOLD_MULTIPLIER = 2.302585;  // ln(10)
+// Score threshold multiplier: threshold = T * ln(100) where moves at threshold
+// have 1% probability of being selected compared to the best move
+constexpr double THRESHOLD_MULTIPLIER = 4.60517;  // ln(100)
 
 // Random evaluation: reproducible pseudo-random score derived from position hash
 // Returns a score in the range [-10000, +10000] based on the hash
