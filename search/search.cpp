@@ -9,11 +9,9 @@
 namespace search {
 
 // Temperature values for variety modes
-// Curious mode: 100 points difference → 3x probability ratio
-// exp(100/T) = 3 → T = 100/ln(3) ≈ 91
-constexpr double TEMPERATURE_CURIOUS = 91.0;
-constexpr double TEMPERATURE_SAFE = TEMPERATURE_CURIOUS / 3.0;   // ~30, more deterministic
-constexpr double TEMPERATURE_WILD = TEMPERATURE_CURIOUS * 3.0;   // ~273, more random
+constexpr double TEMPERATURE_CURIOUS = 273.0;
+constexpr double TEMPERATURE_SAFE = TEMPERATURE_CURIOUS / 9.0;
+constexpr double TEMPERATURE_WILD = TEMPERATURE_CURIOUS * 9.0;
 
 // Score threshold multiplier: threshold = T * ln(10) where moves at threshold
 // have 10% probability of being selected compared to the best move
