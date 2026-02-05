@@ -24,9 +24,9 @@ GitHub Pages is configured to deploy from the `gh-pages` branch, NOT from GitHub
 make wasm
 
 # 2. Copy to gh-pages worktree and deploy
-cp web/dist/engine.js web/dist/engine.wasm ../torquemada-gh-pages/
+cp web/dist/engine.js web/dist/engine.wasm web/dist/engine.worker.js ../torquemada-gh-pages/
 cd ../torquemada-gh-pages
-git add engine.js engine.wasm
+git add engine.js engine.wasm engine.worker.js
 git commit -m "Update engine: <description>"
 git push origin gh-pages
 cd ../torquemada
