@@ -501,9 +501,11 @@ SearchResult Searcher::search_root_variety(const Board& board, MoveList& moves, 
 
   // Step 2: For remaining moves, use null-window search at threshold
   // If a move might be within variety_threshold of best, re-search with full window
-  // Never consider moves with score below MIN_VARIETY_SCORE (clearly losing)
+  // Floor: never consider moves scoring below MIN_VARIETY_SCORE for variety.
+  // The std::min(best_score, ...) ensures threshold <= best_score even when
+  // best_score < MIN_VARIETY_SCORE (effectively disabling variety in lost positions).
   constexpr int MIN_VARIETY_SCORE = -1000;
-  int threshold = std::max(best_score - variety_threshold, MIN_VARIETY_SCORE);
+  int threshold = std::min(best_score, std::max(best_score - variety_threshold, MIN_VARIETY_SCORE));
   for (std::size_t i = 1; i < moves.size(); ++i) {
     try {
       const Move& move = moves[i];
@@ -529,7 +531,7 @@ SearchResult Searcher::search_root_variety(const Board& board, MoveList& moves, 
     }
   }
 
-  // Step 3: Filter candidates to only include moves within threshold of best
+  // Step 3: Filter candidates to within variety_threshold of best (and above floor)
   std::vector<Candidate> valid_candidates;
   for (const auto& c : candidates) {
     if (c.score >= std::max(best_score - variety_threshold, MIN_VARIETY_SCORE)) {
