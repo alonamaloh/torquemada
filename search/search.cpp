@@ -522,7 +522,7 @@ SearchResult Searcher::search_root_variety(const Board& board, MoveList& moves, 
         // Update best_score and threshold if we found a better move
         if (score > best_score) {
           best_score = score;
-          threshold = std::max(best_score - variety_threshold, MIN_VARIETY_SCORE);
+          threshold = std::min(best_score, std::max(best_score - variety_threshold, MIN_VARIETY_SCORE));
         }
       }
     } catch (const SearchInterrupted&) {
@@ -534,7 +534,7 @@ SearchResult Searcher::search_root_variety(const Board& board, MoveList& moves, 
   // Step 3: Filter candidates to within variety_threshold of best (and above floor)
   std::vector<Candidate> valid_candidates;
   for (const auto& c : candidates) {
-    if (c.score >= std::max(best_score - variety_threshold, MIN_VARIETY_SCORE)) {
+    if (c.score >= threshold) {
       valid_candidates.push_back(c);
     }
   }
