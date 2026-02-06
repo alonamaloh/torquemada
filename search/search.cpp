@@ -401,29 +401,40 @@ void Searcher::extract_pv(const Board& board, std::vector<Move>& pv, int max_dep
   }
 }
 
-SearchResult Searcher::search_root(const Board& board, MoveList& moves, int depth) {
+SearchResult Searcher::search_root(const Board& board, MoveList& moves, int depth,
+                                   std::vector<double>& biases) {
   SearchResult result;
   result.depth = depth;
 
   // Store root position hash for repetition detection
   pos_hash_history_[0] = board.position_hash();
 
+  // alpha/beta track effective scores (raw + bias) when biases are active
   int alpha = -SCORE_INFINITE;
   int beta = SCORE_INFINITE;
 
   for (std::size_t i = 0; i < moves.size(); ++i) {
     const Move& move = moves[i];
     Board child = makeMove(board, move);
-    int score = -negamax(child, depth - 1, -beta, -alpha, 1);
+    double bias = biases.empty() ? 0.0 : biases[i];
 
-    if (score > alpha) {
-      alpha = score;
+    // Shift the search window into raw-score space for this move
+    int shifted_alpha = (alpha == -SCORE_INFINITE) ? -SCORE_INFINITE
+                        : static_cast<int>(alpha - bias);
+    int score = -negamax(child, depth - 1, -beta, -shifted_alpha, 1);
+    int effective = static_cast<int>(score + bias);
+
+    if (effective > alpha) {
+      alpha = effective;
       result.best_move = move;
-      result.score = score;
+      result.score = score;  // Report raw score, not effective
 
       // Rotate this move to the front for better ordering in next iteration
       if (i > 0) {
         std::rotate(moves.begin(), moves.begin() + i, moves.begin() + i + 1);
+        if (!biases.empty()) {
+          std::rotate(biases.begin(), biases.begin() + i, biases.begin() + i + 1);
+        }
       }
     }
   }
@@ -432,201 +443,6 @@ SearchResult Searcher::search_root(const Board& board, MoveList& moves, int dept
   result.tb_hits = stats_.tb_hits;
 
   // Extract PV from TT (root move + continuation from TT)
-  if (result.best_move.from_xor_to != 0) {
-    result.pv.push_back(result.best_move);
-    Board child = makeMove(board, result.best_move);
-    std::vector<Move> continuation;
-    extract_pv(child, continuation, depth - 1);
-    result.pv.insert(result.pv.end(), continuation.begin(), continuation.end());
-  }
-
-  return result;
-}
-
-SearchResult Searcher::search_root_variety(const Board& board, MoveList& moves, int depth) {
-  SearchResult result;
-  result.depth = depth;
-
-  // Safety check - should never happen but guard against it
-  if (moves.empty()) {
-    result.score = mated_score(0);
-    return result;
-  }
-
-  // Store root position hash for repetition detection
-  pos_hash_history_[0] = board.position_hash();
-
-  // Get temperature based on variety mode
-  double temperature;
-  switch (variety_mode_) {
-    case VarietyMode::SAFE:
-      temperature = TEMPERATURE_SAFE;
-      break;
-    case VarietyMode::WILD:
-      temperature = TEMPERATURE_WILD;
-      break;
-    case VarietyMode::CURIOUS:
-    default:
-      temperature = TEMPERATURE_CURIOUS;
-      break;
-  }
-
-  // Compute score threshold: moves at this threshold have 10% probability of best
-  int variety_threshold = static_cast<int>(temperature * THRESHOLD_MULTIPLIER + 0.5);
-
-  // Structure to hold candidate moves with their scores
-  struct Candidate {
-    Move move;
-    int score;
-  };
-  std::vector<Candidate> candidates;
-  candidates.reserve(moves.size());
-
-  // Step 1: Search first move with full window to establish baseline
-  int best_score = -SCORE_INFINITE;
-  try {
-    const Move& move = moves[0];
-    Board child = makeMove(board, move);
-    int score = -negamax(child, depth - 1, -SCORE_INFINITE, SCORE_INFINITE, 1);
-    best_score = score;
-    candidates.push_back({move, score});
-  } catch (const SearchInterrupted&) {
-    // If interrupted on first move, just return it without a score
-    result.best_move = moves[0];
-    result.score = 0;
-    result.nodes = stats_.nodes;
-    result.tb_hits = stats_.tb_hits;
-    return result;
-  }
-
-  // Step 2: For remaining moves, use null-window search at threshold
-  // If a move might be within variety_threshold of best, re-search with full window
-  // Floor: never consider moves scoring below MIN_VARIETY_SCORE for variety.
-  // The std::min(best_score, ...) ensures threshold <= best_score even when
-  // best_score < MIN_VARIETY_SCORE (effectively disabling variety in lost positions).
-  constexpr int MIN_VARIETY_SCORE = -1000;
-  int threshold = std::min(best_score, std::max(best_score - variety_threshold, MIN_VARIETY_SCORE));
-  for (std::size_t i = 1; i < moves.size(); ++i) {
-    try {
-      const Move& move = moves[i];
-      Board child = makeMove(board, move);
-
-      // Null-window search: check if score > threshold
-      int score = -negamax(child, depth - 1, -threshold - 1, -threshold, 1);
-
-      if (score > threshold) {
-        // Move might be good enough - re-search with full window
-        score = -negamax(child, depth - 1, -SCORE_INFINITE, SCORE_INFINITE, 1);
-        candidates.push_back({move, score});
-
-        // Update best_score and threshold if we found a better move
-        if (score > best_score) {
-          best_score = score;
-          threshold = std::min(best_score, std::max(best_score - variety_threshold, MIN_VARIETY_SCORE));
-        }
-      }
-    } catch (const SearchInterrupted&) {
-      // If interrupted, stop searching more moves and use what we have
-      break;
-    }
-  }
-
-  // Step 3: Filter candidates to within variety_threshold of best (and above floor)
-  std::vector<Candidate> valid_candidates;
-  for (const auto& c : candidates) {
-    if (c.score >= threshold) {
-      valid_candidates.push_back(c);
-    }
-  }
-
-  // Step 4: Select move using softmax sampling
-  Move selected_move;
-  int selected_score;
-
-  if (valid_candidates.size() <= 1) {
-    // Only one candidate (or none) - no variety needed
-    selected_move = valid_candidates.empty() ? moves[0] : valid_candidates[0].move;
-    selected_score = valid_candidates.empty() ? best_score : valid_candidates[0].score;
-  } else {
-    // Compute softmax probabilities (subtract max for numerical stability)
-    std::vector<double> weights;
-    weights.reserve(valid_candidates.size());
-    double max_score = static_cast<double>(best_score);
-    for (const auto& c : valid_candidates) {
-      double w = std::exp((static_cast<double>(c.score) - max_score) / temperature);
-      weights.push_back(w);
-    }
-
-    // Compute cumulative distribution
-    double total = 0.0;
-    for (double w : weights) {
-      total += w;
-    }
-
-    // Sample using RNG
-    RandomBits* rng = rng_;
-    if (!rng) {
-      if (!owned_rng_) {
-        owned_rng_ = std::make_unique<RandomBits>(
-            std::chrono::steady_clock::now().time_since_epoch().count());
-      }
-      rng = owned_rng_.get();
-    }
-
-    double r = (static_cast<double>((*rng)()) / static_cast<double>(RandomBits::max())) * total;
-    double cumulative = 0.0;
-    std::size_t selected_idx = 0;
-    for (std::size_t i = 0; i < weights.size(); ++i) {
-      cumulative += weights[i];
-      if (r < cumulative) {
-        selected_idx = i;
-        break;
-      }
-    }
-
-    selected_move = valid_candidates[selected_idx].move;
-    selected_score = valid_candidates[selected_idx].score;
-
-    // Populate variety_candidates for debugging
-    for (std::size_t i = 0; i < valid_candidates.size(); ++i) {
-      VarietyCandidate vc;
-      vc.move = valid_candidates[i].move;
-      vc.score = valid_candidates[i].score;
-      vc.probability = weights[i] / total;
-      vc.selected = (i == selected_idx);
-      result.variety_candidates.push_back(vc);
-    }
-
-    if (verbose_ && valid_candidates.size() > 1) {
-      std::cout << ". variety: " << valid_candidates.size() << " candidates";
-      for (std::size_t i = 0; i < valid_candidates.size(); ++i) {
-        double prob = weights[i] / total * 100.0;
-        std::cout << (i == 0 ? " [" : ", ");
-        std::cout << valid_candidates[i].score;
-        if (i == selected_idx) std::cout << "*";
-        std::cout << " " << static_cast<int>(prob + 0.5) << "%";
-      }
-      std::cout << "]" << std::endl;
-    }
-  }
-
-  result.best_move = selected_move;
-  result.score = selected_score;
-  result.nodes = stats_.nodes;
-  result.tb_hits = stats_.tb_hits;
-
-  // Rotate selected move to front for next iteration's move ordering
-  for (std::size_t i = 0; i < moves.size(); ++i) {
-    if (moves[i].from_xor_to == selected_move.from_xor_to &&
-        moves[i].captures == selected_move.captures) {
-      if (i > 0) {
-        std::rotate(moves.begin(), moves.begin() + i, moves.begin() + i + 1);
-      }
-      break;
-    }
-  }
-
-  // Extract PV from TT
   if (result.best_move.from_xor_to != 0) {
     result.pv.push_back(result.best_move);
     Board child = makeMove(board, result.best_move);
@@ -696,14 +512,55 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
     return result;
   }
 
-  // Determine if we should use variety search
-  // Only in the first 10 moves (game_ply < 20) and when variety mode is enabled
+  // Generate Gumbel biases for variety in the opening (first 10 moves).
+  // The Gumbel-max trick: adding Gumbel(0, T) noise to each move's score and
+  // taking the argmax is equivalent to sampling from a softmax distribution
+  // with temperature T. Capping the noise at T * ln(10) limits how much a
+  // move can be promoted (matching the previous variety_threshold behavior).
+  // TODO: To avoid promoting moves with absolute score below -1000, a future
+  // improvement could apply a non-linear score transformation that stretches
+  // scores in the losing region, making fixed-scale Gumbel noise negligible there.
+  std::vector<double> biases;
   bool use_variety = (variety_mode_ != VarietyMode::NONE) && (game_ply < 20);
-  bool variety_applied = false;
+  if (use_variety) {
+    double temperature;
+    switch (variety_mode_) {
+      case VarietyMode::SAFE:  temperature = TEMPERATURE_SAFE;  break;
+      case VarietyMode::WILD:  temperature = TEMPERATURE_WILD;  break;
+      default:                 temperature = TEMPERATURE_CURIOUS; break;
+    }
+    double cap = temperature * THRESHOLD_MULTIPLIER;
+
+    RandomBits* rng = rng_;
+    if (!rng) {
+      if (!owned_rng_) {
+        owned_rng_ = std::make_unique<RandomBits>(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+      }
+      rng = owned_rng_.get();
+    }
+
+    biases.resize(root_moves.size());
+    for (std::size_t i = 0; i < root_moves.size(); ++i) {
+      // Map RNG output to (0, 1), avoiding 0 and 1 for numerical safety
+      double u = (static_cast<double>((*rng)()) + 1.0) /
+                 (static_cast<double>(RandomBits::max()) + 2.0);
+      double gumbel = -temperature * std::log(-std::log(u));
+      biases[i] = std::min(gumbel, cap);
+    }
+
+    if (verbose_) {
+      std::cout << ". variety biases:";
+      for (std::size_t i = 0; i < biases.size(); ++i) {
+        std::cout << " " << static_cast<int>(biases[i]);
+      }
+      std::cout << std::endl;
+    }
+  }
 
   for (int depth = 1; depth <= max_depth; ++depth) {
     try {
-      result = search_root(board, root_moves, depth);
+      result = search_root(board, root_moves, depth, biases);
       result.depth = depth;
     } catch (const SearchInterrupted&) {
       break;  // Return best result from previous depth
@@ -742,40 +599,6 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
 
     // Early exit if we found a forced mate or forced move
     if (is_mate_score(result.score) || result.nodes == 0) {
-      break;
-    }
-
-    // Check if we've reached the variety threshold (25% of max_nodes)
-    // If so, apply variety search and finish
-    if (use_variety && !variety_applied && max_nodes > 0 && result.nodes >= max_nodes / 4) {
-      // This is effectively the last depth - apply variety selection
-      if (verbose_) {
-        std::cout << ". variety search at depth " << (depth + 1) << std::endl;
-      }
-      try {
-        result = search_root_variety(board, root_moves, depth + 1);
-        result.depth = depth + 1;
-        variety_applied = true;
-        if (verbose_) {
-          std::cout << ". variety search completed, score=" << result.score << std::endl;
-        }
-      } catch (const SearchInterrupted&) {
-        // If interrupted during variety search, use previous result
-        if (verbose_) {
-          std::cout << ". variety search interrupted, using previous result" << std::endl;
-        }
-      } catch (...) {
-        // Catch any other exception - fall back to regular search
-        if (verbose_) {
-          std::cout << ". variety search threw exception, falling back to regular search" << std::endl;
-        }
-        try {
-          result = search_root(board, root_moves, depth);
-          result.depth = depth;
-        } catch (const SearchInterrupted&) {
-          // If regular search also interrupted, use whatever result we had
-        }
-      }
       break;
     }
 

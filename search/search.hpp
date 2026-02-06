@@ -195,12 +195,11 @@ public:
 private:
   // Root search at a fixed depth
   // root_moves is reordered to put the best move first
-  SearchResult search_root(const Board& board, MoveList& root_moves, int depth);
-
-  // Root search with variety selection for opening play
-  // Uses PVS-style null-window search to find moves within threshold of best,
-  // then applies softmax sampling to select among them
-  SearchResult search_root_variety(const Board& board, MoveList& root_moves, int depth);
+  // When biases is non-empty, each root move's score is adjusted by its bias
+  // for move selection (Gumbel-max trick for variety), but the reported score
+  // is the raw search score of the selected move.
+  SearchResult search_root(const Board& board, MoveList& root_moves, int depth,
+                           std::vector<double>& biases);
 
   // Negamax alpha-beta search
   // Returns score from the perspective of the side to move (white, since board is always flipped)
