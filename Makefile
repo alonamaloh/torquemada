@@ -35,7 +35,7 @@ NN_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(NN_SRCS))
 ALL_OBJS = $(CORE_OBJS) $(SEARCH_OBJS) $(TB_OBJS) $(NN_OBJS)
 
 # Targets
-all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play $(BINDIR)/genbook $(BINDIR)/viewbook
+all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play $(BINDIR)/genbook $(BINDIR)/viewbook $(BINDIR)/condensebook
 
 # Python module
 python: dirs dtm_sampler$(PYTHON_EXT)
@@ -67,6 +67,9 @@ $(BINDIR)/genbook: $(ALL_OBJS) $(OBJDIR)/genbook.o
 $(BINDIR)/viewbook: $(CORE_OBJS) $(OBJDIR)/viewbook.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
+$(BINDIR)/condensebook: $(CORE_OBJS) $(OBJDIR)/condensebook.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
 # Object file rules
 $(OBJDIR)/%.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -94,6 +97,9 @@ $(OBJDIR)/genbook.o: genbook.cpp
 	$(CXX) $(CXXFLAGS) -pthread -c $< -o $@
 
 $(OBJDIR)/viewbook.o: viewbook.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/condensebook.o: condensebook.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Python module: dtm_sampler (needs -fPIC objects)

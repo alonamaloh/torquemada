@@ -8,6 +8,9 @@
 #include <cstdint>
 #include <bit>
 #include <chrono>
+#include <string>
+#include <sstream>
+#include <unordered_map>
 
 #include "../../../core/board.hpp"
 #include "../../../core/movegen.hpp"
@@ -169,6 +172,14 @@ namespace {
     // Neural network models
     std::unique_ptr<nn::MLP> g_nn_model;
     std::unique_ptr<nn::MLP> g_dtm_nn_model;
+
+    // Opening book
+    struct BookMove {
+        Move move;
+        double probability;
+    };
+    std::unordered_map<uint64_t, std::vector<BookMove>> g_opening_book;
+    bool g_book_loaded = false;
 }
 
 // Load neural network model from typed array
@@ -216,6 +227,43 @@ bool hasNNModel() {
 
 bool hasDTMNNModel() {
     return g_dtm_nn_model != nullptr;
+}
+
+// Load opening book from .cbook text format
+void loadOpeningBook(const std::string& text) {
+    g_opening_book.clear();
+    g_book_loaded = false;
+
+    std::istringstream in(text);
+    std::string line;
+    uint64_t current_hash = 0;
+    bool have_position = false;
+
+    while (std::getline(in, line)) {
+        if (line.empty() || line[0] == '#') continue;
+
+        if (line[0] == 'P') {
+            Bb w, b, k;
+            if (sscanf(line.c_str(), "P %x %x %x", &w, &b, &k) == 3) {
+                Board board(w, b, k);
+                current_hash = board.position_hash();
+                have_position = true;
+                g_opening_book[current_hash].clear();
+            }
+        } else if (line[0] == 'M' && have_position) {
+            Bb fxt, cap;
+            double prob;
+            if (sscanf(line.c_str(), "M %x %x %lf", &fxt, &cap, &prob) == 3) {
+                g_opening_book[current_hash].push_back({Move(fxt, cap), prob});
+            }
+        }
+    }
+
+    g_book_loaded = !g_opening_book.empty();
+}
+
+bool hasOpeningBook() {
+    return g_book_loaded;
 }
 
 // Board wrapper for JS
@@ -494,6 +542,39 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
         }
     }
 
+    // Check opening book
+    if (g_book_loaded) {
+        uint64_t pos_hash = jsboard.board.position_hash();
+        auto it = g_opening_book.find(pos_hash);
+        if (it != g_opening_book.end() && !it->second.empty()) {
+            // Sample from probability distribution
+            double r = g_rng.next_double();
+            double cumulative = 0.0;
+            const BookMove* selected = &it->second[0];
+            for (const auto& bm : it->second) {
+                cumulative += bm.probability;
+                if (r < cumulative) { selected = &bm; break; }
+            }
+            // Find full move info (path) for the selected move
+            std::vector<FullMove> full_moves;
+            generateFullMoves(jsboard.board, full_moves);
+            for (const auto& fm : full_moves) {
+                if (fm.move.from_xor_to == selected->move.from_xor_to &&
+                    fm.move.captures == selected->move.captures) {
+                    result.set("best_move", createMoveObject(fm.move, fm.path, jsboard.white_to_move));
+                    result.set("score", 0);
+                    result.set("depth", 0);
+                    result.set("nodes", 0);
+                    result.set("tb_hits", 0);
+                    result.set("pv", val::array());
+                    result.set("book", true);
+                    return result;
+                }
+            }
+            // If move not found among legal moves, fall through to search
+        }
+    }
+
     // Set up evaluation function (no noise - variety handled by search)
     auto eval_func = [piece_count](const Board& board, int /*ply*/) -> int {
         if (piece_count <= 7 && g_dtm_nn_model) {
@@ -634,4 +715,6 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("hasDTMNNModel", &hasDTMNNModel);
     function("stopSearch", &stopSearch);
     function("getStopFlagAddress", &getStopFlagAddress);
+    function("loadOpeningBook", &loadOpeningBook);
+    function("hasOpeningBook", &hasOpeningBook);
 }

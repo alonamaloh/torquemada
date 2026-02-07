@@ -30,4 +30,9 @@ struct RandomBits {
     state += 0x60bee2bee120fc15ull;
     return result;
   }
+
+  // Uniform double in [0, 1)
+  double next_double() {
+    return ((*this)() >> 11) * (1.0 / (1ULL << 53));
+  }
 };
