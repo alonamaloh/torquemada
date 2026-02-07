@@ -416,11 +416,10 @@ SearchResult Searcher::search_root(const Board& board, MoveList& moves, int dept
   for (std::size_t i = 0; i < moves.size(); ++i) {
     const Move& move = moves[i];
     Board child = makeMove(board, move);
-    double bias = biases.empty() ? 0.0 : biases[i];
+    int bias = biases.empty() ? 0 : static_cast<int>(std::round(biases[i]));
 
     // Shift the search window into raw-score space for this move
-    int shifted_alpha = (alpha == -SCORE_INFINITE) ? -SCORE_INFINITE
-                        : static_cast<int>(alpha - bias);
+    int shifted_alpha = alpha - (std::abs(alpha) < SCORE_SPECIAL ? bias : 0);
     int score = -negamax(child, depth - 1, -beta, -shifted_alpha, 1);
     int effective = static_cast<int>(score + bias);
 
@@ -543,8 +542,7 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
     biases.resize(root_moves.size());
     for (std::size_t i = 0; i < root_moves.size(); ++i) {
       // Map RNG output to (0, 1), avoiding 0 and 1 for numerical safety
-      double u = (static_cast<double>((*rng)()) + 1.0) /
-                 (static_cast<double>(RandomBits::max()) + 2.0);
+      double u = (static_cast<unsigned>((*rng)()) + 1.0) / 4294967297.0;
       double gumbel = -temperature * std::log(-std::log(u));
       biases[i] = std::min(gumbel, cap);
     }
