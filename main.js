@@ -61,6 +61,18 @@ async function init() {
             console.warn('Could not load DTM NN model:', err);
         }
 
+        // Try to load opening book
+        try {
+            const bookResponse = await fetch('./opening.cbook');
+            if (bookResponse.ok) {
+                const bookText = await bookResponse.text();
+                await engine.loadOpeningBook(bookText);
+                console.log('Opening book loaded');
+            }
+        } catch (err) {
+            console.warn('Could not load opening book:', err);
+        }
+
         // Set up game controller
         updateLoadingStatus('Starting game...');
         gameController = new GameController(canvas, statusEl);

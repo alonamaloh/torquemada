@@ -164,6 +164,14 @@ function loadNNModel(data, isDTMModel) {
 }
 
 /**
+ * Load opening book from .cbook text
+ */
+function loadOpeningBook(text) {
+    if (!engine) return;
+    engine.loadOpeningBook(text);
+}
+
+/**
  * Get legal moves for the current position
  */
 function getLegalMoves() {
@@ -311,7 +319,8 @@ function getLoadedStatus() {
     return {
         tablebases: tablebasesAvailable,
         nnModel: engine.hasNNModel(),
-        dtmNNModel: engine.hasDTMNNModel()
+        dtmNNModel: engine.hasDTMNNModel(),
+        openingBook: engine.hasOpeningBook()
     };
 }
 
@@ -337,6 +346,11 @@ self.onmessage = function(e) {
 
             case 'loadNNModel':
                 loadNNModel(data.data, data.isDTMModel);
+                response.success = true;
+                break;
+
+            case 'loadOpeningBook':
+                loadOpeningBook(data.text);
                 response.success = true;
                 break;
 

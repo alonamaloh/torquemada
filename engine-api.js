@@ -118,6 +118,14 @@ export class EngineAPI {
     }
 
     /**
+     * Load opening book from .cbook text
+     * @param {string} text - Raw .cbook file content
+     */
+    async loadOpeningBook(text) {
+        return this.request('loadOpeningBook', { text });
+    }
+
+    /**
      * Get legal moves for the current position
      * @returns {Promise<Array>} Array of move objects
      */
