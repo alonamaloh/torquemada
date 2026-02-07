@@ -117,7 +117,7 @@ std::vector<CondensedMove> condense_entry(const BookEntry& entry,
 
   if (max_visits < min_visits) return {};
 
-  int threshold = static_cast<int>(max_visits * min_ratio);
+  double threshold = max_visits * min_ratio;
 
   std::vector<CondensedMove> result;
   int filtered_total = 0;
