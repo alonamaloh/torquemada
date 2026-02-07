@@ -19,9 +19,9 @@ namespace search {
 // Controls how much randomness is applied when selecting among good moves
 enum class VarietyMode {
   NONE,    // Always play the best move (no variety)
-  SAFE,    // Small variety: 100 points → 9x probability difference
-  CURIOUS, // Medium variety: 100 points → 3x probability difference
-  WILD     // Large variety: 100 points → 1.4x probability difference
+  SAFE,    // No variety (temperature = 0)
+  CURIOUS, // Gentle variety (temperature = 3, σ ≈ 4 points)
+  WILD     // Noticeable variety (temperature = 10, σ ≈ 13 points)
 };
 
 // Search limits
