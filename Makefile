@@ -35,7 +35,7 @@ NN_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(NN_SRCS))
 ALL_OBJS = $(CORE_OBJS) $(SEARCH_OBJS) $(TB_OBJS) $(NN_OBJS)
 
 # Targets
-all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play
+all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play $(BINDIR)/genbook
 
 # Python module
 python: dirs dtm_sampler$(PYTHON_EXT)
@@ -61,6 +61,9 @@ $(BINDIR)/match: $(ALL_OBJS) $(OBJDIR)/match.o
 $(BINDIR)/play: $(ALL_OBJS) $(OBJDIR)/play.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
+$(BINDIR)/genbook: $(ALL_OBJS) $(OBJDIR)/genbook.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
 # Object file rules
 $(OBJDIR)/%.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
@@ -82,6 +85,9 @@ $(OBJDIR)/match.o: match.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR)/play.o: play.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(OBJDIR)/genbook.o: genbook.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Python module: dtm_sampler (needs -fPIC objects)

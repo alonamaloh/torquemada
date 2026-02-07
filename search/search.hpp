@@ -60,6 +60,18 @@ struct SearchResult {
   SearchResult() : score(0), depth(0), nodes(0), tb_hits(0) {}
 };
 
+// Multi-move search result: scores for all root moves at the same depth
+struct MultiSearchResult {
+  struct MoveScore {
+    Move move;
+    int score;
+  };
+  std::vector<MoveScore> moves;  // sorted by score, descending
+  int depth = 0;
+  std::uint64_t nodes = 0;
+  std::uint64_t tb_hits = 0;
+};
+
 // Search statistics
 struct SearchStats {
   std::uint64_t nodes = 0;
@@ -180,6 +192,12 @@ public:
   SearchResult search(const Board& board, int max_depth = 100, std::uint64_t max_nodes = 0,
                       int game_ply = 100);
 
+  // Multi-move search: returns scores for all root moves at the same depth.
+  // Uses threshold-based pruning at the root: moves clearly below best - threshold
+  // get a fail-low bound instead of an exact score (sufficient for filtering).
+  MultiSearchResult search_multi(const Board& board, int max_depth = 100,
+                                 std::uint64_t max_nodes = 0, int threshold = 100);
+
   // Get statistics from last search
   const SearchStats& stats() const { return stats_; }
 
@@ -191,6 +209,12 @@ private:
   // is the raw search score of the selected move.
   SearchResult search_root(const Board& board, MoveList& root_moves, int depth,
                            std::vector<double>& biases);
+
+  // Root search returning scores for all moves. Uses threshold-based window:
+  // exact scores for moves within threshold of best, fail-low bounds for others.
+  // Returns the best score. Reorders root_moves/scores with best first.
+  int search_root_all(const Board& board, MoveList& root_moves, int depth,
+                      int threshold, std::vector<int>& scores);
 
   // Negamax alpha-beta search
   // Returns score from the perspective of the side to move (white, since board is always flipped)

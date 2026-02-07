@@ -453,6 +453,109 @@ SearchResult Searcher::search_root(const Board& board, MoveList& moves, int dept
   return result;
 }
 
+int Searcher::search_root_all(const Board& board, MoveList& root_moves, int depth,
+                              int threshold, std::vector<int>& scores) {
+  pos_hash_history_[0] = board.position_hash();
+  scores.resize(root_moves.size());
+
+  int best_score = -SCORE_INFINITE;
+  std::size_t best_idx = 0;
+
+  for (std::size_t i = 0; i < root_moves.size(); ++i) {
+    check_stop();
+
+    Board child = makeMove(board, root_moves[i]);
+
+    // Threshold-based window: exact scores for moves within threshold of best,
+    // fail-low bounds for clearly worse moves.
+    int cutoff;
+    if (best_score <= -SCORE_INFINITE + threshold + 1) {
+      cutoff = -SCORE_INFINITE;
+    } else {
+      cutoff = best_score - threshold - 1;
+    }
+    scores[i] = -negamax(child, depth - 1, -SCORE_INFINITE, -cutoff, 1);
+
+    if (scores[i] > best_score) {
+      best_score = scores[i];
+      best_idx = i;
+    }
+  }
+
+  // Rotate best move to front for better ordering in next iteration
+  if (best_idx > 0) {
+    Move tmp_move = root_moves[best_idx];
+    int tmp_score = scores[best_idx];
+    for (std::size_t j = best_idx; j > 0; --j) {
+      root_moves[j] = root_moves[j - 1];
+      scores[j] = scores[j - 1];
+    }
+    root_moves[0] = tmp_move;
+    scores[0] = tmp_score;
+  }
+
+  return best_score;
+}
+
+MultiSearchResult Searcher::search_multi(const Board& board, int max_depth,
+                                         std::uint64_t max_nodes, int threshold) {
+  stats_ = SearchStats{};
+  tt_.new_search();
+  hard_node_limit_ = (max_nodes > 0) ? max_nodes * 5 : 0;
+  std::memset(killers_, 0, sizeof(killers_));
+  std::memset(history_, 0, sizeof(history_));
+  std::memset(pos_hash_history_, 0, sizeof(pos_hash_history_));
+
+  MultiSearchResult result;
+
+  MoveList root_moves;
+  generateMoves(board, root_moves);
+  if (root_moves.empty()) return result;
+
+  // Only one legal move — no decision to make, return immediately
+  if (root_moves.size() == 1) {
+    result.moves.push_back({root_moves[0], 0});
+    result.depth = 0;
+    hard_node_limit_ = 0;
+    return result;
+  }
+
+  std::vector<int> scores;
+
+  for (int depth = 1; depth <= max_depth; ++depth) {
+    try {
+      int best = search_root_all(board, root_moves, depth, threshold, scores);
+
+      // Depth completed — snapshot results
+      result.depth = depth;
+      result.nodes = stats_.nodes;
+      result.tb_hits = stats_.tb_hits;
+      result.moves.clear();
+      for (std::size_t i = 0; i < root_moves.size(); ++i) {
+        result.moves.push_back({root_moves[i], scores[i]});
+      }
+
+      if (verbose_) {
+        std::cout << ". depth " << depth << " best " << best
+                  << " nodes " << stats_.nodes << std::endl;
+      }
+
+      if (is_mate_score(best)) break;
+      if (max_nodes > 0 && stats_.nodes >= max_nodes) break;
+    } catch (const SearchInterrupted&) {
+      break;  // Use results from previous completed depth
+    }
+  }
+
+  // Sort by score descending
+  std::sort(result.moves.begin(), result.moves.end(),
+            [](const MultiSearchResult::MoveScore& a,
+               const MultiSearchResult::MoveScore& b) { return a.score > b.score; });
+
+  hard_node_limit_ = 0;
+  return result;
+}
+
 SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t max_nodes,
                               int game_ply) {
   stats_ = SearchStats{};
