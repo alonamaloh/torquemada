@@ -19,3 +19,7 @@ Thumbs.db
 
 # Opening books
 *.openings
+*.book
+
+# Scratch notes
+NOTES
