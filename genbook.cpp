@@ -1,8 +1,11 @@
-// PUCT-based opening book generator
+// PUCT-based opening book generator (multi-threaded)
 //
 // Uses a PUCT (Predictor + Upper Confidence bound for Trees) algorithm inspired
 // by AlphaZero's MCTS. Each iteration walks from the root, selecting moves via
 // PUCT, expands a leaf node, and backpropagates the evaluation.
+//
+// Parallelism: multiple threads walk the shared tree simultaneously, using
+// virtual losses to encourage divergence into different lines.
 //
 // Key properties:
 // - All legal moves are always candidates (no threshold-based pruning)
@@ -22,8 +25,11 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -161,6 +167,11 @@ int select_puct(const BookEntry& entry, double c_puct) {
   return best_idx;
 }
 
+// Virtual loss: large enough to divert threads to different good moves,
+// small enough that garbage moves still look like garbage.
+// Should be ~2-3x the typical Q spread between reasonable moves.
+static constexpr double VIRTUAL_LOSS = 3000.0;
+
 int main(int argc, char** argv) {
   std::string tb_dir = "/home/alvaro/claude/damas";
   std::string nn_model;
@@ -173,6 +184,7 @@ int main(int argc, char** argv) {
   int max_iterations = 0;  // 0 = unlimited
   int save_interval = 10;
   int tb_limit = 7;
+  int num_threads = 1;
 
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -199,6 +211,8 @@ int main(int argc, char** argv) {
       save_interval = std::stoi(argv[++i]);
     } else if (arg == "--book" && i + 1 < argc) {
       book_file = argv[++i];
+    } else if (arg == "--threads" && i + 1 < argc) {
+      num_threads = std::stoi(argv[++i]);
     } else if (arg == "-h" || arg == "--help") {
       std::cout << "Usage: " << argv[0] << " [options]\n"
                 << "Generate an opening book using PUCT-based exploration\n\n"
@@ -213,7 +227,8 @@ int main(int argc, char** argv) {
                 << "  --max-ply N        Maximum book depth in plies (default: 30)\n"
                 << "  --iterations N     Number of iterations (default: unlimited)\n"
                 << "  --save-interval N  Save every N iterations (default: 10)\n"
-                << "  --book FILE        Book file to load/save (default: opening.book)\n";
+                << "  --book FILE        Book file to load/save (default: opening.book)\n"
+                << "  --threads N        Number of worker threads (default: 1)\n";
       return 0;
     } else {
       std::cerr << "Unknown argument: " << arg << "\n";
@@ -221,8 +236,11 @@ int main(int argc, char** argv) {
     }
   }
 
+  bool verbose = (num_threads == 1);
+
   // Initialize
   std::cout << "=== PUCT Opening Book Generator ===\n";
+  std::cout << "Threads: " << num_threads << "\n";
   std::cout << "Nodes: " << nodes << "\n";
   std::cout << "C_PUCT: " << c_puct << "\n";
   std::cout << "Prior temperature: " << prior_temp << "\n";
@@ -234,11 +252,27 @@ int main(int argc, char** argv) {
   if (!dtm_nn_model.empty()) std::cout << "DTM model: " << dtm_nn_model << "\n";
   if (!tb_dir.empty()) std::cout << "Tablebases: " << tb_dir << "\n";
 
-  search::Searcher searcher(tb_dir, tb_limit, nn_model, dtm_nn_model);
-  searcher.set_tt_size(64);
-  searcher.set_verbose(false);
-  searcher.set_draw_score(-2000);
-  searcher.set_stop_flag(&g_stop_requested);
+  // Load tablebases once, shared across all threads (read-only after preload)
+  std::unique_ptr<tablebase::DTMTablebaseManager> dtm_manager;
+  if (!tb_dir.empty() && tb_limit > 0) {
+    dtm_manager = std::make_unique<tablebase::DTMTablebaseManager>(tb_dir);
+    dtm_manager->preload(tb_limit);
+  }
+
+  // Create one searcher per thread, sharing the tablebase manager
+  std::vector<std::unique_ptr<search::Searcher>> searchers;
+  for (int i = 0; i < num_threads; ++i) {
+    auto s = std::make_unique<search::Searcher>(
+        dtm_manager.get(), tb_limit, nn_model, dtm_nn_model);
+    s->set_tt_size(64);
+    s->set_verbose(false);
+    s->set_draw_score(-2000);
+    s->set_stop_flag(&g_stop_requested);
+    searchers.push_back(std::move(s));
+  }
+
+  std::cout << "Memory: " << num_threads << " x 64 MB TT = "
+            << num_threads * 64 << " MB\n";
 
   std::signal(SIGINT, sigint_handler);
 
@@ -246,208 +280,306 @@ int main(int argc, char** argv) {
   Book book;
   load_book(book, book_file);
 
-  int iteration = 0;
-  int unsaved_iterations = 0;
+  std::mutex book_mutex;
+  std::atomic<int> total_iterations{0};
 
-  while (max_iterations == 0 || iteration < max_iterations) {
-    if (g_stop_requested.load(std::memory_order_relaxed)) break;
+  // Worker function: each thread runs this loop
+  auto worker = [&](int thread_id) {
+    auto& searcher = *searchers[thread_id];
 
-    iteration++;
-    std::cout << "\n--- Iteration " << iteration << " ---\n";
+    while (!g_stop_requested.load(std::memory_order_relaxed)) {
+      int iter = total_iterations.fetch_add(1) + 1;
+      if (max_iterations > 0 && iter > max_iterations) break;
 
-    // Path through the tree for backpropagation
-    // Each entry: (position hash, move index chosen at that position)
-    std::vector<std::pair<uint64_t, int>> path;
+      // --- Phase 1: Walk tree under lock, apply virtual losses ---
+      std::vector<std::pair<uint64_t, int>> path;
+      std::string path_desc;  // compact path for multi-threaded output
 
-    Board current_board;  // initial position
-    int ply = 0;
-    double leaf_value = 0;
-    bool got_leaf = false;
+      Board target_board;
+      int target_ply = 0;
+      bool need_search = false;
+      bool add_to_book = false;  // true for expansion, false for max-ply eval
+      bool got_leaf = false;
+      double leaf_value = 0;
 
-    while (ply < max_ply) {
-      if (g_stop_requested.load(std::memory_order_relaxed)) break;
+      {
+        std::lock_guard<std::mutex> lock(book_mutex);
 
-      // Check for game over
-      MoveList legal_moves;
-      generateMoves(current_board, legal_moves);
-      if (legal_moves.empty()) {
-        // Side to move loses (no moves = loss)
-        leaf_value = -100000;
-        got_leaf = true;
-        std::cout << "  Game over at ply " << ply << " (no moves)\n";
-        break;
-      }
-
-      uint64_t hash = current_board.position_hash();
-      auto it = book.find(hash);
-
-      if (it != book.end()) {
-        // Position is in book — select move by PUCT
-        int idx = select_puct(it->second, c_puct);
-        const auto& mi = it->second.moves[idx];
-        bool white_to_move = (ply % 2 == 0);
-        std::string notation = move_notation(current_board, mi.move, !white_to_move);
-        double q = mi.value_sum / mi.visits;
-        std::cout << "  Ply " << ply << " (" << (white_to_move ? "W" : "B")
-                  << "): PUCT " << notation
-                  << " (Q=" << std::fixed << std::setprecision(1) << q
-                  << " prior=" << std::setprecision(3) << mi.prior
-                  << " visits=" << mi.visits << ")\n";
-
-        path.push_back({hash, idx});
-        current_board = makeMove(current_board, mi.move);
-        ply++;
-        continue;
-      }
-
-      // Position not in book — expand it
-      bool white_to_move = (ply % 2 == 0);
-
-      // Forced move: add to book and keep walking (not a real decision point)
-      if (legal_moves.size() == 1) {
-        std::string notation = move_notation(current_board, legal_moves[0], !white_to_move);
-        std::cout << "  Ply " << ply << " (" << (white_to_move ? "W" : "B")
-                  << "): forced " << notation << "\n";
-
-        BookEntry entry;
-        entry.board = current_board;
-        entry.moves.push_back({legal_moves[0], 1, 0.0, 1.0});
-        book[hash] = std::move(entry);
-
-        path.push_back({hash, 0});
-        current_board = makeMove(current_board, legal_moves[0]);
-        ply++;
-        continue;
-      }
-
-      std::cout << "  Expanding at ply " << ply << " (" << (white_to_move ? "White" : "Black")
-                << " to move), " << legal_moves.size() << " legal moves\n";
-      Board display = white_to_move ? current_board : flip(current_board);
-      std::cout << display;
-
-      // Search with large threshold to get scores for all moves
-      searcher.set_root_white_to_move(white_to_move);
-      searcher.set_perspective(white_to_move);
-      searcher.clear_tt();
-
-      auto result = searcher.search_multi(current_board, 100, nodes, 30000);
-
-      if (g_stop_requested.load(std::memory_order_relaxed)) break;
-      if (result.moves.empty()) break;
-
-      int best_score = result.moves[0].score;
-
-      // Print all move scores
-      for (const auto& ms : result.moves) {
-        std::string notation = move_notation(current_board, ms.move, !white_to_move);
-        std::cout << "    " << notation << ": " << ms.score << "\n";
-      }
-      std::cout << "  depth " << result.depth << ", " << result.nodes << " nodes\n";
-
-      // Compute softmax priors
-      double max_exp = 0;
-      std::vector<double> priors(result.moves.size());
-      for (size_t i = 0; i < result.moves.size(); ++i) {
-        priors[i] = std::exp((result.moves[i].score - best_score) / prior_temp);
-        max_exp += priors[i];
-      }
-      for (auto& p : priors) p /= max_exp;
-
-      // Build book entry with all moves
-      BookEntry entry;
-      entry.board = current_board;
-      for (size_t i = 0; i < result.moves.size(); ++i) {
-        entry.moves.push_back({
-          result.moves[i].move,
-          1,                                        // virtual visit
-          static_cast<double>(result.moves[i].score),  // initial value_sum
-          priors[i]
-        });
-      }
-
-      // Print moves with priors
-      std::cout << "  " << entry.moves.size() << " moves (best score: " << best_score << "):\n";
-      for (const auto& mi : entry.moves) {
-        std::string notation = move_notation(current_board, mi.move, !white_to_move);
-        std::cout << "    " << notation
-                  << " prior=" << std::fixed << std::setprecision(3) << mi.prior
-                  << " Q=" << std::setprecision(1) << mi.value_sum << "\n";
-      }
-
-      book[hash] = std::move(entry);
-
-      // Leaf value = best score (from side-to-move perspective)
-      leaf_value = best_score;
-      got_leaf = true;
-      break;
-    }
-
-    // If we reached max_ply without expanding
-    if (!got_leaf && !g_stop_requested.load(std::memory_order_relaxed)) {
-      uint64_t hash = current_board.position_hash();
-      auto it = book.find(hash);
-
-      if (it != book.end()) {
-        // Use best Q as leaf value
-        double best_q = -1e18;
-        for (const auto& mi : it->second.moves) {
-          double q = mi.value_sum / mi.visits;
-          if (q > best_q) best_q = q;
+        if (verbose) {
+          std::cout << "\n--- Iteration " << iter << " ---\n";
         }
-        leaf_value = best_q;
-        got_leaf = true;
-        std::cout << "  Reached max ply (in book), leaf Q=" << std::fixed << std::setprecision(1) << leaf_value << "\n";
-      } else {
-        // Search without adding to book
-        MoveList legal_moves;
-        generateMoves(current_board, legal_moves);
-        if (!legal_moves.empty()) {
-          bool white_to_move = (ply % 2 == 0);
-          searcher.set_root_white_to_move(white_to_move);
-          searcher.set_perspective(white_to_move);
-          searcher.clear_tt();
 
-          auto result = searcher.search_multi(current_board, 100, nodes, 30000);
-          if (!result.moves.empty()) {
-            leaf_value = result.moves[0].score;
+        Board current_board;  // initial position
+        int ply = 0;
+
+        while (ply < max_ply) {
+          if (g_stop_requested.load(std::memory_order_relaxed)) break;
+
+          MoveList legal_moves;
+          generateMoves(current_board, legal_moves);
+          if (legal_moves.empty()) {
+            leaf_value = -100000;
             got_leaf = true;
-            std::cout << "  Reached max ply (searched), leaf=" << leaf_value << "\n";
+            if (verbose) std::cout << "  Game over at ply " << ply << "\n";
+            break;
           }
-        } else {
-          leaf_value = -100000;
+
+          uint64_t hash = current_board.position_hash();
+          auto it = book.find(hash);
+
+          if (it != book.end()) {
+            // Position is in book — select move by PUCT, apply virtual loss
+            int idx = select_puct(it->second, c_puct);
+            auto& mi = it->second.moves[idx];
+            bool wtm = (ply % 2 == 0);
+            std::string notation = move_notation(current_board, mi.move, !wtm);
+
+            if (verbose) {
+              double q = mi.value_sum / mi.visits;
+              std::cout << "  Ply " << ply << " (" << (wtm ? "W" : "B")
+                        << "): PUCT " << notation
+                        << " (Q=" << std::fixed << std::setprecision(1) << q
+                        << " prior=" << std::setprecision(3) << mi.prior
+                        << " visits=" << mi.visits << ")\n";
+            } else {
+              if (!path_desc.empty()) path_desc += " ";
+              path_desc += notation;
+            }
+
+            // Apply virtual loss
+            mi.visits++;
+            mi.value_sum -= VIRTUAL_LOSS;
+
+            path.push_back({hash, idx});
+            current_board = makeMove(current_board, mi.move);
+            ply++;
+            continue;
+          }
+
+          // Position not in book
+          bool wtm = (ply % 2 == 0);
+
+          // Forced move: add to book and keep walking
+          if (legal_moves.size() == 1) {
+            std::string notation = move_notation(current_board, legal_moves[0], !wtm);
+
+            if (verbose) {
+              std::cout << "  Ply " << ply << " (" << (wtm ? "W" : "B")
+                        << "): forced " << notation << "\n";
+            } else {
+              if (!path_desc.empty()) path_desc += " ";
+              path_desc += notation;
+            }
+
+            BookEntry entry;
+            entry.board = current_board;
+            entry.moves.push_back({legal_moves[0], 1, 0.0, 1.0});
+            book[hash] = std::move(entry);
+
+            // Apply virtual loss to the new entry
+            auto& mi = book[hash].moves[0];
+            mi.visits++;
+            mi.value_sum -= VIRTUAL_LOSS;
+
+            path.push_back({hash, 0});
+            current_board = makeMove(current_board, legal_moves[0]);
+            ply++;
+            continue;
+          }
+
+          // Multi-move position not in book — need expansion search
+          target_board = current_board;
+          target_ply = ply;
+          need_search = true;
+          add_to_book = true;
+
+          if (verbose) {
+            std::cout << "  Expanding at ply " << ply << " ("
+                      << (wtm ? "White" : "Black") << " to move), "
+                      << legal_moves.size() << " legal moves\n";
+            Board display = wtm ? current_board : flip(current_board);
+            std::cout << display;
+          }
+          break;
+        }
+
+        // Handle max ply reached
+        if (!got_leaf && !need_search && ply >= max_ply &&
+            !g_stop_requested.load(std::memory_order_relaxed)) {
+          uint64_t hash = current_board.position_hash();
+          auto it = book.find(hash);
+
+          if (it != book.end()) {
+            // Use best Q as leaf value
+            double best_q = -1e18;
+            for (const auto& mi : it->second.moves) {
+              double q = mi.value_sum / mi.visits;
+              if (q > best_q) best_q = q;
+            }
+            leaf_value = best_q;
+            got_leaf = true;
+            if (verbose) {
+              std::cout << "  Reached max ply (in book), leaf Q="
+                        << std::fixed << std::setprecision(1) << leaf_value << "\n";
+            }
+          } else {
+            // Need to search for evaluation (but don't add to book)
+            MoveList legal_moves;
+            generateMoves(current_board, legal_moves);
+            if (legal_moves.empty()) {
+              leaf_value = -100000;
+              got_leaf = true;
+            } else {
+              target_board = current_board;
+              target_ply = ply;
+              need_search = true;
+              add_to_book = false;
+            }
+          }
+        }
+      } // unlock book_mutex
+
+      // --- Phase 2: Search (no lock — this is where time is spent) ---
+      // Store search results in local variables for use in Phase 3
+      int best_score = 0;
+      int search_depth = 0;
+      uint64_t search_nodes = 0;
+      std::vector<std::pair<Move, int>> scored_moves;  // (move, score)
+
+      if (need_search && !g_stop_requested.load(std::memory_order_relaxed)) {
+        bool wtm = (target_ply % 2 == 0);
+        searcher.set_root_white_to_move(wtm);
+        searcher.set_perspective(wtm);
+        searcher.clear_tt();
+
+        auto result = searcher.search_multi(target_board, 100, nodes, 30000);
+
+        if (!result.moves.empty() &&
+            !g_stop_requested.load(std::memory_order_relaxed)) {
+          best_score = result.moves[0].score;
+          search_depth = result.depth;
+          search_nodes = result.nodes;
+          leaf_value = best_score;
           got_leaf = true;
-          std::cout << "  Reached max ply (game over)\n";
+          for (const auto& ms : result.moves) {
+            scored_moves.push_back({ms.move, ms.score});
+          }
         }
       }
+
+      // --- Phase 3: Update book and backprop under lock ---
+      {
+        std::lock_guard<std::mutex> lock(book_mutex);
+
+        // Add expansion to book
+        if (add_to_book && got_leaf && !scored_moves.empty()) {
+          bool wtm = (target_ply % 2 == 0);
+          uint64_t hash = target_board.position_hash();
+
+          // Only add if another thread didn't already expand this position
+          if (book.find(hash) == book.end()) {
+            // Compute softmax priors
+            double prior_sum = 0;
+            std::vector<double> priors(scored_moves.size());
+            for (size_t i = 0; i < scored_moves.size(); ++i) {
+              priors[i] = std::exp((scored_moves[i].second - best_score) / prior_temp);
+              prior_sum += priors[i];
+            }
+            for (auto& p : priors) p /= prior_sum;
+
+            BookEntry entry;
+            entry.board = target_board;
+            for (size_t i = 0; i < scored_moves.size(); ++i) {
+              entry.moves.push_back({
+                scored_moves[i].first,
+                1,                                               // virtual visit
+                static_cast<double>(scored_moves[i].second),     // initial value_sum
+                priors[i]
+              });
+            }
+            book[hash] = std::move(entry);
+          }
+
+          // Print expansion info
+          if (verbose) {
+            for (const auto& [move, score] : scored_moves) {
+              std::string notation = move_notation(target_board, move, !wtm);
+              std::cout << "    " << notation << ": " << score << "\n";
+            }
+            std::cout << "  depth " << search_depth << ", " << search_nodes << " nodes\n";
+
+            auto& be = book[hash];
+            std::cout << "  " << be.moves.size() << " moves (best score: " << best_score << "):\n";
+            for (const auto& mi : be.moves) {
+              std::string notation = move_notation(target_board, mi.move, !wtm);
+              std::cout << "    " << notation
+                        << " prior=" << std::fixed << std::setprecision(3) << mi.prior
+                        << " Q=" << std::setprecision(1) << (mi.value_sum / mi.visits) << "\n";
+            }
+          } else {
+            std::cout << "[T" << thread_id << "] Iter " << iter << ": "
+                      << path_desc << (path_desc.empty() ? "" : " > ")
+                      << "ply " << target_ply
+                      << " (" << (wtm ? "W" : "B") << "), "
+                      << scored_moves.size() << " moves, best=" << best_score
+                      << ", d" << search_depth
+                      << " [" << book.size() << " pos]\n";
+          }
+        }
+
+        // Undo virtual losses on the path
+        for (const auto& [hash, idx] : path) {
+          auto& mi = book[hash].moves[idx];
+          mi.visits--;
+          mi.value_sum += VIRTUAL_LOSS;
+        }
+
+        // Backpropagate real values
+        if (got_leaf && !path.empty()) {
+          double value = leaf_value;
+          if (verbose) {
+            std::cout << "  Backpropagating value=" << std::fixed
+                      << std::setprecision(1) << value
+                      << " through " << path.size() << " plies\n";
+          }
+          for (int i = static_cast<int>(path.size()) - 1; i >= 0; --i) {
+            value = -value;
+            auto& mi = book[path[i].first].moves[path[i].second];
+            mi.value_sum += value;
+            mi.visits++;
+          }
+        }
+
+        // Periodic save
+        if (iter % save_interval == 0) {
+          save_book(book, book_file);
+        }
+      } // unlock book_mutex
     }
+  };
 
-    // Backpropagate leaf value up the path
-    if (got_leaf && !path.empty()) {
-      double value = leaf_value;
-      std::cout << "  Backpropagating value=" << std::fixed << std::setprecision(1) << value
-                << " through " << path.size() << " plies\n";
+  // Launch worker threads
+  auto start_time = std::chrono::steady_clock::now();
 
-      for (int i = static_cast<int>(path.size()) - 1; i >= 0; --i) {
-        value = -value;  // negate (flip perspective)
-        auto& entry = book[path[i].first];
-        auto& mi = entry.moves[path[i].second];
-        mi.value_sum += value;
-        mi.visits++;
-      }
-    }
-
-    if (g_stop_requested.load(std::memory_order_relaxed)) break;
-
-    // Periodic save
-    unsaved_iterations++;
-    if (unsaved_iterations >= save_interval) {
-      save_book(book, book_file);
-      unsaved_iterations = 0;
-    }
+  std::vector<std::thread> threads;
+  for (int i = 1; i < num_threads; ++i) {
+    threads.emplace_back(worker, i);
   }
+  worker(0);  // main thread also works
+
+  for (auto& t : threads) {
+    t.join();
+  }
+
+  auto elapsed = std::chrono::steady_clock::now() - start_time;
+  double seconds = std::chrono::duration<double>(elapsed).count();
 
   // Final save
   save_book(book, book_file);
-  std::cout << "\nDone. Book has " << book.size() << " positions.\n";
+  int iters = total_iterations.load();
+  std::cout << "\nDone. " << iters << " iterations in "
+            << std::fixed << std::setprecision(1) << seconds << "s ("
+            << std::setprecision(1) << (iters / std::max(seconds, 0.001)) << " iter/s). "
+            << "Book has " << book.size() << " positions.\n";
   return 0;
 }
