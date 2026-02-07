@@ -409,30 +409,6 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
     result.set("nodes", static_cast<double>(sr.nodes));
     result.set("tb_hits", static_cast<double>(sr.tb_hits));
 
-    // Include variety selection info if present
-    if (!sr.variety_candidates.empty()) {
-        val candidates = val::array();
-        for (const auto& vc : sr.variety_candidates) {
-            // Find the notation for this move
-            std::string notation = "?";
-            for (const auto& fm : full_moves) {
-                if (fm.move.from_xor_to == vc.move.from_xor_to &&
-                    fm.move.captures == vc.move.captures) {
-                    notation = buildNotation(fm.path, vc.move.isCapture(), white_to_move);
-                    break;
-                }
-            }
-
-            val candidate = val::object();
-            candidate.set("notation", notation);
-            candidate.set("score", vc.score);
-            candidate.set("probability", vc.probability);
-            candidate.set("selected", vc.selected);
-            candidates.call<void>("push", candidate);
-        }
-        result.set("varietyCandidates", candidates);
-    }
-
     // Build PV with full paths for captures
     val pv = val::array();
     if (!sr.pv.empty()) {

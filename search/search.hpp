@@ -48,14 +48,6 @@ inline bool is_mate_score(int score) {
   return score > SCORE_TB_WIN || score < -SCORE_TB_WIN;
 }
 
-// Variety candidate info (for debugging)
-struct VarietyCandidate {
-  Move move;
-  int score;
-  double probability;  // 0.0 to 1.0
-  bool selected;       // true if this was the selected move
-};
-
 // Search result
 struct SearchResult {
   Move best_move;
@@ -64,7 +56,6 @@ struct SearchResult {
   std::uint64_t nodes;
   std::uint64_t tb_hits;
   std::vector<Move> pv;  // Principal variation
-  std::vector<VarietyCandidate> variety_candidates;  // Populated when variety search is used
 
   SearchResult() : score(0), depth(0), nodes(0), tb_hits(0) {}
 };

@@ -6,6 +6,7 @@
 //   2       - Toggle 2-player mode (engine doesn't play)
 //   m       - Assign engine to current side (you take the other)
 //   n N     - Set search node limit
+//   v MODE  - Set variety mode (safe, curious, wild, none)
 //   q       - Quit
 //   ?       - Show legal moves
 
@@ -25,6 +26,16 @@ std::atomic<bool> g_stop_requested{false};
 
 void sigint_handler(int) {
   g_stop_requested.store(true, std::memory_order_relaxed);
+}
+
+// Convert variety mode to string
+const char* variety_mode_str(search::VarietyMode mode) {
+  switch (mode) {
+    case search::VarietyMode::SAFE: return "safe";
+    case search::VarietyMode::CURIOUS: return "curious";
+    case search::VarietyMode::WILD: return "wild";
+    default: return "none";
+  }
 }
 
 // Game state
@@ -160,7 +171,7 @@ void engine_move(GameState& state, search::Searcher& searcher, bool white_to_mov
 
   searcher.set_perspective(white_to_move);
   searcher.set_root_white_to_move(white_to_move);
-  auto result = searcher.search(state.board, 100, state.nodes);
+  auto result = searcher.search(state.board, 100, state.nodes, state.ply);
 
   // Reset stop flag if it was set
   g_stop_requested.store(false, std::memory_order_relaxed);
@@ -185,6 +196,7 @@ int main(int argc, char** argv) {
   std::uint64_t nodes = 100000;
   int tb_limit = 7;  // Use tablebases for positions with this many pieces or fewer
   int draw_score = 0;  // Value of a draw from white's perspective
+  search::VarietyMode variety_mode = search::VarietyMode::NONE;
 
   // Parse arguments
   for (int i = 1; i < argc; ++i) {
@@ -204,6 +216,16 @@ int main(int argc, char** argv) {
       nodes = std::stoull(argv[++i]);
     } else if (arg == "--draw-score" && i + 1 < argc) {
       draw_score = std::stoi(argv[++i]);
+    } else if (arg == "--variety" && i + 1 < argc) {
+      std::string mode = argv[++i];
+      if (mode == "safe") variety_mode = search::VarietyMode::SAFE;
+      else if (mode == "curious") variety_mode = search::VarietyMode::CURIOUS;
+      else if (mode == "wild") variety_mode = search::VarietyMode::WILD;
+      else if (mode == "none") variety_mode = search::VarietyMode::NONE;
+      else {
+        std::cerr << "Unknown variety mode: " << mode << " (use safe, curious, wild, or none)\n";
+        return 1;
+      }
     } else if (arg == "-h" || arg == "--help") {
       std::cout << "Usage: " << argv[0] << " [options]\n"
                 << "Options:\n"
@@ -214,12 +236,14 @@ int main(int argc, char** argv) {
                 << "  --no-tb           Disable tablebases (use NN only)\n"
                 << "  --nodes N         Search node limit (default: 100000)\n"
                 << "  --draw-score N    Value of draw for white (default: 0, use -100 for aggression)\n"
+                << "  --variety MODE    Variety in opening play: safe, curious, wild, or none (default: none)\n"
                 << "\nCommands during play:\n"
                 << "  <move>  Enter a move (e.g., 11-15 or 11x18x25)\n"
                 << "  b       Take back the last move\n"
                 << "  2       Toggle 2-player mode\n"
                 << "  m       Assign engine to current side (you take the other)\n"
                 << "  n N     Set search node limit\n"
+                << "  v MODE  Set variety (safe, curious, wild, none)\n"
                 << "  ?       Show legal moves\n"
                 << "  q       Quit\n";
       return 0;
@@ -250,6 +274,7 @@ int main(int argc, char** argv) {
     searcher.set_draw_score(draw_score);
     std::cout << "  Draw score: " << draw_score << " (for white)\n";
   }
+  searcher.set_variety_mode(variety_mode);
 
   GameState state;
   state.nodes = nodes;
@@ -305,7 +330,8 @@ int main(int argc, char** argv) {
       break;
     } else if (input == "?" || input == "help") {
       show_legal_moves(state.board, white_to_move);
-      std::cout << "\nCommands: b=back, 2=two-player, m=engine takes this side, n N=nodes, q=quit\n";
+      std::cout << "\nCommands: b=back, 2=two-player, m=engine takes this side, n N=nodes,"
+                << " v MODE=variety (safe/curious/wild/none), q=quit\n";
     } else if (input == "b" || input == "back" || input == "undo") {
       if (state.history.empty()) {
         std::cout << "Nothing to undo!\n";
@@ -331,6 +357,18 @@ int main(int argc, char** argv) {
       // Set node limit
       state.nodes = std::stoull(input.substr(2));
       std::cout << "Node limit set to " << state.nodes << "\n";
+    } else if (input.size() >= 2 && input[0] == 'v' && input[1] == ' ') {
+      // Set variety mode
+      std::string mode = input.substr(2);
+      if (mode == "safe") searcher.set_variety_mode(search::VarietyMode::SAFE);
+      else if (mode == "curious") searcher.set_variety_mode(search::VarietyMode::CURIOUS);
+      else if (mode == "wild") searcher.set_variety_mode(search::VarietyMode::WILD);
+      else if (mode == "none") searcher.set_variety_mode(search::VarietyMode::NONE);
+      else {
+        std::cout << "Unknown variety mode. Use: safe, curious, wild, or none\n";
+        continue;
+      }
+      std::cout << "Variety mode set to " << variety_mode_str(searcher.variety_mode()) << "\n";
     } else {
       // Try to parse as a move
       Move move;
