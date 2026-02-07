@@ -168,7 +168,7 @@ int main(int argc, char** argv) {
   std::string book_file = "opening.book";
   uint64_t nodes = 10000000;
   double c_puct = 1000.0;
-  double prior_temp = 200.0;
+  double prior_temp = 1000.0;
   int max_ply = 30;
   int max_iterations = 0;  // 0 = unlimited
   int save_interval = 10;
@@ -209,7 +209,7 @@ int main(int argc, char** argv) {
                 << "  --no-tb            Disable tablebases\n"
                 << "  --nodes N          Node limit for search (default: 10000000)\n"
                 << "  --cpuct N          PUCT exploration constant (default: 1000)\n"
-                << "  --prior-temp T     Softmax temperature for priors (default: 200)\n"
+                << "  --prior-temp T     Softmax temperature for priors (default: 1000)\n"
                 << "  --max-ply N        Maximum book depth in plies (default: 30)\n"
                 << "  --iterations N     Number of iterations (default: unlimited)\n"
                 << "  --save-interval N  Save every N iterations (default: 10)\n"
@@ -302,6 +302,24 @@ int main(int argc, char** argv) {
 
       // Position not in book — expand it
       bool white_to_move = (ply % 2 == 0);
+
+      // Forced move: add to book and keep walking (not a real decision point)
+      if (legal_moves.size() == 1) {
+        std::string notation = move_notation(current_board, legal_moves[0], !white_to_move);
+        std::cout << "  Ply " << ply << " (" << (white_to_move ? "W" : "B")
+                  << "): forced " << notation << "\n";
+
+        BookEntry entry;
+        entry.board = current_board;
+        entry.moves.push_back({legal_moves[0], 1, 0.0, 1.0});
+        book[hash] = std::move(entry);
+
+        path.push_back({hash, 0});
+        current_board = makeMove(current_board, legal_moves[0]);
+        ply++;
+        continue;
+      }
+
       std::cout << "  Expanding at ply " << ply << " (" << (white_to_move ? "White" : "Black")
                 << " to move), " << legal_moves.size() << " legal moves\n";
       Board display = white_to_move ? current_board : flip(current_board);
