@@ -429,8 +429,7 @@ export class GameController {
                 nodes: result.nodes,
                 tbHits: result.tbHits,
                 pv: result.pv || [],
-                pvStr: pvStr,
-                varietyCandidates: result.varietyCandidates || null
+                pvStr: pvStr
             });
         }
     }

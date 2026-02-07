@@ -270,28 +270,13 @@ function search(maxDepth, maxNodes, gamePly, varietyMode, requestId) {
         }
 
         currentSearchId = null;
-        // Convert varietyCandidates from WASM array to plain JS array for postMessage
-        let varietyCandidates = null;
-        if (result.varietyCandidates && result.varietyCandidates.length > 0) {
-            varietyCandidates = [];
-            for (let i = 0; i < result.varietyCandidates.length; i++) {
-                const c = result.varietyCandidates[i];
-                varietyCandidates.push({
-                    notation: c.notation,
-                    score: c.score,
-                    probability: c.probability,
-                    selected: c.selected
-                });
-            }
-        }
         return {
             bestMove: result.best_move,
             score: result.score,
             depth: result.depth,
             nodes: result.nodes,
             tbHits: result.tb_hits,
-            pv: result.pv || [],
-            varietyCandidates: varietyCandidates
+            pv: result.pv || []
         };
     } catch (err) {
         console.error('Worker: search error:', err);

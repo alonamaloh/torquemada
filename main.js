@@ -79,7 +79,6 @@ async function init() {
         gameController.onThinkingStart = () => {
             setThinkingIndicator(true);
             updateUndoRedoButtons();
-            clearVarietyInfo();
         };
 
         gameController.onThinkingEnd = () => {
@@ -177,7 +176,6 @@ function updateUndoRedoButtons() {
  */
 async function enterEditMode() {
     editMode = true;
-    clearVarietyInfo();
 
     // Copy current position to edit board
     const board = await gameController.getBoard();
@@ -364,7 +362,6 @@ function hideNewGameDialog() {
  */
 async function startNewGame(playAs) {
     hideNewGameDialog();
-    clearVarietyInfo();
 
     // Start the new game first
     await gameController.newGame();
@@ -710,9 +707,6 @@ function updateSearchInfo(info) {
     const scoreEl = document.getElementById('search-score');
     const nodesEl = document.getElementById('search-nodes');
     const pvEl = document.getElementById('search-pv');
-    const varietyInfoEl = document.getElementById('variety-info');
-    const varietyCandidatesEl = document.getElementById('variety-candidates');
-
     if (depthEl) depthEl.textContent = info.depth || '-';
     if (scoreEl) scoreEl.textContent = info.scoreStr || '-';
     if (nodesEl) {
@@ -721,30 +715,6 @@ function updateSearchInfo(info) {
         nodesEl.textContent = nodes.toLocaleString();
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
-
-    // Display variety candidates if present
-    if (varietyInfoEl && varietyCandidatesEl && info.varietyCandidates && info.varietyCandidates.length > 0) {
-        // Sort by probability descending
-        const sorted = [...info.varietyCandidates].sort((a, b) => b.probability - a.probability);
-        // Format: "21-17* (47.4%) / 32-28 (41.1%) / 19-15 (11.5%)"
-        const text = sorted.map(c => {
-            const prob = (c.probability * 100).toFixed(1);
-            const marker = c.selected ? '*' : '';
-            return `${c.notation}${marker} (${prob}%)`;
-        }).join(' / ');
-        varietyCandidatesEl.textContent = text;
-        varietyInfoEl.style.display = 'block';
-    }
-}
-
-/**
- * Clear variety info display (called when starting a new game)
- */
-function clearVarietyInfo() {
-    const varietyInfoEl = document.getElementById('variety-info');
-    if (varietyInfoEl) {
-        varietyInfoEl.style.display = 'none';
-    }
 }
 
 /**
