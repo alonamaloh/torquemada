@@ -501,6 +501,12 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
 }
 
 // Perform search with optional progress callback
+bool g_use_book = true;
+
+void setUseBook(bool use_book) {
+    g_use_book = use_book;
+}
+
 val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time,
                          double hard_time, val progress_callback) {
     val result = val::object();
@@ -541,7 +547,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     }
 
     // Check opening book
-    if (g_book_loaded) {
+    if (g_use_book && g_book_loaded) {
         uint64_t pos_hash = jsboard.board.position_hash();
         auto it = g_opening_book.find(pos_hash);
         if (it != g_opening_book.end() && !it->second.empty()) {
@@ -693,7 +699,8 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("getLegalMoves", &getLegalMoves);
     function("makeMove", &makeJSMove);
     function("search", &doSearch);
-    function("searchWithCallback", &doSearchWithCallback);  // (board, depth, softTime, hardTime, callback)
+    function("searchWithCallback", &doSearchWithCallback);
+    function("setUseBook", &setUseBook);
     function("probeDTM", &probeDTM);
     function("parseMove", &doParseMove);
     function("loadNNModel", &loadNNModel);
