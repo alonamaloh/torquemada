@@ -707,12 +707,10 @@ function updateTimeDisplay(seconds) {
         const m = Math.floor((seconds % 3600) / 60);
         const s = Math.floor(seconds % 60);
         text = `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-    } else if (seconds >= 10) {
-        const m = Math.floor(seconds / 60);
-        const s = Math.floor(seconds % 60);
-        text = `${m}:${String(s).padStart(2, '0')}`;
     } else {
-        text = seconds.toFixed(1);
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        text = `${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
     }
     el.textContent = text;
 }

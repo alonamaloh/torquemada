@@ -372,18 +372,30 @@ export class GameController {
         try {
             // Time control: bank time, compute soft/hard limits
             this.secondsLeft += this.secondsPerMove;
-            this._notifyTime();
             const softTime = this.secondsLeft / 8;
             const hardTime = this.secondsLeft;
             console.log('Starting search: softTime=', softTime.toFixed(2), 'hardTime=', hardTime.toFixed(2));
             const startTime = Date.now();
+            const startSecondsLeft = this.secondsLeft;
+
+            // Live countdown timer (updates display every 100ms)
+            const countdownTimer = setInterval(() => {
+                const elapsed = (Date.now() - startTime) / 1000;
+                const projected = Math.max(0, startSecondsLeft - elapsed);
+                if (this.onTimeUpdate) this.onTimeUpdate(projected);
+            }, 100);
 
             // Progress callback for iterative deepening updates
             const onProgress = (progressResult) => {
                 this._reportSearchInfo(progressResult);
             };
 
-            const result = await this.engine.search(100, softTime, hardTime, onProgress);
+            let result;
+            try {
+                result = await this.engine.search(100, softTime, hardTime, onProgress);
+            } finally {
+                clearInterval(countdownTimer);
+            }
             console.log('Search result:', result);
 
             // Debit elapsed time from bank
