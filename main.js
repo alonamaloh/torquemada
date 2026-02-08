@@ -783,26 +783,24 @@ function updateSearchInfo(info) {
 
     searchInfo.style.display = 'block';
 
-    const depthEl = document.getElementById('search-depth');
-    const scoreEl = document.getElementById('search-score');
-    const nodesEl = document.getElementById('search-nodes');
-    const npsEl = document.getElementById('search-nps');
+    const summaryEl = document.getElementById('search-summary');
     const pvEl = document.getElementById('search-pv');
-    if (depthEl) depthEl.textContent = info.depth || '-';
-    if (scoreEl) scoreEl.textContent = info.scoreStr || '-';
-    if (nodesEl) {
+
+    if (summaryEl) {
+        const depth = info.depth || '-';
+        const score = info.scoreStr || '-';
         const nodes = info.nodes || 0;
-        nodesEl.textContent = nodes.toLocaleString();
-    }
-    if (npsEl) {
+        const nodesStr = nodes.toLocaleString();
         const nps = info.nps || 0;
+        let npsStr;
         if (nps >= 1000000) {
-            npsEl.textContent = (nps / 1000000).toFixed(1) + 'M';
+            npsStr = (nps / 1000000).toFixed(1) + 'M';
         } else if (nps >= 1000) {
-            npsEl.textContent = (nps / 1000).toFixed(0) + 'k';
+            npsStr = (nps / 1000).toFixed(0) + 'k';
         } else {
-            npsEl.textContent = nps > 0 ? nps.toString() : '-';
+            npsStr = nps > 0 ? nps.toString() : '-';
         }
+        summaryEl.textContent = `${depth}. ${score} nodes:${nodesStr} nps:${npsStr}`;
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
 }

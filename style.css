@@ -79,6 +79,7 @@ body {
     padding: 0.5rem 1rem;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 0.25rem;
     border-bottom: 1px solid var(--border);
 }
@@ -149,11 +150,6 @@ body {
 
 .search-info-row:last-child {
     margin-bottom: 0;
-}
-
-.search-label {
-    color: var(--text-secondary);
-    font-weight: 500;
 }
 
 .search-pv {
