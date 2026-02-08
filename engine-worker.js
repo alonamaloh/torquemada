@@ -238,6 +238,8 @@ function search(maxDepth, softTime, hardTime, requestId) {
     currentSearchId = requestId;
 
     try {
+        const searchStart = performance.now();
+
         // Progress callback - sends updates as search progresses
         const progressCallback = (result) => {
             // Check stop flag from SharedArrayBuffer
@@ -246,6 +248,9 @@ function search(maxDepth, softTime, hardTime, requestId) {
             }
 
             if (currentSearchId !== null) {
+                const elapsedMs = performance.now() - searchStart;
+                const nodes = result.nodes || 0;
+                const nps = elapsedMs > 0 ? Math.round(nodes / (elapsedMs / 1000)) : 0;
                 postMessage({
                     id: currentSearchId,
                     type: 'searchProgress',
@@ -253,7 +258,8 @@ function search(maxDepth, softTime, hardTime, requestId) {
                         bestMove: result.best_move,
                         score: result.score,
                         depth: result.depth,
-                        nodes: result.nodes,
+                        nodes: nodes,
+                        nps: nps,
                         tbHits: result.tb_hits,
                         pv: result.pv || []
                     }
@@ -274,12 +280,17 @@ function search(maxDepth, softTime, hardTime, requestId) {
             result = engine.search(board, maxDepth || 100, softTime || 3, hardTime || 10);
         }
 
+        const totalElapsedMs = performance.now() - searchStart;
+        const totalNodes = result.nodes || 0;
+        const nps = totalElapsedMs > 0 ? Math.round(totalNodes / (totalElapsedMs / 1000)) : 0;
+
         currentSearchId = null;
         return {
             bestMove: result.best_move,
             score: result.score,
             depth: result.depth,
-            nodes: result.nodes,
+            nodes: totalNodes,
+            nps: nps,
             tbHits: result.tb_hits,
             pv: result.pv || []
         };

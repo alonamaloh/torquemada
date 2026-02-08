@@ -374,7 +374,6 @@ export class GameController {
             const hardTime = this.secondsLeft;
             console.log('Starting search: softTime=', softTime.toFixed(2), 'hardTime=', hardTime.toFixed(2));
             const startTime = Date.now();
-            this._searchStartTime = startTime;
 
             // Progress callback for iterative deepening updates
             const onProgress = (progressResult) => {
@@ -446,10 +445,6 @@ export class GameController {
         // Format PV for display
         const pvStr = result.pv && result.pv.length > 0 ? result.pv.join(' ') : '';
 
-        // Compute nodes per second
-        const elapsedMs = this._searchStartTime ? Date.now() - this._searchStartTime : 0;
-        const nps = elapsedMs > 0 ? Math.round((result.nodes || 0) / (elapsedMs / 1000)) : 0;
-
         // Call search info callback with full details
         if (this.onSearchInfo) {
             this.onSearchInfo({
@@ -457,7 +452,7 @@ export class GameController {
                 score: result.score,
                 scoreStr: scoreStr,
                 nodes: result.nodes,
-                nps: nps,
+                nps: result.nps || 0,
                 tbHits: result.tbHits,
                 pv: result.pv || [],
                 pvStr: pvStr
