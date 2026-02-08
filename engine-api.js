@@ -176,19 +176,17 @@ export class EngineAPI {
      * Search for the best move
      * @param {number} maxDepth - Maximum search depth
      * @param {number} maxNodes - Maximum nodes to search (0 = unlimited)
-     * @param {number} gamePly - Current game ply (for opening variety)
-     * @param {number} varietyMode - Variety mode: 0=none, 1=safe, 2=curious, 3=wild
      * @param {Function} onProgress - Optional callback for progress updates
      * @returns {Promise<Object>} Search result with bestMove, score, depth, nodes
      */
-    async search(maxDepth = 20, maxNodes = 0, gamePly = 100, varietyMode = 0, onProgress = null) {
+    async search(maxDepth = 20, maxNodes = 0, onProgress = null) {
         // Reset stop flag before starting search
         if (this.wasmMemory && this.wasmStopFlagAddress) {
             this.wasmMemory[this.wasmStopFlagAddress] = 0;
         } else if (this.stopFlagView) {
             Atomics.store(this.stopFlagView, 0, 0);
         }
-        const response = await this.requestWithProgress('search', { maxDepth, maxNodes, gamePly, varietyMode }, onProgress);
+        const response = await this.requestWithProgress('search', { maxDepth, maxNodes }, onProgress);
         return response.result;
     }
 

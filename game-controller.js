@@ -22,7 +22,6 @@ export class GameController {
         this.engineDepth = 100;
         this.engineNodes = 100000;
         this.autoPlay = true;        // Engine plays automatically
-        this.varietyMode = 2;        // 0=none, 1=safe, 2=curious, 3=wild
 
         // State flags
         this.isThinking = false;
@@ -62,6 +61,17 @@ export class GameController {
      * Start a new game
      */
     async newGame() {
+        // Stop any running search and wait for it to finish
+        if (this.isThinking) {
+            this._abortingForNewGame = true;
+            this.engine.stopSearch();
+            // Wait for the search to complete
+            while (this.isThinking) {
+                await this._sleep(50);
+            }
+            this._abortingForNewGame = false;
+        }
+
         // If engine was playing white, switch so engine plays black
         // This prevents auto-start and lets the user make the first move
         if (this.humanColor === 'black') {
@@ -352,10 +362,7 @@ export class GameController {
         this._updateStatus('Engine thinking...');
 
         try {
-            // Game ply is the number of half-moves played
-            const gamePly = this.history.length;
-            console.log('Starting search with depth:', this.engineDepth, 'nodes:', this.engineNodes,
-                        'ply:', gamePly, 'variety:', this.varietyMode);
+            console.log('Starting search with depth:', this.engineDepth, 'nodes:', this.engineNodes);
             const startTime = Date.now();
 
             // Progress callback for iterative deepening updates
@@ -363,8 +370,11 @@ export class GameController {
                 this._reportSearchInfo(progressResult);
             };
 
-            const result = await this.engine.search(this.engineDepth, this.engineNodes, gamePly, this.varietyMode, onProgress);
+            const result = await this.engine.search(this.engineDepth, this.engineNodes, onProgress);
             console.log('Search result:', result);
+
+            // Abort if new game was requested during search
+            if (this._abortingForNewGame) return;
 
             if (result.error) {
                 console.error('Engine error:', result.error);
@@ -579,14 +589,6 @@ export class GameController {
     setEngineParams(depth, nodes) {
         this.engineDepth = depth;
         this.engineNodes = nodes;
-    }
-
-    /**
-     * Set variety mode
-     * @param {number} mode - 0=none, 1=safe, 2=curious, 3=wild
-     */
-    setVarietyMode(mode) {
-        this.varietyMode = mode;
     }
 
     /**

@@ -506,31 +506,6 @@ function setupEventHandlers() {
         });
     }
 
-    // Variety buttons (Safe/Curious/Wild)
-    const safeBtn = document.getElementById('btn-variety-safe');
-    const curiousBtn = document.getElementById('btn-variety-curious');
-    const wildBtn = document.getElementById('btn-variety-wild');
-    if (safeBtn && curiousBtn && wildBtn) {
-        safeBtn.addEventListener('click', () => {
-            gameController.setVarietyMode(1);  // 1 = safe
-            safeBtn.classList.add('active');
-            curiousBtn.classList.remove('active');
-            wildBtn.classList.remove('active');
-        });
-        curiousBtn.addEventListener('click', () => {
-            gameController.setVarietyMode(2);  // 2 = curious
-            safeBtn.classList.remove('active');
-            curiousBtn.classList.add('active');
-            wildBtn.classList.remove('active');
-        });
-        wildBtn.addEventListener('click', () => {
-            gameController.setVarietyMode(3);  // 3 = wild
-            safeBtn.classList.remove('active');
-            curiousBtn.classList.remove('active');
-            wildBtn.classList.add('active');
-        });
-    }
-
     // Stop button
     const stopBtn = document.getElementById('btn-stop');
     if (stopBtn) {
