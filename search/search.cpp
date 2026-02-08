@@ -1,21 +1,10 @@
 #include "search.hpp"
 #include <algorithm>
 #include <bit>
-#include <chrono>
-#include <cmath>
 #include <cstring>
 #include <iostream>
 
 namespace search {
-
-// Temperature values for variety modes
-constexpr double TEMPERATURE_CURIOUS = 3.0;
-constexpr double TEMPERATURE_SAFE = 0.0;
-constexpr double TEMPERATURE_WILD = 10.0;
-
-// Score threshold multiplier: threshold = T * ln(10) where moves at threshold
-// have 10% probability of being selected compared to the best move
-constexpr double THRESHOLD_MULTIPLIER = 2.302585;  // ln(10)
 
 // Random evaluation: reproducible pseudo-random score derived from position hash
 // Returns a score in the range [-10000, +10000] based on the hash
@@ -401,39 +390,29 @@ void Searcher::extract_pv(const Board& board, std::vector<Move>& pv, int max_dep
   }
 }
 
-SearchResult Searcher::search_root(const Board& board, MoveList& moves, int depth,
-                                   std::vector<double>& biases) {
+SearchResult Searcher::search_root(const Board& board, MoveList& moves, int depth) {
   SearchResult result;
   result.depth = depth;
 
   // Store root position hash for repetition detection
   pos_hash_history_[0] = board.position_hash();
 
-  // alpha/beta track effective scores (raw + bias) when biases are active
   int alpha = -SCORE_INFINITE;
   int beta = SCORE_INFINITE;
 
   for (std::size_t i = 0; i < moves.size(); ++i) {
     const Move& move = moves[i];
     Board child = makeMove(board, move);
-    int bias = biases.empty() ? 0 : static_cast<int>(std::round(biases[i]));
+    int score = -negamax(child, depth - 1, -beta, -alpha, 1);
 
-    // Shift the search window into raw-score space for this move
-    int shifted_alpha = alpha - (std::abs(alpha) < SCORE_SPECIAL ? bias : 0);
-    int score = -negamax(child, depth - 1, -beta, -shifted_alpha, 1);
-    int effective = static_cast<int>(score + bias);
-
-    if (effective > alpha) {
-      alpha = effective;
+    if (score > alpha) {
+      alpha = score;
       result.best_move = move;
-      result.score = score;  // Report raw score, not effective
+      result.score = score;
 
       // Rotate this move to the front for better ordering in next iteration
       if (i > 0) {
         std::rotate(moves.begin(), moves.begin() + i, moves.begin() + i + 1);
-        if (!biases.empty()) {
-          std::rotate(biases.begin(), biases.begin() + i, biases.begin() + i + 1);
-        }
       }
     }
   }
@@ -556,8 +535,7 @@ MultiSearchResult Searcher::search_multi(const Board& board, int max_depth,
   return result;
 }
 
-SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t max_nodes,
-                              int game_ply) {
+SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t max_nodes) {
   stats_ = SearchStats{};
   tt_.new_search();
   hard_node_limit_ = (max_nodes > 0) ? max_nodes * 5 : 0;
@@ -614,54 +592,9 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
     return result;
   }
 
-  // Generate Gumbel biases for variety in the opening (first 10 moves).
-  // The Gumbel-max trick: adding Gumbel(0, T) noise to each move's score and
-  // taking the argmax is equivalent to sampling from a softmax distribution
-  // with temperature T. Capping the noise at T * ln(10) limits how much a
-  // move can be promoted (matching the previous variety_threshold behavior).
-  // TODO: To avoid promoting moves with absolute score below -1000, a future
-  // improvement could apply a non-linear score transformation that stretches
-  // scores in the losing region, making fixed-scale Gumbel noise negligible there.
-  std::vector<double> biases;
-  bool use_variety = (variety_mode_ != VarietyMode::NONE) && (game_ply < 40);
-  if (use_variety) {
-    double temperature;
-    switch (variety_mode_) {
-      case VarietyMode::SAFE:  temperature = TEMPERATURE_SAFE;  break;
-      case VarietyMode::WILD:  temperature = TEMPERATURE_WILD;  break;
-      default:                 temperature = TEMPERATURE_CURIOUS; break;
-    }
-    double cap = temperature * THRESHOLD_MULTIPLIER;
-
-    RandomBits* rng = rng_;
-    if (!rng) {
-      if (!owned_rng_) {
-        owned_rng_ = std::make_unique<RandomBits>(
-            std::chrono::steady_clock::now().time_since_epoch().count());
-      }
-      rng = owned_rng_.get();
-    }
-
-    biases.resize(root_moves.size());
-    for (std::size_t i = 0; i < root_moves.size(); ++i) {
-      // Map RNG output to (0, 1), avoiding 0 and 1 for numerical safety
-      double u = (static_cast<unsigned>((*rng)()) + 1.0) / 4294967297.0;
-      double gumbel = -temperature * std::log(-std::log(u));
-      biases[i] = std::min(gumbel, cap);
-    }
-
-    if (verbose_) {
-      std::cout << ". variety biases:";
-      for (std::size_t i = 0; i < biases.size(); ++i) {
-        std::cout << " " << static_cast<int>(biases[i]);
-      }
-      std::cout << std::endl;
-    }
-  }
-
   for (int depth = 1; depth <= max_depth; ++depth) {
     try {
-      result = search_root(board, root_moves, depth, biases);
+      result = search_root(board, root_moves, depth);
       result.depth = depth;
     } catch (const SearchInterrupted&) {
       break;  // Return best result from previous depth

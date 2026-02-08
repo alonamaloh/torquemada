@@ -2,7 +2,6 @@
 
 #include "../core/board.hpp"
 #include "../core/movegen.hpp"
-#include "../core/random.hpp"
 #include "../nn/mlp.hpp"
 #include "../tablebase/tb_probe.hpp"
 #include "tt.hpp"
@@ -14,15 +13,6 @@
 #include <string>
 
 namespace search {
-
-// Variety mode for opening play
-// Controls how much randomness is applied when selecting among good moves
-enum class VarietyMode {
-  NONE,    // Always play the best move (no variety)
-  SAFE,    // No variety (temperature = 0)
-  CURIOUS, // Gentle variety (temperature = 3, σ ≈ 4 points)
-  WILD     // Noticeable variety (temperature = 10, σ ≈ 13 points)
-};
 
 // Search limits
 constexpr int MAX_PLY = 128;
@@ -172,13 +162,6 @@ public:
   // Set callback for iterative deepening progress updates
   void set_progress_callback(SearchProgressCallback cb) { progress_callback_ = std::move(cb); }
 
-  // Set variety mode for opening play (adds controlled randomness in first 10 moves)
-  void set_variety_mode(VarietyMode mode) { variety_mode_ = mode; }
-  VarietyMode variety_mode() const { return variety_mode_; }
-
-  // Set RNG for variety selection (if not set, uses a default seeded RNG)
-  void set_rng(RandomBits* rng) { rng_ = rng; }
-
   // Check if search should stop and throw if so
   void check_stop() const {
     if (stop_flag_ && stop_flag_->load(std::memory_order_relaxed)) throw SearchInterrupted{};
@@ -188,9 +171,7 @@ public:
   // Search with iterative deepening
   // max_depth: maximum search depth (default 100)
   // max_nodes: soft node limit, stops after completing a depth (0 = no limit)
-  // game_ply: current game ply (0 = start of game), used for opening variety
-  SearchResult search(const Board& board, int max_depth = 100, std::uint64_t max_nodes = 0,
-                      int game_ply = 100);
+  SearchResult search(const Board& board, int max_depth = 100, std::uint64_t max_nodes = 0);
 
   // Multi-move search: returns scores for all root moves at the same depth.
   // Uses threshold-based pruning at the root: moves clearly below best - threshold
@@ -204,11 +185,7 @@ public:
 private:
   // Root search at a fixed depth
   // root_moves is reordered to put the best move first
-  // When biases is non-empty, each root move's score is adjusted by its bias
-  // for move selection (Gumbel-max trick for variety), but the reported score
-  // is the raw search score of the selected move.
-  SearchResult search_root(const Board& board, MoveList& root_moves, int depth,
-                           std::vector<double>& biases);
+  SearchResult search_root(const Board& board, MoveList& root_moves, int depth);
 
   // Root search returning scores for all moves. Uses threshold-based window:
   // exact scores for moves within threshold of best, fail-low bounds for others.
@@ -289,12 +266,6 @@ private:
   // Stores position_hash() (without n_reversible) for each position in the search path
   std::uint64_t pos_hash_history_[MAX_PLY] = {};
 
-  // Variety mode for opening play
-  VarietyMode variety_mode_ = VarietyMode::NONE;
-
-  // RNG for variety selection (external, or owned default)
-  RandomBits* rng_ = nullptr;
-  std::unique_ptr<RandomBits> owned_rng_;
 };
 
 } // namespace search

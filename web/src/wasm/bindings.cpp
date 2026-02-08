@@ -427,11 +427,11 @@ val createMoveObject(const Move& m, const std::vector<int>& path, bool white_to_
 
 // Forward declaration
 val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes_d,
-                         int game_ply, int variety_mode, val progress_callback);
+                         val progress_callback);
 
 // Perform search without callback - wrapper for backwards compatibility
 val doSearch(const JSBoard& jsboard, int max_depth, double max_nodes_d) {
-    return doSearchWithCallback(jsboard, max_depth, max_nodes_d, 100, 0, val::null());
+    return doSearchWithCallback(jsboard, max_depth, max_nodes_d, val::null());
 }
 
 // Helper to build a result val from SearchResult and board
@@ -501,9 +501,8 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
 }
 
 // Perform search with optional progress callback
-// variety_mode: 0=none, 1=safe, 2=curious, 3=wild
 val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes_d,
-                         int game_ply, int variety_mode, val progress_callback) {
+                         val progress_callback) {
     uint64_t max_nodes = static_cast<uint64_t>(max_nodes_d);
     val result = val::object();
     int piece_count = jsboard.pieceCount();
@@ -597,17 +596,6 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
     g_stop_flag.store(false, std::memory_order_relaxed);
     searcher.set_stop_flag(&g_stop_flag);
 
-    // Set variety mode
-    switch (variety_mode) {
-        case 1: searcher.set_variety_mode(search::VarietyMode::SAFE); break;
-        case 2: searcher.set_variety_mode(search::VarietyMode::CURIOUS); break;
-        case 3: searcher.set_variety_mode(search::VarietyMode::WILD); break;
-        default: searcher.set_variety_mode(search::VarietyMode::NONE); break;
-    }
-
-    // Set RNG for variety selection
-    searcher.set_rng(&g_rng);
-
     // Set up DTM probe function if tablebases are available
     if (tb_available) {
         searcher.set_dtm_probe([](const Board& b) {
@@ -626,7 +614,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
 
     search::SearchResult sr;
     try {
-        sr = searcher.search(jsboard.board, max_depth, max_nodes, game_ply);
+        sr = searcher.search(jsboard.board, max_depth, max_nodes);
     } catch (const search::SearchInterrupted&) {
         // Search was interrupted - return minimal result
         val result = val::object();
@@ -705,7 +693,7 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("getLegalMoves", &getLegalMoves);
     function("makeMove", &makeJSMove);
     function("search", &doSearch);
-    function("searchWithCallback", &doSearchWithCallback);  // (board, depth, nodes, ply, variety, callback)
+    function("searchWithCallback", &doSearchWithCallback);  // (board, depth, nodes, callback)
     function("probeDTM", &probeDTM);
     function("parseMove", &doParseMove);
     function("loadNNModel", &loadNNModel);
