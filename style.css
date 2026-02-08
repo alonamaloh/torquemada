@@ -197,9 +197,19 @@ body {
     transition: all 0.2s;
 }
 
-.btn:hover:not(:disabled) {
-    color: var(--text-primary);
+@media (hover: hover) {
+    .btn:hover:not(:disabled) {
+        color: var(--text-primary);
+        border-color: var(--accent);
+    }
+}
+
+.btn:focus-visible {
     border-color: var(--accent);
+}
+
+.btn:focus:not(:focus-visible) {
+    outline: none;
 }
 
 .btn:disabled {
@@ -212,10 +222,12 @@ body {
     border-color: var(--accent);
 }
 
-.btn-primary:hover:not(:disabled) {
-    background: var(--accent-hover);
-    border-color: var(--accent-hover);
-    color: var(--text-primary);
+@media (hover: hover) {
+    .btn-primary:hover:not(:disabled) {
+        background: var(--accent-hover);
+        border-color: var(--accent-hover);
+        color: var(--text-primary);
+    }
 }
 
 .btn-small {
@@ -295,9 +307,11 @@ body {
     user-select: none;
 }
 
-.time-per-move:hover {
-    color: var(--text-primary);
-    border-color: var(--accent);
+@media (hover: hover) {
+    .time-per-move:hover {
+        color: var(--text-primary);
+        border-color: var(--accent);
+    }
 }
 
 .time-dialog-input {
@@ -385,13 +399,19 @@ body {
     border-left: none;
 }
 
-.toggle-btn:hover:not(.active) {
-    color: var(--text-primary);
-    border-color: var(--accent);
+@media (hover: hover) {
+    .toggle-btn:hover:not(.active) {
+        color: var(--text-primary);
+        border-color: var(--accent);
+    }
+
+    .toggle-btn:hover:not(.active) + .toggle-btn:not(:hover) {
+        border-left-color: var(--accent);
+    }
 }
 
-.toggle-btn:hover:not(.active) + .toggle-btn:not(:hover) {
-    border-left-color: var(--accent);
+.toggle-btn:focus:not(:focus-visible) {
+    outline: none;
 }
 
 .toggle-btn.active {
@@ -425,8 +445,14 @@ body {
     justify-content: center;
 }
 
-.piece-btn:hover {
-    border-color: var(--accent);
+@media (hover: hover) {
+    .piece-btn:hover {
+        border-color: var(--accent);
+    }
+}
+
+.piece-btn:focus:not(:focus-visible) {
+    outline: none;
 }
 
 .piece-btn.active {
