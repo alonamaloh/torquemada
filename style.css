@@ -75,13 +75,13 @@ body {
 
 /* Game toolbar */
 .game-toolbar {
-    background: var(--bg-secondary);
-    padding: 0.5rem 1rem;
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 0.25rem;
-    border-bottom: 1px solid var(--border);
+    padding: 0.5rem 0;
+    width: 100%;
+    max-width: calc(480px + 1rem);
 }
 
 /* Main content */
@@ -622,7 +622,7 @@ body {
     }
 
     .game-toolbar {
-        padding: 0.4rem 0.5rem;
+        padding: 0.25rem 0;
     }
 }
 

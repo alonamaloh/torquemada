@@ -24,19 +24,18 @@
 
     <!-- Main game container -->
     <div id="game-container" class="game-container" style="display: none;">
-        <!-- Game toolbar -->
-        <div id="game-controls" class="game-toolbar">
-            <button id="btn-new-game" class="btn btn-small">New Game</button>
-            <button id="btn-undo" class="btn btn-small" title="Undo" disabled>&#x2190;</button>
-            <button id="btn-redo" class="btn btn-small" title="Redo" disabled>&#x2192;</button>
-            <button id="btn-flip" class="btn btn-small">Flip</button>
-            <button id="btn-edit" class="btn btn-small">Edit</button>
-        </div>
-
         <!-- Main content -->
         <main class="main-content">
             <!-- Board section -->
             <section class="board-section">
+                <!-- Game toolbar -->
+                <div id="game-controls" class="game-toolbar">
+                    <button id="btn-new-game" class="btn btn-small">New Game</button>
+                    <button id="btn-undo" class="btn btn-small" title="Undo" disabled>&#x2190;</button>
+                    <button id="btn-redo" class="btn btn-small" title="Redo" disabled>&#x2192;</button>
+                    <button id="btn-flip" class="btn btn-small">Flip</button>
+                    <button id="btn-edit" class="btn btn-small">Edit</button>
+                </div>
                 <div id="board-container" class="board-container">
                     <canvas id="board" width="480" height="480"></canvas>
                 </div>
