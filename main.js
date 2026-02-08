@@ -704,13 +704,23 @@ function updateSearchInfo(info) {
     const depthEl = document.getElementById('search-depth');
     const scoreEl = document.getElementById('search-score');
     const nodesEl = document.getElementById('search-nodes');
+    const npsEl = document.getElementById('search-nps');
     const pvEl = document.getElementById('search-pv');
     if (depthEl) depthEl.textContent = info.depth || '-';
     if (scoreEl) scoreEl.textContent = info.scoreStr || '-';
     if (nodesEl) {
-        // Format nodes with commas
         const nodes = info.nodes || 0;
         nodesEl.textContent = nodes.toLocaleString();
+    }
+    if (npsEl) {
+        const nps = info.nps || 0;
+        if (nps >= 1000000) {
+            npsEl.textContent = (nps / 1000000).toFixed(1) + 'M';
+        } else if (nps >= 1000) {
+            npsEl.textContent = (nps / 1000).toFixed(0) + 'k';
+        } else {
+            npsEl.textContent = nps > 0 ? nps.toString() : '-';
+        }
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
 }
