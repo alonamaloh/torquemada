@@ -155,6 +155,9 @@ body {
 .search-pv {
     color: var(--success);
     word-break: break-all;
+    line-height: 1.4;
+    height: 2.8em;
+    overflow: hidden;
 }
 
 /* Controls section */
