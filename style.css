@@ -213,7 +213,7 @@ body {
 }
 
 .btn:hover:not(:disabled) {
-    background: var(--accent);
+    color: var(--text-primary);
     border-color: var(--accent);
 }
 
@@ -230,6 +230,7 @@ body {
 .btn-primary:hover:not(:disabled) {
     background: var(--accent-hover);
     border-color: var(--accent-hover);
+    color: var(--text-primary);
 }
 
 .btn-small {
@@ -400,8 +401,12 @@ body {
 }
 
 .toggle-btn:hover:not(.active) {
-    background: var(--bg-card);
     color: var(--text-primary);
+    border-color: var(--accent);
+}
+
+.toggle-btn:hover:not(.active) + .toggle-btn:not(:hover) {
+    border-left-color: var(--accent);
 }
 
 .toggle-btn.active {
@@ -436,7 +441,7 @@ body {
 }
 
 .piece-btn:hover {
-    border-color: var(--text-secondary);
+    border-color: var(--accent);
 }
 
 .piece-btn.active {
