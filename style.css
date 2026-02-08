@@ -410,13 +410,13 @@ body {
 }
 
 .toggle-btn.active {
-    background: var(--accent);
+    background: #1a5276;
     color: var(--text-primary);
-    border-color: var(--accent);
+    border-color: #1a5276;
 }
 
 .toggle-btn.active + .toggle-btn {
-    border-left-color: var(--accent);
+    border-left-color: #1a5276;
 }
 
 /* Edit mode */
