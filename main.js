@@ -2,9 +2,9 @@
  * Main entry point for the checkers web app
  */
 
-import { GameController } from './game-controller.js?v=20260208f';
-import { getEngine } from './engine-api.js?v=20260208f';
-import { TablebaseLoader, loadNNModelFile } from './tablebase-loader.js?v=20260208f';
+import { GameController } from './game-controller.js?v=20260208g';
+import { getEngine } from './engine-api.js?v=20260208g';
+import { TablebaseLoader, loadNNModelFile } from './tablebase-loader.js?v=20260208g';
 
 // Global state
 let gameController = null;
@@ -34,7 +34,7 @@ async function init() {
         // Initialize engine
         updateLoadingStatus('Initializing engine...');
         const engine = getEngine();
-        await engine.init('./engine-worker.js?v=20260208a');
+        await engine.init();
 
         // Initialize tablebase loader (for downloading only - loading is now lazy in worker)
         try {
@@ -75,7 +75,7 @@ async function init() {
 
         // Set up game controller
         updateLoadingStatus('Starting game...');
-        gameController = new GameController(canvas, statusEl);
+        gameController = new GameController(canvas, engine, statusEl);
         await gameController.init();
 
         // Set up callbacks

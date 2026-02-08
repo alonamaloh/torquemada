@@ -3,12 +3,11 @@
  */
 
 import { BoardUI } from './board-ui.js';
-import { getEngine } from './engine-api.js';
 
 export class GameController {
-    constructor(canvas, statusElement = null) {
+    constructor(canvas, engine, statusElement = null) {
         this.boardUI = new BoardUI(canvas);
-        this.engine = getEngine();
+        this.engine = engine;
         this.statusElement = statusElement;
 
         // Game state
