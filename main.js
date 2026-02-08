@@ -188,6 +188,7 @@ function updateUndoRedoButtons() {
  */
 async function enterEditMode() {
     await gameController.abortSearch();
+    clearSearchInfo();
     editMode = true;
 
     // Copy current position to edit board
@@ -376,7 +377,7 @@ function hideNewGameDialog() {
 async function startNewGame(playAs) {
     hideNewGameDialog();
 
-    // Start the new game first
+    clearSearchInfo();
     await gameController.newGame();
 
     // Set the human color and board orientation after newGame() (which resets it)
@@ -680,6 +681,14 @@ function setThinkingIndicator(thinking) {
     if (stopBtn) {
         stopBtn.disabled = !thinking;
     }
+}
+
+/**
+ * Clear search info display
+ */
+function clearSearchInfo() {
+    const searchInfo = document.getElementById('search-info');
+    if (searchInfo) searchInfo.style.display = 'none';
 }
 
 /**
