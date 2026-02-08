@@ -225,12 +225,11 @@ let currentSearchId = null;
 
 /**
  * Perform search with progress updates
- * @param {number} maxDepth - Maximum search depth
  * @param {number} softTime - Soft time limit in seconds
  * @param {number} hardTime - Hard time limit in seconds
  * @param {number} requestId - Request ID for progress updates
  */
-function search(maxDepth, softTime, hardTime, requestId) {
+function search(softTime, hardTime, requestId) {
     if (!engine || !board) {
         return { error: 'Engine not ready' };
     }
@@ -270,14 +269,10 @@ function search(maxDepth, softTime, hardTime, requestId) {
         let result;
         if (engine.searchWithCallback) {
             result = engine.searchWithCallback(
-                board,
-                maxDepth || 100,
-                softTime || 3,
-                hardTime || 10,
-                progressCallback
+                board, 100, softTime || 3, hardTime || 10, progressCallback
             );
         } else {
-            result = engine.search(board, maxDepth || 100, softTime || 3, hardTime || 10);
+            result = engine.search(board, 100, softTime || 3, hardTime || 10);
         }
 
         const totalElapsedMs = performance.now() - searchStart;
@@ -384,7 +379,12 @@ self.onmessage = function(e) {
                 break;
 
             case 'search':
-                response.result = search(data.maxDepth, data.softTime, data.hardTime, id);
+                response.result = search(data.softTime, data.hardTime, id);
+                break;
+
+            case 'setUseBook':
+                if (engine) engine.setUseBook(data.useBook);
+                response.success = true;
                 break;
 
             case 'stop':

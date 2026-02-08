@@ -180,15 +180,22 @@ export class EngineAPI {
      * @param {Function} onProgress - Optional callback for progress updates
      * @returns {Promise<Object>} Search result with bestMove, score, depth, nodes
      */
-    async search(maxDepth = 100, softTime = 3, hardTime = 10, onProgress = null) {
+    async search(softTime = 3, hardTime = 10, onProgress = null) {
         // Reset stop flag before starting search
         if (this.wasmMemory && this.wasmStopFlagAddress) {
             this.wasmMemory[this.wasmStopFlagAddress] = 0;
         } else if (this.stopFlagView) {
             Atomics.store(this.stopFlagView, 0, 0);
         }
-        const response = await this.requestWithProgress('search', { maxDepth, softTime, hardTime }, onProgress);
+        const response = await this.requestWithProgress('search', { softTime, hardTime }, onProgress);
         return response.result;
+    }
+
+    /**
+     * Enable or disable the opening book
+     */
+    async setUseBook(useBook) {
+        return this.request('setUseBook', { useBook });
     }
 
     /**

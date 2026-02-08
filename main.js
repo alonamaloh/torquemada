@@ -549,6 +549,15 @@ function setupEventHandlers() {
         timePerMoveBtn.addEventListener('click', showTimeDialog);
     }
 
+    // Book toggle
+    const useBookBtn = document.getElementById('btn-use-book');
+    if (useBookBtn) {
+        useBookBtn.addEventListener('click', () => {
+            gameController.setUseBook(!gameController.useBook);
+            useBookBtn.textContent = gameController.useBook ? 'Book: Yes' : 'Book: No';
+        });
+    }
+
     // Time dialog
     const timeDialog = document.getElementById('time-dialog');
     const timeInput = document.getElementById('time-input');

@@ -21,6 +21,7 @@ export class GameController {
         this.humanColor = 'white';   // 'white', 'black', or 'both' (human vs human)
         this.secondsPerMove = 3.0;   // Time budget per move
         this.secondsLeft = 0;        // Time bank (accumulates/drains)
+        this.useBook = true;         // Use opening book
         this.autoPlay = true;        // Engine plays automatically
 
         // State flags
@@ -392,7 +393,7 @@ export class GameController {
 
             let result;
             try {
-                result = await this.engine.search(100, softTime, hardTime, onProgress);
+                result = await this.engine.search(softTime, hardTime, onProgress);
             } finally {
                 clearInterval(countdownTimer);
             }
@@ -620,6 +621,11 @@ export class GameController {
      */
     setSecondsPerMove(seconds) {
         this.secondsPerMove = seconds;
+    }
+
+    setUseBook(useBook) {
+        this.useBook = useBook;
+        this.engine.setUseBook(useBook);
     }
 
     /**
