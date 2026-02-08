@@ -232,6 +232,11 @@ body {
     margin: 0;
 }
 
+.btn-arrow {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
 .btn-small.active {
     background: var(--accent);
     border-color: var(--accent);
