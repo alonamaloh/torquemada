@@ -298,12 +298,12 @@ body {
 }
 
 .time-per-move {
-    font-size: 0.8rem;
+    font-size: 0.85rem;
     color: var(--text-secondary);
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 4px;
-    padding: 0.3rem 0.5rem;
+    padding: 0.35rem 0.75rem;
     cursor: pointer;
     white-space: nowrap;
     user-select: none;
@@ -318,7 +318,7 @@ body {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-bottom: 1.5rem;
+    margin-bottom: 2rem;
     justify-content: center;
 }
 
@@ -340,6 +340,19 @@ body {
 
 .time-dialog-input span {
     color: var(--text-secondary);
+}
+
+.time-dialog-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.time-dialog-buttons .btn {
+    margin: 0;
+    min-width: 5rem;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.9rem;
 }
 
 @keyframes shake {
