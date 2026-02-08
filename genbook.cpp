@@ -496,7 +496,8 @@ int main(int argc, char** argv) {
         searcher.set_perspective(wtm);
         searcher.clear_tt();
 
-        auto result = searcher.search_multi(target_board, 100, nodes, 30000);
+        auto result = searcher.search_multi(target_board, 100,
+                                           search::TimeControl::with_nodes(nodes), 30000);
 
         if (!result.moves.empty() &&
             !g_stop_requested.load(std::memory_order_relaxed)) {

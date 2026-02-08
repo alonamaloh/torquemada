@@ -426,12 +426,12 @@ val createMoveObject(const Move& m, const std::vector<int>& path, bool white_to_
 }
 
 // Forward declaration
-val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes_d,
-                         val progress_callback);
+val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time,
+                         double hard_time, val progress_callback);
 
 // Perform search without callback - wrapper for backwards compatibility
-val doSearch(const JSBoard& jsboard, int max_depth, double max_nodes_d) {
-    return doSearchWithCallback(jsboard, max_depth, max_nodes_d, val::null());
+val doSearch(const JSBoard& jsboard, int max_depth, double soft_time, double hard_time) {
+    return doSearchWithCallback(jsboard, max_depth, soft_time, hard_time, val::null());
 }
 
 // Helper to build a result val from SearchResult and board
@@ -501,9 +501,8 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
 }
 
 // Perform search with optional progress callback
-val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes_d,
-                         val progress_callback) {
-    uint64_t max_nodes = static_cast<uint64_t>(max_nodes_d);
+val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time,
+                         double hard_time, val progress_callback) {
     val result = val::object();
     int piece_count = jsboard.pieceCount();
 
@@ -614,7 +613,8 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double max_nodes
 
     search::SearchResult sr;
     try {
-        sr = searcher.search(jsboard.board, max_depth, max_nodes);
+        sr = searcher.search(jsboard.board, max_depth,
+                             search::TimeControl::with_time(soft_time, hard_time));
     } catch (const search::SearchInterrupted&) {
         // Search was interrupted - return minimal result
         val result = val::object();
@@ -693,7 +693,7 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("getLegalMoves", &getLegalMoves);
     function("makeMove", &makeJSMove);
     function("search", &doSearch);
-    function("searchWithCallback", &doSearchWithCallback);  // (board, depth, nodes, callback)
+    function("searchWithCallback", &doSearchWithCallback);  // (board, depth, softTime, hardTime, callback)
     function("probeDTM", &probeDTM);
     function("parseMove", &doParseMove);
     function("loadNNModel", &loadNNModel);

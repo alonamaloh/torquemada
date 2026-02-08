@@ -6,6 +6,7 @@
 #include "../tablebase/tb_probe.hpp"
 #include "tt.hpp"
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -99,6 +100,40 @@ struct SearchInterrupted : std::exception {
   const char* what() const noexcept override { return "search interrupted"; }
 };
 
+// Time and node control for search limits
+struct TimeControl {
+  // Soft limits: stop after completing a depth if exceeded
+  std::uint64_t soft_node_limit = 0;  // 0 = no limit
+  double soft_time_seconds = 0;       // 0 = no limit
+
+  // Hard limits: throw SearchInterrupted mid-search
+  std::uint64_t hard_node_limit = 0;  // 0 = no limit
+  double hard_time_seconds = 0;       // 0 = no limit
+
+  // Node count at which to next check time/hard limits
+  std::uint64_t node_count_for_next_check = 0;
+
+  // Record start time and set first check point
+  void start();
+
+  // Called during search when nodes >= node_count_for_next_check
+  // May throw SearchInterrupted, updates next check point
+  void check(std::uint64_t nodes);
+
+  // True if any soft limit has been exceeded
+  bool exceeded_soft(std::uint64_t nodes) const;
+
+  // Factory: node-based limits (hard = soft * 5 if not specified)
+  static TimeControl with_nodes(std::uint64_t soft, std::uint64_t hard = 0);
+
+  // Factory: time-based limits
+  static TimeControl with_time(double soft_seconds, double hard_seconds = 0);
+
+private:
+  std::chrono::steady_clock::time_point start_time_;
+  static constexpr std::uint64_t CHECK_INTERVAL = 4096;
+};
+
 // Random evaluation: reproducible pseudo-random score in [-10000, +10000]
 // Used as placeholder until neural network is trained
 int random_eval(const Board& board, int ply);
@@ -163,21 +198,24 @@ public:
   void set_progress_callback(SearchProgressCallback cb) { progress_callback_ = std::move(cb); }
 
   // Check if search should stop and throw if so
-  void check_stop() const {
+  void check_stop() {
     if (stop_flag_ && stop_flag_->load(std::memory_order_relaxed)) throw SearchInterrupted{};
-    if (hard_node_limit_ > 0 && stats_.nodes >= hard_node_limit_) throw SearchInterrupted{};
+    if (stats_.nodes >= tc_.node_count_for_next_check) {
+      tc_.check(stats_.nodes);
+    }
   }
 
   // Search with iterative deepening
   // max_depth: maximum search depth (default 100)
-  // max_nodes: soft node limit, stops after completing a depth (0 = no limit)
-  SearchResult search(const Board& board, int max_depth = 100, std::uint64_t max_nodes = 0);
+  // tc: time and node control (default unlimited)
+  SearchResult search(const Board& board, int max_depth = 100,
+                      const TimeControl& tc = TimeControl{});
 
   // Multi-move search: returns scores for all root moves at the same depth.
   // Uses threshold-based pruning at the root: moves clearly below best - threshold
   // get a fail-low bound instead of an exact score (sufficient for filtering).
   MultiSearchResult search_multi(const Board& board, int max_depth = 100,
-                                 std::uint64_t max_nodes = 0, int threshold = 100);
+                                 const TimeControl& tc = TimeControl{}, int threshold = 100);
 
   // Get statistics from last search
   const SearchStats& stats() const { return stats_; }
@@ -252,8 +290,8 @@ private:
   // Progress callback for iterative deepening
   SearchProgressCallback progress_callback_;
 
-  // Hard node limit (0 = no limit)
-  std::uint64_t hard_node_limit_ = 0;
+  // Active time control for current search
+  TimeControl tc_;
 
   // Killer moves (2 per ply)
   Move killers_[MAX_PLY][2] = {};

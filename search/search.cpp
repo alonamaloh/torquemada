@@ -6,6 +6,59 @@
 
 namespace search {
 
+// --- TimeControl implementation ---
+
+void TimeControl::start() {
+  start_time_ = std::chrono::steady_clock::now();
+  node_count_for_next_check = (hard_node_limit > 0)
+    ? std::min(hard_node_limit, CHECK_INTERVAL)
+    : (hard_time_seconds > 0 ? CHECK_INTERVAL : UINT64_MAX);
+}
+
+void TimeControl::check(std::uint64_t nodes) {
+  // Check hard node limit
+  if (hard_node_limit > 0 && nodes >= hard_node_limit) {
+    throw SearchInterrupted{};
+  }
+  // Check hard time limit
+  if (hard_time_seconds > 0) {
+    auto now = std::chrono::steady_clock::now();
+    double elapsed = std::chrono::duration<double>(now - start_time_).count();
+    if (elapsed >= hard_time_seconds) {
+      throw SearchInterrupted{};
+    }
+  }
+  // Schedule next check
+  node_count_for_next_check = nodes + CHECK_INTERVAL;
+  if (hard_node_limit > 0 && node_count_for_next_check > hard_node_limit) {
+    node_count_for_next_check = hard_node_limit;
+  }
+}
+
+bool TimeControl::exceeded_soft(std::uint64_t nodes) const {
+  if (soft_node_limit > 0 && nodes >= soft_node_limit) return true;
+  if (soft_time_seconds > 0) {
+    auto now = std::chrono::steady_clock::now();
+    double elapsed = std::chrono::duration<double>(now - start_time_).count();
+    if (elapsed >= soft_time_seconds) return true;
+  }
+  return false;
+}
+
+TimeControl TimeControl::with_nodes(std::uint64_t soft, std::uint64_t hard) {
+  TimeControl tc;
+  tc.soft_node_limit = soft;
+  tc.hard_node_limit = (hard > 0) ? hard : (soft > 0 ? soft * 5 : 0);
+  return tc;
+}
+
+TimeControl TimeControl::with_time(double soft_seconds, double hard_seconds) {
+  TimeControl tc;
+  tc.soft_time_seconds = soft_seconds;
+  tc.hard_time_seconds = hard_seconds;
+  return tc;
+}
+
 // Random evaluation: reproducible pseudo-random score derived from position hash
 // Returns a score in the range [-10000, +10000] based on the hash
 int random_eval(const Board& board, int /*ply*/) {
@@ -477,10 +530,11 @@ int Searcher::search_root_all(const Board& board, MoveList& root_moves, int dept
 }
 
 MultiSearchResult Searcher::search_multi(const Board& board, int max_depth,
-                                         std::uint64_t max_nodes, int threshold) {
+                                         const TimeControl& tc, int threshold) {
   stats_ = SearchStats{};
   tt_.new_search();
-  hard_node_limit_ = (max_nodes > 0) ? max_nodes * 5 : 0;
+  tc_ = tc;
+  tc_.start();
   std::memset(killers_, 0, sizeof(killers_));
   std::memset(history_, 0, sizeof(history_));
   std::memset(pos_hash_history_, 0, sizeof(pos_hash_history_));
@@ -495,7 +549,6 @@ MultiSearchResult Searcher::search_multi(const Board& board, int max_depth,
   if (root_moves.size() == 1) {
     result.moves.push_back({root_moves[0], 0});
     result.depth = 0;
-    hard_node_limit_ = 0;
     return result;
   }
 
@@ -520,7 +573,7 @@ MultiSearchResult Searcher::search_multi(const Board& board, int max_depth,
       }
 
       if (is_mate_score(best)) break;
-      if (max_nodes > 0 && stats_.nodes >= max_nodes) break;
+      if (tc_.exceeded_soft(stats_.nodes)) break;
     } catch (const SearchInterrupted&) {
       break;  // Use results from previous completed depth
     }
@@ -531,14 +584,14 @@ MultiSearchResult Searcher::search_multi(const Board& board, int max_depth,
             [](const MultiSearchResult::MoveScore& a,
                const MultiSearchResult::MoveScore& b) { return a.score > b.score; });
 
-  hard_node_limit_ = 0;
   return result;
 }
 
-SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t max_nodes) {
+SearchResult Searcher::search(const Board& board, int max_depth, const TimeControl& tc) {
   stats_ = SearchStats{};
   tt_.new_search();
-  hard_node_limit_ = (max_nodes > 0) ? max_nodes * 5 : 0;
+  tc_ = tc;
+  tc_.start();
   std::memset(killers_, 0, sizeof(killers_));
   std::memset(history_, 0, sizeof(history_));
   std::memset(pos_hash_history_, 0, sizeof(pos_hash_history_));
@@ -636,13 +689,12 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
       break;
     }
 
-    // Stop if we've exceeded the soft node limit
-    if (max_nodes > 0 && result.nodes >= max_nodes) {
+    // Stop if we've exceeded any soft limit
+    if (tc_.exceeded_soft(result.nodes)) {
       break;
     }
   }
 
-  hard_node_limit_ = 0;
   return result;
 }
 
