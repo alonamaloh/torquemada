@@ -226,10 +226,11 @@ let currentSearchId = null;
 /**
  * Perform search with progress updates
  * @param {number} maxDepth - Maximum search depth
- * @param {number} maxNodes - Maximum nodes to search
+ * @param {number} softTime - Soft time limit in seconds
+ * @param {number} hardTime - Hard time limit in seconds
  * @param {number} requestId - Request ID for progress updates
  */
-function search(maxDepth, maxNodes, requestId) {
+function search(maxDepth, softTime, hardTime, requestId) {
     if (!engine || !board) {
         return { error: 'Engine not ready' };
     }
@@ -264,12 +265,13 @@ function search(maxDepth, maxNodes, requestId) {
         if (engine.searchWithCallback) {
             result = engine.searchWithCallback(
                 board,
-                maxDepth || 20,
-                maxNodes || 0,
+                maxDepth || 100,
+                softTime || 3,
+                hardTime || 10,
                 progressCallback
             );
         } else {
-            result = engine.search(board, maxDepth || 20, maxNodes || 0);
+            result = engine.search(board, maxDepth || 100, softTime || 3, hardTime || 10);
         }
 
         currentSearchId = null;
@@ -371,7 +373,7 @@ self.onmessage = function(e) {
                 break;
 
             case 'search':
-                response.result = search(data.maxDepth, data.maxNodes, id);
+                response.result = search(data.maxDepth, data.softTime, data.hardTime, id);
                 break;
 
             case 'stop':

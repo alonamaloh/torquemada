@@ -19,8 +19,8 @@ export class GameController {
 
         // Settings
         this.humanColor = 'white';   // 'white', 'black', or 'both' (human vs human)
-        this.engineDepth = 100;
-        this.engineNodes = 100000;
+        this.secondsPerMove = 3.0;   // Time budget per move
+        this.secondsLeft = 0;        // Time bank (accumulates/drains)
         this.autoPlay = true;        // Engine plays automatically
 
         // State flags
@@ -90,6 +90,7 @@ export class GameController {
         this.gameOver = false;
         this.winner = null;
         this.partialPath = [];
+        this.secondsLeft = 0;
         this.boardUI.setPartialPath([]);
         this.boardUI.setSelected(null);
         this.boardUI.clearLastMove();
@@ -367,7 +368,11 @@ export class GameController {
         this._updateStatus('Engine thinking...');
 
         try {
-            console.log('Starting search with depth:', this.engineDepth, 'nodes:', this.engineNodes);
+            // Time control: bank time, compute soft/hard limits
+            this.secondsLeft += this.secondsPerMove;
+            const softTime = this.secondsLeft / 8;
+            const hardTime = this.secondsLeft;
+            console.log('Starting search: softTime=', softTime.toFixed(2), 'hardTime=', hardTime.toFixed(2));
             const startTime = Date.now();
 
             // Progress callback for iterative deepening updates
@@ -375,8 +380,13 @@ export class GameController {
                 this._reportSearchInfo(progressResult);
             };
 
-            const result = await this.engine.search(this.engineDepth, this.engineNodes, onProgress);
+            const result = await this.engine.search(100, softTime, hardTime, onProgress);
             console.log('Search result:', result);
+
+            // Debit elapsed time from bank
+            const elapsedSeconds = (Date.now() - startTime) / 1000;
+            this.secondsLeft -= elapsedSeconds;
+            if (this.secondsLeft < 0.1) this.secondsLeft = 0.1;
 
             // Abort if search was cancelled (new game, edit mode, etc.)
             if (this._aborting) return;
@@ -589,11 +599,10 @@ export class GameController {
     }
 
     /**
-     * Set engine parameters
+     * Set seconds per move
      */
-    setEngineParams(depth, nodes) {
-        this.engineDepth = depth;
-        this.engineNodes = nodes;
+    setSecondsPerMove(seconds) {
+        this.secondsPerMove = seconds;
     }
 
     /**
@@ -613,6 +622,7 @@ export class GameController {
     async setHumanColor(color) {
         const previousColor = this.humanColor;
         this.humanColor = color;
+        this.secondsLeft = 0;
 
         // If it's now the engine's turn (human gave up their turn), make engine move
         if (!this.gameOver && !this.isThinking && this.autoPlay) {

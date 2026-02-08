@@ -34,7 +34,7 @@ async function init() {
         // Initialize engine
         updateLoadingStatus('Initializing engine...');
         const engine = getEngine();
-        await engine.init('./engine-worker.js?v=20260204f');
+        await engine.init('./engine-worker.js?v=20260208a');
 
         // Initialize tablebase loader (for downloading only - loading is now lazy in worker)
         try {
@@ -225,6 +225,7 @@ async function exitEditMode() {
     // Apply the edited position (with autoPlay disabled to prevent immediate engine move)
     const savedAutoPlay = gameController.autoPlay;
     gameController.autoPlay = false;
+    gameController.secondsLeft = 0;
     await gameController.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
     gameController.autoPlay = savedAutoPlay;
 
@@ -483,28 +484,28 @@ function setupEventHandlers() {
         });
     }
 
-    // Strength buttons (Fast/Slow/Deep)
-    const fastBtn = document.getElementById('btn-nodes-fast');
-    const slowBtn = document.getElementById('btn-nodes-slow');
-    const deepBtn = document.getElementById('btn-nodes-deep');
-    if (fastBtn && slowBtn && deepBtn) {
-        const setStrengthActive = (activeBtn) => {
-            fastBtn.classList.remove('active');
-            slowBtn.classList.remove('active');
-            deepBtn.classList.remove('active');
+    // Time per move buttons
+    const time1Btn = document.getElementById('btn-time-1');
+    const time3Btn = document.getElementById('btn-time-3');
+    const time10Btn = document.getElementById('btn-time-10');
+    if (time1Btn && time3Btn && time10Btn) {
+        const setTimeActive = (activeBtn) => {
+            time1Btn.classList.remove('active');
+            time3Btn.classList.remove('active');
+            time10Btn.classList.remove('active');
             activeBtn.classList.add('active');
         };
-        fastBtn.addEventListener('click', () => {
-            gameController.setEngineParams(100, 100000);
-            setStrengthActive(fastBtn);
+        time1Btn.addEventListener('click', () => {
+            gameController.setSecondsPerMove(1);
+            setTimeActive(time1Btn);
         });
-        slowBtn.addEventListener('click', () => {
-            gameController.setEngineParams(100, 1000000);
-            setStrengthActive(slowBtn);
+        time3Btn.addEventListener('click', () => {
+            gameController.setSecondsPerMove(3);
+            setTimeActive(time3Btn);
         });
-        deepBtn.addEventListener('click', () => {
-            gameController.setEngineParams(100, 10000000);
-            setStrengthActive(deepBtn);
+        time10Btn.addEventListener('click', () => {
+            gameController.setSecondsPerMove(10);
+            setTimeActive(time10Btn);
         });
     }
 
