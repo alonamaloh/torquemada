@@ -187,6 +187,7 @@ function updateUndoRedoButtons() {
  * Enter edit mode
  */
 async function enterEditMode() {
+    await gameController.abortSearch();
     editMode = true;
 
     // Copy current position to edit board

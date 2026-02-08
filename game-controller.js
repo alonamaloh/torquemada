@@ -58,19 +58,24 @@ export class GameController {
     }
 
     /**
+     * Stop any running search and wait for it to finish.
+     * The interrupted search result is discarded.
+     */
+    async abortSearch() {
+        if (!this.isThinking) return;
+        this._aborting = true;
+        this.engine.stopSearch();
+        while (this.isThinking) {
+            await this._sleep(50);
+        }
+        this._aborting = false;
+    }
+
+    /**
      * Start a new game
      */
     async newGame() {
-        // Stop any running search and wait for it to finish
-        if (this.isThinking) {
-            this._abortingForNewGame = true;
-            this.engine.stopSearch();
-            // Wait for the search to complete
-            while (this.isThinking) {
-                await this._sleep(50);
-            }
-            this._abortingForNewGame = false;
-        }
+        await this.abortSearch();
 
         // If engine was playing white, switch so engine plays black
         // This prevents auto-start and lets the user make the first move
@@ -373,8 +378,8 @@ export class GameController {
             const result = await this.engine.search(this.engineDepth, this.engineNodes, onProgress);
             console.log('Search result:', result);
 
-            // Abort if new game was requested during search
-            if (this._abortingForNewGame) return;
+            // Abort if search was cancelled (new game, edit mode, etc.)
+            if (this._aborting) return;
 
             if (result.error) {
                 console.error('Engine error:', result.error);
@@ -592,7 +597,8 @@ export class GameController {
     }
 
     /**
-     * Stop the current search
+     * Stop the current search (fire-and-forget, for the Stop button).
+     * The search will finish with the best result found so far and play it.
      */
     stopSearch() {
         if (this.engine) {
