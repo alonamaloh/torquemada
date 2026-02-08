@@ -493,7 +493,7 @@ function setupEventHandlers() {
         });
     }
 
-    // Undo button
+    // Undo button - stops search if engine is thinking, then undoes
     const undoBtn = document.getElementById('btn-undo');
     if (undoBtn) {
         undoBtn.addEventListener('click', async () => {

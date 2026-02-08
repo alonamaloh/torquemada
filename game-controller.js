@@ -481,7 +481,8 @@ export class GameController {
      * Undo last move
      */
     async undo() {
-        if (this.history.length === 0 || this.isThinking) return;
+        if (this.history.length === 0) return;
+        await this.abortSearch();
 
         // Pop last move and save it for redo
         const last = this.history.pop();
@@ -696,7 +697,7 @@ export class GameController {
      */
     getUndoRedoState() {
         return {
-            canUndo: this.history.length > 0 && !this.isThinking,
+            canUndo: this.history.length > 0,
             canRedo: this.redoStack.length > 0 && !this.isThinking
         };
     }
