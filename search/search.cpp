@@ -623,7 +623,7 @@ SearchResult Searcher::search(const Board& board, int max_depth, std::uint64_t m
   // improvement could apply a non-linear score transformation that stretches
   // scores in the losing region, making fixed-scale Gumbel noise negligible there.
   std::vector<double> biases;
-  bool use_variety = (variety_mode_ != VarietyMode::NONE) && (game_ply < 20);
+  bool use_variety = (variety_mode_ != VarietyMode::NONE) && (game_ply < 40);
   if (use_variety) {
     double temperature;
     switch (variety_mode_) {
