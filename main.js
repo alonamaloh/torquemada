@@ -357,6 +357,58 @@ function updateSideToMoveButtons() {
 }
 
 /**
+ * Show time per move dialog
+ */
+function showTimeDialog() {
+    const dialog = document.getElementById('time-dialog');
+    const input = document.getElementById('time-input');
+    if (dialog && input && gameController) {
+        input.value = gameController.secondsPerMove;
+        dialog.style.display = 'flex';
+        input.select();
+    }
+}
+
+/**
+ * Hide time per move dialog
+ */
+function hideTimeDialog() {
+    const dialog = document.getElementById('time-dialog');
+    if (dialog) dialog.style.display = 'none';
+}
+
+/**
+ * Apply time per move from dialog input
+ */
+function applyTimePerMove() {
+    const input = document.getElementById('time-input');
+    if (!input || !gameController) return;
+
+    let value = parseFloat(input.value);
+    if (isNaN(value) || value < 0.1) value = 0.1;
+
+    gameController.setSecondsPerMove(value);
+    updateTimePerMoveLabel(value);
+    hideTimeDialog();
+}
+
+/**
+ * Update the "+Xs/move" label
+ */
+function updateTimePerMoveLabel(seconds) {
+    const el = document.getElementById('btn-time-per-move');
+    if (!el) return;
+    // Format: remove trailing zeros after decimal, but keep at least one decimal for < 1
+    let text;
+    if (seconds >= 1 && seconds === Math.floor(seconds)) {
+        text = `+${seconds}s/move`;
+    } else {
+        text = `+${parseFloat(seconds.toFixed(1))}s/move`;
+    }
+    el.textContent = text;
+}
+
+/**
  * Show new game dialog
  */
 function showNewGameDialog() {
@@ -489,28 +541,33 @@ function setupEventHandlers() {
         });
     }
 
-    // Time per move buttons
-    const time1Btn = document.getElementById('btn-time-1');
-    const time3Btn = document.getElementById('btn-time-3');
-    const time10Btn = document.getElementById('btn-time-10');
-    if (time1Btn && time3Btn && time10Btn) {
-        const setTimeActive = (activeBtn) => {
-            time1Btn.classList.remove('active');
-            time3Btn.classList.remove('active');
-            time10Btn.classList.remove('active');
-            activeBtn.classList.add('active');
-        };
-        time1Btn.addEventListener('click', () => {
-            gameController.setSecondsPerMove(1);
-            setTimeActive(time1Btn);
+    // Time per move - click to open dialog
+    const timePerMoveBtn = document.getElementById('btn-time-per-move');
+    if (timePerMoveBtn) {
+        timePerMoveBtn.addEventListener('click', showTimeDialog);
+    }
+
+    // Time dialog
+    const timeDialog = document.getElementById('time-dialog');
+    const timeInput = document.getElementById('time-input');
+    const timeOkBtn = document.getElementById('btn-time-ok');
+    const timeCancelBtn = document.getElementById('btn-time-cancel');
+
+    if (timeDialog) {
+        timeDialog.addEventListener('click', (e) => {
+            if (e.target === timeDialog) hideTimeDialog();
         });
-        time3Btn.addEventListener('click', () => {
-            gameController.setSecondsPerMove(3);
-            setTimeActive(time3Btn);
-        });
-        time10Btn.addEventListener('click', () => {
-            gameController.setSecondsPerMove(10);
-            setTimeActive(time10Btn);
+    }
+    if (timeOkBtn) {
+        timeOkBtn.addEventListener('click', applyTimePerMove);
+    }
+    if (timeCancelBtn) {
+        timeCancelBtn.addEventListener('click', hideTimeDialog);
+    }
+    if (timeInput) {
+        timeInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyTimePerMove();
+            if (e.key === 'Escape') hideTimeDialog();
         });
     }
 
@@ -696,10 +753,7 @@ function updateTimeDisplay(seconds) {
     const el = document.getElementById('engine-time-left');
     if (!el) return;
 
-    if (seconds <= 0) {
-        el.textContent = '';
-        return;
-    }
+    if (seconds < 0) seconds = 0;
 
     let text;
     if (seconds >= 3600) {
@@ -710,7 +764,7 @@ function updateTimeDisplay(seconds) {
     } else {
         const m = Math.floor(seconds / 60);
         const s = seconds % 60;
-        text = `${m}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
+        text = `${String(m).padStart(2, '0')}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
     }
     el.textContent = text;
 }
