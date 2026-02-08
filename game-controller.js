@@ -36,6 +36,7 @@ export class GameController {
         this.onStatusUpdate = null;
         this.onSearchInfo = null;    // (info) => void - called with search results
         this.onModeChange = null;    // (humanColor) => void - called when mode changes
+        this.onTimeUpdate = null;    // (secondsLeft) => void - called when time bank changes
 
         // Step-by-step capture state
         this.partialPath = [];       // Squares clicked so far in a multi-capture
@@ -91,6 +92,7 @@ export class GameController {
         this.winner = null;
         this.partialPath = [];
         this.secondsLeft = 0;
+        this._notifyTime();
         this.boardUI.setPartialPath([]);
         this.boardUI.setSelected(null);
         this.boardUI.clearLastMove();
@@ -370,6 +372,7 @@ export class GameController {
         try {
             // Time control: bank time, compute soft/hard limits
             this.secondsLeft += this.secondsPerMove;
+            this._notifyTime();
             const softTime = this.secondsLeft / 8;
             const hardTime = this.secondsLeft;
             console.log('Starting search: softTime=', softTime.toFixed(2), 'hardTime=', hardTime.toFixed(2));
@@ -387,6 +390,7 @@ export class GameController {
             const elapsedSeconds = (Date.now() - startTime) / 1000;
             this.secondsLeft -= elapsedSeconds;
             if (this.secondsLeft < 0.1) this.secondsLeft = 0.1;
+            this._notifyTime();
 
             // Abort if search was cancelled (new game, edit mode, etc.)
             if (this._aborting) return;
@@ -624,6 +628,7 @@ export class GameController {
         const previousColor = this.humanColor;
         this.humanColor = color;
         this.secondsLeft = 0;
+        this._notifyTime();
 
         // If it's now the engine's turn (human gave up their turn), make engine move
         if (!this.gameOver && !this.isThinking && this.autoPlay) {
@@ -683,6 +688,13 @@ export class GameController {
      */
     async getDTM() {
         return await this.engine.probeDTM();
+    }
+
+    /**
+     * Notify listener of time bank change
+     */
+    _notifyTime() {
+        if (this.onTimeUpdate) this.onTimeUpdate(this.secondsLeft);
     }
 
     /**

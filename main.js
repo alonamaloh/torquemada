@@ -106,6 +106,10 @@ async function init() {
             updateModeButtons();
         };
 
+        gameController.onTimeUpdate = (secondsLeft) => {
+            updateTimeDisplay(secondsLeft);
+        };
+
         // Set up UI event handlers
         setupEventHandlers();
         updateModeButtons();
@@ -226,6 +230,7 @@ async function exitEditMode() {
     const savedAutoPlay = gameController.autoPlay;
     gameController.autoPlay = false;
     gameController.secondsLeft = 0;
+    gameController._notifyTime();
     await gameController.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
     gameController.autoPlay = savedAutoPlay;
 
@@ -682,6 +687,34 @@ function setThinkingIndicator(thinking) {
     if (stopBtn) {
         stopBtn.disabled = !thinking;
     }
+}
+
+/**
+ * Format and display engine time left
+ */
+function updateTimeDisplay(seconds) {
+    const el = document.getElementById('engine-time-left');
+    if (!el) return;
+
+    if (seconds <= 0) {
+        el.textContent = '';
+        return;
+    }
+
+    let text;
+    if (seconds >= 3600) {
+        const h = Math.floor(seconds / 3600);
+        const m = Math.floor((seconds % 3600) / 60);
+        const s = Math.floor(seconds % 60);
+        text = `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    } else if (seconds >= 10) {
+        const m = Math.floor(seconds / 60);
+        const s = Math.floor(seconds % 60);
+        text = `${m}:${String(s).padStart(2, '0')}`;
+    } else {
+        text = seconds.toFixed(1);
+    }
+    el.textContent = text;
 }
 
 /**
