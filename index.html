@@ -24,11 +24,14 @@
 
     <!-- Main game container -->
     <div id="game-container" class="game-container" style="display: none;">
-        <!-- Header -->
-        <header class="header">
-            <h1>Torquemada Checkers</h1>
-            <span id="thinking-indicator" class="thinking" style="display: none;">Thinking...</span>
-        </header>
+        <!-- Game toolbar -->
+        <div id="game-controls" class="game-toolbar">
+            <button id="btn-new-game" class="btn btn-small">New Game</button>
+            <button id="btn-undo" class="btn btn-small" title="Undo" disabled>&#x2190;</button>
+            <button id="btn-redo" class="btn btn-small" title="Redo" disabled>&#x2192;</button>
+            <button id="btn-flip" class="btn btn-small">Flip</button>
+            <button id="btn-edit" class="btn btn-small">Edit</button>
+        </div>
 
         <!-- Main content -->
         <main class="main-content">
@@ -59,15 +62,6 @@
 
             <!-- Controls section -->
             <section class="controls-section">
-                <!-- Game controls -->
-                <div id="game-controls" class="control-group">
-                    <h3>Game</h3>
-                    <button id="btn-new-game" class="btn">New Game</button>
-                    <button id="btn-undo" class="btn" title="Undo" disabled>&#x2190;</button>
-                    <button id="btn-redo" class="btn" title="Redo" disabled>&#x2192;</button>
-                    <button id="btn-flip" class="btn">Flip Board</button>
-                    <button id="btn-edit" class="btn">Edit</button>
-                </div>
 
                 <!-- Edit mode controls (hidden by default) -->
                 <div id="edit-controls" class="control-group" style="display: none;">

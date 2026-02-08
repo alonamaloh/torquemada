@@ -73,29 +73,14 @@ body {
     flex-direction: column;
 }
 
-/* Header */
-.header {
+/* Game toolbar */
+.game-toolbar {
     background: var(--bg-secondary);
-    padding: 1rem 2rem;
+    padding: 0.5rem 1rem;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 0.25rem;
     border-bottom: 1px solid var(--border);
-}
-
-.header h1 {
-    font-size: 1.5rem;
-    color: var(--accent);
-}
-
-.thinking {
-    color: var(--success);
-    animation: pulse 1s ease-in-out infinite;
-}
-
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
 }
 
 /* Main content */
@@ -614,12 +599,8 @@ body {
         max-width: 100%;
     }
 
-    .header {
-        padding: 0.75rem 1rem;
-    }
-
-    .header h1 {
-        font-size: 1.2rem;
+    .game-toolbar {
+        padding: 0.4rem 0.5rem;
     }
 }
 

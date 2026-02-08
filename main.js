@@ -243,7 +243,7 @@ async function exitEditMode() {
     }
 
     // Update UI
-    document.getElementById('game-controls').style.display = 'block';
+    document.getElementById('game-controls').style.display = 'flex';
     document.getElementById('edit-controls').style.display = 'none';
     document.querySelectorAll('.controls-section .control-group:not(#game-controls):not(#edit-controls)').forEach(el => {
         el.style.display = 'block';
@@ -730,11 +730,6 @@ function showGameOver(winner) {
  * Set thinking indicator
  */
 function setThinkingIndicator(thinking) {
-    const indicator = document.getElementById('thinking-indicator');
-    if (indicator) {
-        indicator.style.display = thinking ? 'inline' : 'none';
-    }
-
     // Show/hide search info panel
     const searchInfo = document.getElementById('search-info');
     if (searchInfo) {
