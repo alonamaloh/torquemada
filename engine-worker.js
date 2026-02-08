@@ -383,7 +383,7 @@ self.onmessage = function(e) {
                 break;
 
             case 'setUseBook':
-                if (engine) engine.setUseBook(data.useBook);
+                if (engine && engine.setUseBook) engine.setUseBook(data.useBook);
                 response.success = true;
                 break;
 

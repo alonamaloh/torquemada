@@ -2,9 +2,9 @@
  * Main entry point for the checkers web app
  */
 
-import { GameController } from './game-controller.js?v=20260208e';
-import { getEngine } from './engine-api.js?v=20260208e';
-import { TablebaseLoader, loadNNModelFile } from './tablebase-loader.js?v=20260208e';
+import { GameController } from './game-controller.js?v=20260208f';
+import { getEngine } from './engine-api.js?v=20260208f';
+import { TablebaseLoader, loadNNModelFile } from './tablebase-loader.js?v=20260208f';
 
 // Global state
 let gameController = null;
