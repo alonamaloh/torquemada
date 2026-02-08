@@ -388,6 +388,8 @@ function applyTimePerMove() {
     if (isNaN(value) || value < 0.1) value = 0.1;
 
     gameController.setSecondsPerMove(value);
+    gameController.secondsLeft = 0;
+    gameController._notifyTime();
     updateTimePerMoveLabel(value);
     hideTimeDialog();
 }
