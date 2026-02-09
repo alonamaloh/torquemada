@@ -154,8 +154,8 @@ export class EngineAPI {
      * @param {number} kings - Kings bitboard
      * @param {boolean} whiteToMove - True if white to move
      */
-    async setBoard(white, black, kings, whiteToMove) {
-        const response = await this.request('setBoard', { white, black, kings, whiteToMove });
+    async setBoard(white, black, kings, whiteToMove, nReversible = 0) {
+        const response = await this.request('setBoard', { white, black, kings, whiteToMove, nReversible });
         return response.board;
     }
 

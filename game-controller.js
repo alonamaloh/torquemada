@@ -639,12 +639,13 @@ export class GameController {
         this.redoStack.push(last);
         this.currentIndex = this.history.length - 1;
 
-        // Restore board
+        // Restore board (including reversible move counter)
         await this.engine.setBoard(
             last.board.white,
             last.board.black,
             last.board.kings,
-            last.board.whiteToMove
+            last.board.whiteToMove,
+            last.board.nReversible || 0
         );
 
         const board = await this.engine.getBoard();

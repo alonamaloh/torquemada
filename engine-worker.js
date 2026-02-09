@@ -192,9 +192,9 @@ function makeMove(moveData) {
 /**
  * Set board position
  */
-function setBoard(white, black, kings, whiteToMove) {
+function setBoard(white, black, kings, whiteToMove, nReversible) {
     if (!engine) return;
-    board = engine.Board.fromBitboards(white, black, kings, whiteToMove);
+    board = engine.Board.fromBitboards(white, black, kings, whiteToMove, nReversible || 0);
 }
 
 /**
@@ -366,7 +366,7 @@ self.onmessage = function(e) {
                 break;
 
             case 'setBoard':
-                setBoard(data.white, data.black, data.kings, data.whiteToMove);
+                setBoard(data.white, data.black, data.kings, data.whiteToMove, data.nReversible);
                 response.board = getBoardState();
                 break;
 
