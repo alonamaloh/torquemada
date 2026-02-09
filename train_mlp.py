@@ -247,18 +247,17 @@ def main():
             bin_path = args.output.replace('.pt', '.bin')
             export_to_bin(model, bin_path)
 
-        # Save checkpoint every 5 epochs (both .pt and .bin for C++ matches)
-        if (epoch + 1) % 5 == 0:
-            checkpoint_path = args.output.replace('.pt', f'_epoch_{epoch+1}.pt')
-            torch.save({
-                'model_state_dict': model.state_dict(),
-                'hidden_sizes': hidden_sizes,
-                'epoch': epoch + 1,
-                'val_acc': val_acc,
-            }, checkpoint_path)
-            bin_path = checkpoint_path.replace('.pt', '.bin')
-            export_to_bin(model, bin_path)
-            print(f"  -> Saved checkpoint: {checkpoint_path} and {bin_path}")
+        # Save checkpoint every epoch (both .pt and .bin for C++ matches)
+        checkpoint_path = args.output.replace('.pt', f'_epoch_{epoch+1}.pt')
+        torch.save({
+            'model_state_dict': model.state_dict(),
+            'hidden_sizes': hidden_sizes,
+            'epoch': epoch + 1,
+            'val_acc': val_acc,
+        }, checkpoint_path)
+        bin_path = checkpoint_path.replace('.pt', '.bin')
+        export_to_bin(model, bin_path)
+        print(f"  -> Saved checkpoint: {checkpoint_path} and {bin_path}")
 
     print(f"\nBest validation accuracy: {best_val_acc:.2%}")
     print(f"Model saved to {args.output}")
