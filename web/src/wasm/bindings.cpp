@@ -266,7 +266,7 @@ struct JSBoard {
     JSBoard(const Board& b, bool wtm) : board(b), white_to_move(wtm) {}
 
     // Create from bitboards
-    static JSBoard fromBitboards(uint32_t white, uint32_t black, uint32_t kings, bool white_to_move) {
+    static JSBoard fromBitboards(uint32_t white, uint32_t black, uint32_t kings, bool white_to_move, unsigned n_reversible) {
         Board b;
         if (white_to_move) {
             b.white = white;
@@ -278,6 +278,7 @@ struct JSBoard {
             b.black = flip(white);
             b.kings = flip(kings);
         }
+        b.n_reversible = n_reversible;
         return JSBoard(b, white_to_move);
     }
 
