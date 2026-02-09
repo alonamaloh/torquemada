@@ -172,10 +172,11 @@ export class BoardUI {
      */
     setLegalMoves(moves) {
         this.legalMoves = moves || [];
-        // Clear flexible input highlights — they're tied to the old move set
+        // Clear all transient highlights — they're tied to the old move set
         this.outOfOrderClicks = [];
         this.flexibleHighlights = [];
         this.partialPath = [];
+        this.lastMove = null;
         this.render();
     }
 

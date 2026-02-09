@@ -417,7 +417,6 @@ export class GameController {
         this.boardUI.flexibleHighlights = [];
         this._updateFromBoard(newBoard);
         this.boardUI.setSelected(null);
-        this.boardUI.setLastMove(move.from, move.to);
 
         // Callback
         if (this.onMove) {
@@ -425,7 +424,9 @@ export class GameController {
         }
 
         // Update legal moves (also checks for game over)
+        // setLegalMoves clears lastMove, so set it after
         await this._updateLegalMoves();
+        this.boardUI.setLastMove(move.from, move.to);
 
         // Update status only if game is not over
         if (!this.gameOver) {
@@ -590,16 +591,15 @@ export class GameController {
         this._updateFromBoard(board);
         this._clearInputState();
         this.boardUI.setSelected(null);
-        this.boardUI.clearLastMove();
 
-        // Update last move highlight if there's still history
+        // Update legal moves (setLegalMoves clears lastMove, so set it after)
+        await this._updateLegalMoves();
+
+        // Restore last move highlight if there's still history
         if (this.history.length > 0) {
             const prevMove = this.history[this.history.length - 1].move;
             this.boardUI.setLastMove(prevMove.from, prevMove.to);
         }
-
-        // Update legal moves
-        await this._updateLegalMoves();
 
         // Reset game over state
         this.gameOver = false;
@@ -633,10 +633,10 @@ export class GameController {
         this._updateFromBoard(newBoard);
         this._clearInputState();
         this.boardUI.setSelected(null);
-        this.boardUI.setLastMove(entry.move.from, entry.move.to);
 
-        // Update legal moves
+        // Update legal moves (setLegalMoves clears lastMove, so set it after)
         await this._updateLegalMoves();
+        this.boardUI.setLastMove(entry.move.from, entry.move.to);
 
         // Switch mode so human can play the side that's now to move
         // (unless in 2-player mode)
