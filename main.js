@@ -50,7 +50,7 @@ async function init() {
         updateLoadingStatus('Loading neural network...');
         try {
             // Try loading from local files first
-            const nnData = await loadNNModelFile('./models/model_005_long.bin');
+            const nnData = await loadNNModelFile('./models/model_006.bin');
             await engine.loadNNModel(nnData, false);
         } catch (err) {
             console.warn('Could not load NN model:', err);
