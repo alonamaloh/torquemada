@@ -56,7 +56,7 @@ $(BINDIR)/test_nn: $(CORE_OBJS) $(NN_OBJS) $(OBJDIR)/test_nn.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 $(BINDIR)/match: $(ALL_OBJS) $(OBJDIR)/match.o
-	$(CXX) $(LDFLAGS) -o $@ $^
+	$(CXX) $(LDFLAGS) -fopenmp -o $@ $^
 
 $(BINDIR)/play: $(ALL_OBJS) $(OBJDIR)/play.o
 	$(CXX) $(LDFLAGS) -o $@ $^
@@ -88,7 +88,7 @@ $(OBJDIR)/test_nn.o: test_nn.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR)/match.o: match.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -fopenmp -c $< -o $@
 
 $(OBJDIR)/play.o: play.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
