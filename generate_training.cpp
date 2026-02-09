@@ -263,18 +263,9 @@ int main(int argc, char** argv) {
 
   auto start_time = std::chrono::steady_clock::now();
 
-  std::atomic<int> active_threads{0};
-  std::mutex io_mutex;
-
   #pragma omp parallel
   {
     int tid = omp_get_thread_num();
-    active_threads.fetch_add(1, std::memory_order_relaxed);
-
-    {
-      std::lock_guard<std::mutex> lock(io_mutex);
-      std::cout << "[T" << tid << "] started\n" << std::flush;
-    }
 
     // Each thread gets its own RNG and searcher (shared DTM tablebases for optimal endgame play)
     RandomBits rng(base_seed + tid * 0x9e3779b97f4a7c15ULL);
@@ -282,24 +273,11 @@ int main(int argc, char** argv) {
     searcher.set_tt_size(32);
 
     auto& local_positions = thread_positions[tid];
-    int local_games = 0;
 
     while (total_positions.load(std::memory_order_relaxed) < target_positions) {
       std::size_t before = local_positions.size();
-      auto game_start = std::chrono::steady_clock::now();
       int outcome = play_game(rng, searcher, dtm_tb, local_positions, random_plies, max_nodes);
-      auto game_end = std::chrono::steady_clock::now();
-      double game_secs = std::chrono::duration<double>(game_end - game_start).count();
       std::size_t added = local_positions.size() - before;
-      local_games++;
-
-      // Log slow games
-      if (game_secs > 5.0) {
-        std::lock_guard<std::mutex> lock(io_mutex);
-        std::cout << "[T" << tid << "] slow game #" << local_games
-                  << ": " << std::fixed << std::setprecision(1) << game_secs << "s"
-                  << ", " << added << " positions, outcome=" << outcome << "\n" << std::flush;
-      }
 
       // Update atomic counters
       total_positions.fetch_add(added, std::memory_order_relaxed);
@@ -327,22 +305,13 @@ int main(int argc, char** argv) {
         if (last_report_time.compare_exchange_weak(last, secs, std::memory_order_relaxed)) {
           int games = num_games.load(std::memory_order_relaxed);
           std::size_t pos = total_positions.load(std::memory_order_relaxed);
-          int active = active_threads.load(std::memory_order_relaxed);
           std::cout << "Games: " << games << "  Positions: " << pos
-                    << "  (" << static_cast<int>(pos / secs) << " pos/sec)"
-                    << "  [" << active << " threads active]\n"
+                    << "  (" << static_cast<int>(pos / secs) << " pos/sec)\n"
                     << std::flush;
         }
       }
     }
 
-    int remaining = active_threads.fetch_sub(1, std::memory_order_relaxed) - 1;
-    {
-      std::lock_guard<std::mutex> lock(io_mutex);
-      std::cout << "[T" << tid << "] done after " << local_games << " games"
-                << ", " << local_positions.size() << " local positions"
-                << " (" << remaining << " threads still active)\n" << std::flush;
-    }
   }
 
   auto end_time = std::chrono::steady_clock::now();
