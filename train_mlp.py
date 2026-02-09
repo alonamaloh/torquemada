@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Train an MLP to predict game outcomes from board positions."""
+"""Train an MLP to predict game outcomes from board positions.
+
+Loads all training data to GPU VRAM for fast epoch iteration.
+"""
 
 import argparse
 import glob
@@ -9,7 +12,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader
 
 
 def export_to_bin(model, output_path):
@@ -34,79 +36,80 @@ def export_to_bin(model, output_path):
             f.write(bias.astype(np.float32).tobytes())
 
 
-class CheckersDataset(Dataset):
-    """Dataset for checkers positions with outcome labels."""
+# Bit masks for extracting 32 bits, precomputed once on GPU
+_bit_masks = None
 
-    def __init__(self, h5_files):
-        """Load positions from HDF5 files."""
-        all_boards = []
-        all_outcomes = []
+def get_bit_masks(device):
+    global _bit_masks
+    if _bit_masks is None or _bit_masks.device != device:
+        _bit_masks = (1 << torch.arange(32, device=device)).unsqueeze(0)  # (1, 32)
+    return _bit_masks
 
-        for path in h5_files:
-            with h5py.File(path, 'r') as f:
-                boards = f['boards'][:]
-                outcomes = f['outcomes'][:]
 
-                # Filter out pre-tactical positions from old-format files
-                if 'pre_tactical' in f:
-                    mask = f['pre_tactical'][:] == 0
-                    boards = boards[mask]
-                    outcomes = outcomes[mask]
+def boards_to_features(boards, device):
+    """Vectorized board-to-feature conversion on GPU.
 
-                all_boards.append(boards)
-                all_outcomes.append(outcomes)
+    boards: (N, 4) int32 tensor [white, black, kings, n_reversible]
+    Returns: (N, 128) float32 tensor
+    """
+    masks = get_bit_masks(device)  # (1, 32)
 
-        self.boards = np.concatenate(all_boards, axis=0)
-        self.outcomes = np.concatenate(all_outcomes, axis=0)
+    white = boards[:, 0:1]  # (N, 1)
+    black = boards[:, 1:2]
+    kings = boards[:, 2:3]
 
-        # Convert outcomes from {-1, 0, 1} to {0, 1, 2} for cross-entropy
-        # 0 = loss, 1 = draw, 2 = win
-        self.labels = (self.outcomes + 1).astype(np.int64)
+    # Expand bits: (N, 1) & (1, 32) -> (N, 32) bool -> float
+    white_bits = (white & masks).ne(0)
+    black_bits = (black & masks).ne(0)
+    kings_bits = (kings & masks).ne(0)
 
-        print(f"Loaded {len(self.boards)} positions from {len(h5_files)} files")
-        print(f"  Wins:   {np.sum(self.labels == 2):>8} ({100*np.mean(self.labels == 2):.1f}%)")
-        print(f"  Draws:  {np.sum(self.labels == 1):>8} ({100*np.mean(self.labels == 1):.1f}%)")
-        print(f"  Losses: {np.sum(self.labels == 0):>8} ({100*np.mean(self.labels == 0):.1f}%)")
+    white_men = (white_bits & ~kings_bits).float()
+    white_kings = (white_bits & kings_bits).float()
+    black_men = (black_bits & ~kings_bits).float()
+    black_kings = (black_bits & kings_bits).float()
 
-    def __len__(self):
-        return len(self.boards)
+    return torch.cat([white_men, white_kings, black_men, black_kings], dim=1)
 
-    def __getitem__(self, idx):
-        board = self.boards[idx]
-        features = self._board_to_features(board)
-        label = self.labels[idx]
-        return torch.tensor(features, dtype=torch.float32), torch.tensor(label)
 
-    def _board_to_features(self, board):
-        """Convert board representation to feature vector.
+def load_data_to_gpu(h5_files, device):
+    """Load all training data from HDF5 files directly to GPU."""
+    all_boards = []
+    all_outcomes = []
 
-        Board format: [white, black, kings, n_reversible]
-        Each of white/black/kings is a 32-bit mask for the 32 playable squares.
+    for path in h5_files:
+        with h5py.File(path, 'r') as f:
+            boards = f['boards'][:]
+            outcomes = f['outcomes'][:]
 
-        Output: 128 features
-          - 32 for white men (white & ~kings)
-          - 32 for white kings (white & kings)
-          - 32 for black men (black & ~kings)
-          - 32 for black kings (black & kings)
-        """
-        white = int(board[0])
-        black = int(board[1])
-        kings = int(board[2])
+            # Filter out pre-tactical positions from old-format files
+            if 'pre_tactical' in f:
+                mask = f['pre_tactical'][:] == 0
+                boards = boards[mask]
+                outcomes = outcomes[mask]
 
-        white_men = white & ~kings
-        white_kings = white & kings
-        black_men = black & ~kings
-        black_kings = black & kings
+            all_boards.append(boards)
+            all_outcomes.append(outcomes)
 
-        features = np.zeros(128, dtype=np.float32)
-        for i in range(32):
-            mask = 1 << i
-            features[i] = 1.0 if (white_men & mask) else 0.0
-            features[32 + i] = 1.0 if (white_kings & mask) else 0.0
-            features[64 + i] = 1.0 if (black_men & mask) else 0.0
-            features[96 + i] = 1.0 if (black_kings & mask) else 0.0
+    boards_np = np.concatenate(all_boards, axis=0)
+    outcomes_np = np.concatenate(all_outcomes, axis=0)
 
-        return features
+    # Convert outcomes from {-1, 0, 1} to {0, 1, 2} for cross-entropy
+    labels_np = (outcomes_np + 1).astype(np.int64)
+
+    n = len(labels_np)
+    print(f"Loaded {n} positions from {len(h5_files)} files")
+    print(f"  Wins:   {np.sum(labels_np == 2):>8} ({100*np.mean(labels_np == 2):.1f}%)")
+    print(f"  Draws:  {np.sum(labels_np == 1):>8} ({100*np.mean(labels_np == 1):.1f}%)")
+    print(f"  Losses: {np.sum(labels_np == 0):>8} ({100*np.mean(labels_np == 0):.1f}%)")
+
+    print("Moving data to GPU...")
+    boards_gpu = torch.from_numpy(boards_np.astype(np.int32)).to(device)
+    labels_gpu = torch.from_numpy(labels_np).to(device)
+
+    del boards_np, outcomes_np, labels_np, all_boards, all_outcomes
+    print(f"GPU memory: {torch.cuda.memory_allocated(device) / 1e6:.0f} MB")
+
+    return boards_gpu, labels_gpu
 
 
 class CheckersMLP(nn.Module):
@@ -131,50 +134,50 @@ class CheckersMLP(nn.Module):
         return self.net(x)
 
 
-def train_epoch(model, loader, optimizer, criterion, device):
+def train_epoch(model, boards, labels, batch_size, optimizer, criterion, device):
     model.train()
+    n = len(labels)
+    perm = torch.randperm(n, device=device)
     total_loss = 0
     correct = 0
-    total = 0
 
-    for features, labels in loader:
-        features = features.to(device)
-        labels = labels.to(device)
+    for start in range(0, n, batch_size):
+        idx = perm[start:start + batch_size]
+        features = boards_to_features(boards[idx], device)
+        batch_labels = labels[idx]
 
         optimizer.zero_grad()
         outputs = model(features)
-        loss = criterion(outputs, labels)
+        loss = criterion(outputs, batch_labels)
         loss.backward()
         optimizer.step()
 
-        total_loss += loss.item() * len(labels)
+        total_loss += loss.item() * len(batch_labels)
         _, predicted = outputs.max(1)
-        correct += predicted.eq(labels).sum().item()
-        total += len(labels)
+        correct += predicted.eq(batch_labels).sum().item()
 
-    return total_loss / total, correct / total
+    return total_loss / n, correct / n
 
 
-def evaluate(model, loader, criterion, device):
+def evaluate(model, boards, labels, batch_size, criterion, device):
     model.eval()
+    n = len(labels)
     total_loss = 0
     correct = 0
-    total = 0
 
     with torch.no_grad():
-        for features, labels in loader:
-            features = features.to(device)
-            labels = labels.to(device)
+        for start in range(0, n, batch_size):
+            features = boards_to_features(boards[start:start + batch_size], device)
+            batch_labels = labels[start:start + batch_size]
 
             outputs = model(features)
-            loss = criterion(outputs, labels)
+            loss = criterion(outputs, batch_labels)
 
-            total_loss += loss.item() * len(labels)
+            total_loss += loss.item() * len(batch_labels)
             _, predicted = outputs.max(1)
-            correct += predicted.eq(labels).sum().item()
-            total += len(labels)
+            correct += predicted.eq(batch_labels).sum().item()
 
-    return total_loss / total, correct / total
+    return total_loss / n, correct / n
 
 
 def main():
@@ -198,28 +201,39 @@ def main():
         print(f"No files found matching {args.data}")
         return
 
+    device = torch.device(args.device)
     print(f"Loading from {len(h5_files)} files...")
-    dataset = CheckersDataset(h5_files)
+    boards_gpu, labels_gpu = load_data_to_gpu(h5_files, device)
 
     # Split into train/val
-    n_val = int(len(dataset) * args.val_split)
-    n_train = len(dataset) - n_val
-    train_dataset, val_dataset = torch.utils.data.random_split(
-        dataset, [n_train, n_val],
-        generator=torch.Generator().manual_seed(42)
-    )
+    n = len(labels_gpu)
+    n_val = int(n * args.val_split)
+    n_train = n - n_val
+
+    # Deterministic shuffle for split
+    gen = torch.Generator().manual_seed(42)
+    perm = torch.randperm(n, generator=gen, device='cpu')
+    train_idx = perm[:n_train].to(device)
+    val_idx = perm[n_train:].to(device)
+
+    train_boards = boards_gpu[train_idx]
+    train_labels = labels_gpu[train_idx]
+    val_boards = boards_gpu[val_idx]
+    val_labels = labels_gpu[val_idx]
+
+    # Free the unsplit data
+    del boards_gpu, labels_gpu, train_idx, val_idx
+    torch.cuda.empty_cache()
 
     print(f"Train: {n_train}, Val: {n_val}")
 
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=4)
-
     # Create model
     model = CheckersMLP(hidden_sizes=hidden_sizes)
-    model = model.to(args.device)
+    model = model.to(device)
     print(f"Model: {sum(p.numel() for p in model.parameters())} parameters")
     print(f"Hidden layers: {hidden_sizes}")
-    print(f"Device: {args.device}")
+    print(f"Device: {device}")
+    print(f"GPU memory: {torch.cuda.memory_allocated(device) / 1e6:.0f} MB")
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
@@ -230,8 +244,10 @@ def main():
     print("-" * 55)
 
     for epoch in range(args.epochs):
-        train_loss, train_acc = train_epoch(model, train_loader, optimizer, criterion, args.device)
-        val_loss, val_acc = evaluate(model, val_loader, criterion, args.device)
+        train_loss, train_acc = train_epoch(
+            model, train_boards, train_labels, args.batch_size, optimizer, criterion, device)
+        val_loss, val_acc = evaluate(
+            model, val_boards, val_labels, args.batch_size, criterion, device)
 
         scheduler.step(val_loss)
 
