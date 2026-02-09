@@ -1,16 +1,10 @@
 # Torquemada TODO
 
-## Flexible move input (UI)
+## ~~Flexible move input (UI)~~ — DONE
 
-The current click-based move input requires the user to click exact squares in
-sequence. Instead, each legal move should have an associated **mask** of
-relevant squares (start, end, intermediate squares, captured pieces). As the
-player clicks squares, we narrow down the set of matching moves. Once the
-clicked squares uniquely determine a move, we play it immediately.
-
-This makes input more forgiving — the player can click any distinctive square
-of the intended move, in any order, rather than needing to follow the exact
-path.
+Implemented with mask-based move matching in the engine (`computeUIMask()` in
+`bindings.cpp`) and flexible click handling in `game-controller.js`. Players
+can click any distinctive square of the intended move, in any order.
 
 ## Retrain evaluation network with 5-piece adjudication
 
