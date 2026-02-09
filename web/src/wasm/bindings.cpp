@@ -352,6 +352,19 @@ struct JSMove {
     }
 };
 
+// Compute UI mask (32-bit) for a move: all path + captured squares in UI coordinates.
+// Bit i represents UI square (i+1).
+uint32_t computeUIMask(const std::vector<int>& path, Bb captures, bool white_to_move) {
+    uint32_t mask = 0;
+    for (int sq : path) {
+        mask |= white_to_move ? (1u << sq) : (1u << (31 - sq));
+    }
+    if (captures) {
+        mask |= white_to_move ? captures : flip(captures);
+    }
+    return mask;
+}
+
 // Get legal moves for a position - returns plain JS objects
 val getLegalMoves(const JSBoard& jsboard) {
     // Generate moves with full path info, keeping all paths for UI selection
@@ -381,6 +394,9 @@ val getLegalMoves(const JSBoard& jsboard) {
 
         // Build notation string
         move.set("notation", buildNotation(fm.path, fm.move.isCapture(), jsboard.white_to_move));
+
+        // UI mask for flexible move input
+        move.set("mask", computeUIMask(fm.path, fm.move.captures, jsboard.white_to_move));
 
         result.call<void>("push", move);
     }
@@ -421,6 +437,7 @@ val createMoveObject(const Move& m, const std::vector<int>& path, bool white_to_
     }
     move.set("isCapture", m.isCapture());
     move.set("notation", buildNotation(path, m.isCapture(), white_to_move));
+    move.set("mask", computeUIMask(path, m.captures, white_to_move));
 
     return move;
 }
