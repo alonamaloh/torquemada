@@ -23,7 +23,11 @@ export class EngineAPI {
      * @param {string} workerPath - Path to engine-worker.js
      * @returns {Promise<void>}
      */
-    async init(workerPath = './engine-worker.js?v=20260208l') {
+    async init(workerPath = null) {
+        if (!workerPath) {
+            const _v = new URL(import.meta.url).searchParams.get('v') || '';
+            workerPath = _v ? `./engine-worker.js?v=${_v}` : './engine-worker.js';
+        }
         // Create SharedArrayBuffer for stop flag if available
         if (typeof SharedArrayBuffer !== 'undefined') {
             this.stopFlag = new SharedArrayBuffer(4);

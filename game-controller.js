@@ -2,7 +2,9 @@
  * Game controller - manages game state, history, and coordinates UI with engine
  */
 
-import { BoardUI } from './board-ui.js?v=20260208m';
+const _v = new URL(import.meta.url).searchParams.get('v') || '';
+const _q = _v ? `?v=${_v}` : '';
+const { BoardUI } = await import(`./board-ui.js${_q}`);
 
 export class GameController {
     constructor(canvas, engine, statusElement = null) {

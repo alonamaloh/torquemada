@@ -8,7 +8,8 @@
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
     <title>Torquemada Checkers</title>
-    <link rel="stylesheet" href="style.css?v=20260208m">
+    <link id="main-css" rel="stylesheet">
+    <script>document.getElementById('main-css').href = 'style.css?v=' + Date.now();</script>
     <!-- Enable SharedArrayBuffer for stop functionality -->
     <script src="coi-serviceworker.js"></script>
 </head>
@@ -166,6 +167,11 @@
     </div>
 
     <!-- Scripts -->
-    <script type="module" src="main.js?v=20260208m"></script>
+    <script>
+    const s = document.createElement('script');
+    s.type = 'module';
+    s.src = 'main.js?v=' + Date.now();
+    document.body.appendChild(s);
+    </script>
 </body>
 </html>
