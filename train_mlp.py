@@ -37,13 +37,8 @@ def export_to_bin(model, output_path):
 class CheckersDataset(Dataset):
     """Dataset for checkers positions with outcome labels."""
 
-    def __init__(self, h5_files, include_pre_tactical=False):
-        """Load positions from HDF5 files.
-
-        Args:
-            h5_files: List of HDF5 file paths
-            include_pre_tactical: If False, filter out pre-tactical positions
-        """
+    def __init__(self, h5_files):
+        """Load positions from HDF5 files."""
         all_boards = []
         all_outcomes = []
 
@@ -51,10 +46,10 @@ class CheckersDataset(Dataset):
             with h5py.File(path, 'r') as f:
                 boards = f['boards'][:]
                 outcomes = f['outcomes'][:]
-                pre_tactical = f['pre_tactical'][:]
 
-                if not include_pre_tactical:
-                    mask = pre_tactical == 0
+                # Filter out pre-tactical positions from old-format files
+                if 'pre_tactical' in f:
+                    mask = f['pre_tactical'][:] == 0
                     boards = boards[mask]
                     outcomes = outcomes[mask]
 
@@ -185,7 +180,6 @@ def evaluate(model, loader, criterion, device):
 def main():
     parser = argparse.ArgumentParser(description='Train MLP for checkers outcome prediction')
     parser.add_argument('--data', type=str, default='data/*.h5', help='Glob pattern for HDF5 files')
-    parser.add_argument('--include-tactical', action='store_true', help='Include pre-tactical positions')
     parser.add_argument('--epochs', type=int, default=20, help='Number of epochs')
     parser.add_argument('--batch-size', type=int, default=4096, help='Batch size')
     parser.add_argument('--lr', type=float, default=1e-3, help='Learning rate')
@@ -205,7 +199,7 @@ def main():
         return
 
     print(f"Loading from {len(h5_files)} files...")
-    dataset = CheckersDataset(h5_files, include_pre_tactical=args.include_tactical)
+    dataset = CheckersDataset(h5_files)
 
     # Split into train/val
     n_val = int(len(dataset) * args.val_split)

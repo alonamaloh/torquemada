@@ -1,9 +1,8 @@
 // Training data generator for neural network training.
 //
-// NOTE: This program only needs WDL (win/draw/loss) tablebases, NOT DTM
-// (distance-to-mate) tablebases. DTM tables are for optimal play; here we
-// only need WDL to determine game outcomes when positions reach tablebase
-// territory. Do not add DTM preloading or usage here.
+// Uses DTM tablebases for both search (optimal endgame play) and adjudication
+// (≤5 pieces only), so the eval network learns 6-7 piece positions from
+// actual game contexts.
 
 #include "core/board.hpp"
 #include "core/movegen.hpp"
@@ -11,6 +10,7 @@
 #include "core/random.hpp"
 #include "search/search.hpp"
 #include "tablebase/tablebase.hpp"
+#include "tablebase/tb_probe.hpp"
 #include <H5Cpp.h>
 #include <omp.h>
 #include <atomic>
@@ -24,9 +24,8 @@
 // Training position: board state + metadata
 struct TrainingPosition {
   Board board;
-  int ply;           // When this position occurred (for debugging)
-  bool pre_tactical; // True if the move played leads to opponent having captures
-  int outcome;       // Game outcome from side-to-move perspective: -1, 0, +1
+  int ply;       // When this position occurred (for debugging)
+  int outcome;   // Game outcome from side-to-move perspective: -1, 0, +1
 };
 
 // Fixed-size buffer for positions within a single game (max ~250 positions per game)
@@ -42,7 +41,7 @@ bool is_quiet(const Board& board) {
 // Generate a single game and collect training positions
 // Returns: outcome from white's perspective at game start (+1 win, 0 draw, -1 loss)
 int play_game(RandomBits& rng, search::Searcher& searcher,
-              const CompressedTablebaseManager& tb_mgr,
+              const tablebase::DTMTablebaseManager& dtm_tb,
               std::vector<TrainingPosition>& positions,
               int random_plies, std::uint64_t max_nodes) {
   Board board;  // Starting position
@@ -77,14 +76,14 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
       return outcome;
     }
 
-    // Check for tablebase hit (≤7 pieces)
+    // Adjudicate at ≤5 pieces using DTM tablebases
     int piece_count = std::popcount(board.allPieces());
-    if (piece_count <= 7 && board.n_reversible == 0) {
-      Value wdl = tb_mgr.lookup_wdl_preloaded(board);
-      if (wdl != Value::UNKNOWN) {
+    if (piece_count <= 5) {
+      tablebase::DTM dtm = dtm_tb.lookup_dtm(board);
+      if (dtm != tablebase::DTM_UNKNOWN) {
         int result;
-        if (wdl == Value::WIN) result = +1;
-        else if (wdl == Value::LOSS) result = -1;
+        if (dtm > 0) result = +1;
+        else if (dtm < 0) result = -1;
         else result = 0;
 
         int outcome = (ply % 2 == 0) ? result : -result;
@@ -106,7 +105,9 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
     }
 
     // Search for best move
-    auto result = searcher.search(board, 100, max_nodes);
+    search::TimeControl tc;
+    tc.soft_node_limit = max_nodes;
+    auto result = searcher.search(board, 100, tc);
     if (result.best_move.from_xor_to == 0) {
       int outcome = (ply % 2 == 0) ? -1 : +1;
       for (auto& pos : game_positions) {
@@ -117,11 +118,10 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
     }
 
     Board next_board = makeMove(board, result.best_move);
-    bool pre_tactical = !is_quiet(next_board);
 
-    // Record position if quiet
-    if (is_quiet(board)) {
-      game_positions.push_back({board, ply, pre_tactical, 0});
+    // Record position if quiet and the resulting position is also quiet
+    if (is_quiet(board) && is_quiet(next_board)) {
+      game_positions.push_back({board, ply, 0});
     }
 
     board = next_board;
@@ -149,7 +149,6 @@ void write_hdf5(const std::string& filename, const std::vector<TrainingPosition>
 
   // Prepare data arrays
   std::vector<std::uint32_t> boards(n * 4);
-  std::vector<std::uint8_t> pre_tactical(n);
   std::vector<std::int8_t> outcomes(n);
 
   for (hsize_t i = 0; i < n; ++i) {
@@ -158,7 +157,6 @@ void write_hdf5(const std::string& filename, const std::vector<TrainingPosition>
     boards[i * 4 + 1] = pos.board.black;
     boards[i * 4 + 2] = pos.board.kings;
     boards[i * 4 + 3] = pos.board.n_reversible;
-    pre_tactical[i] = pos.pre_tactical ? 1 : 0;
     outcomes[i] = static_cast<std::int8_t>(pos.outcome);
   }
 
@@ -173,9 +171,6 @@ void write_hdf5(const std::string& filename, const std::vector<TrainingPosition>
 
   hsize_t scalar_dims[1] = {n};
   DataSpace scalar_space(1, scalar_dims);
-
-  DataSet pt_ds = file.createDataSet("pre_tactical", PredType::NATIVE_UINT8, scalar_space);
-  pt_ds.write(pre_tactical.data(), PredType::NATIVE_UINT8);
 
   DataSet out_ds = file.createDataSet("outcomes", PredType::NATIVE_INT8, scalar_space);
   out_ds.write(outcomes.data(), PredType::NATIVE_INT8);
@@ -248,9 +243,10 @@ int main(int argc, char** argv) {
   std::atomic<int> num_games{0};
   std::atomic<int> white_wins{0}, black_wins{0}, draws{0};
 
-  // Shared, preloaded WDL tablebase manager (read-only after preload)
-  CompressedTablebaseManager tb_wdl(tb_dir);
-  tb_wdl.preload(7);
+  // Shared DTM tablebase manager: used both for optimal play in search
+  // and for adjudication at ≤5 pieces
+  tablebase::DTMTablebaseManager dtm_tb(tb_dir);
+  dtm_tb.preload(7);
 
   // Progress reporting
   std::atomic<double> last_report_time{0.0};
@@ -270,17 +266,16 @@ int main(int argc, char** argv) {
   {
     int tid = omp_get_thread_num();
 
-    // Each thread gets its own RNG and searcher
-    // Note: Searcher doesn't use tablebases here - WDL lookups are done separately
+    // Each thread gets its own RNG and searcher (shared DTM tablebases for optimal endgame play)
     RandomBits rng(base_seed + tid * 0x9e3779b97f4a7c15ULL);
-    search::Searcher searcher("", 0, nn_model);
+    search::Searcher searcher(&dtm_tb, 7, nn_model);
     searcher.set_tt_size(32);
 
     auto& local_positions = thread_positions[tid];
 
     while (total_positions.load(std::memory_order_relaxed) < target_positions) {
       std::size_t before = local_positions.size();
-      int outcome = play_game(rng, searcher, tb_wdl, local_positions, random_plies, max_nodes);
+      int outcome = play_game(rng, searcher, dtm_tb, local_positions, random_plies, max_nodes);
       std::size_t added = local_positions.size() - before;
 
       // Update atomic counters
@@ -335,14 +330,6 @@ int main(int argc, char** argv) {
             << " B:" << black_wins.load() << " D:" << draws.load() << ")\n";
   std::cout << "Total positions: " << all_positions.size() << "\n";
   std::cout << "Throughput: " << static_cast<int>(all_positions.size() / total_secs) << " pos/sec\n";
-
-  int tactical_count = 0;
-  for (const auto& pos : all_positions) {
-    if (pos.pre_tactical) tactical_count++;
-  }
-  std::cout << "Pre-tactical: " << tactical_count << " ("
-            << std::fixed << std::setprecision(1)
-            << (100.0 * tactical_count / all_positions.size()) << "%)\n";
 
   // Write to HDF5
   write_hdf5(output_file, all_positions);
