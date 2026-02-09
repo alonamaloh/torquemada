@@ -2,7 +2,7 @@
  * Game controller - manages game state, history, and coordinates UI with engine
  */
 
-import { BoardUI } from './board-ui.js';
+import { BoardUI } from './board-ui.js?v=20260208m';
 
 export class GameController {
     constructor(canvas, engine, statusElement = null) {
@@ -38,8 +38,10 @@ export class GameController {
         this.onModeChange = null;    // (humanColor) => void - called when mode changes
         this.onTimeUpdate = null;    // (secondsLeft) => void - called when time bank changes
 
-        // Step-by-step capture state
-        this.partialPath = [];       // Squares clicked so far in a multi-capture
+        // Flexible move input state
+        this._selectedMask = 0;      // 32-bit mask of selected squares
+        this.partialPath = [];       // kept for _makeMove animation compatibility
+        this.clickedSquares = new Set();  // kept for _clearInputState compatibility
 
         // Set up board click handler
         this.boardUI.onClick = (square) => this._handleSquareClick(square);
@@ -90,10 +92,9 @@ export class GameController {
         this.currentIndex = -1;
         this.gameOver = false;
         this.winner = null;
-        this.partialPath = [];
         this.secondsLeft = 0;
         this._notifyTime();
-        this.boardUI.setPartialPath([]);
+        this._clearInputState();
         this.boardUI.setSelected(null);
         this.boardUI.clearLastMove();
 
@@ -153,93 +154,15 @@ export class GameController {
         }
     }
 
-    /**
-     * Handle square click - supports step-by-step capture input
-     */
-    async _handleSquareClick(square) {
-        if (this.gameOver || this.isThinking) return;
-
-        const board = await this.engine.getBoard();
-        const isHumanTurn = this._isHumanTurn(board.whiteToMove);
-
-        if (!isHumanTurn) return;
-
-        // If we have a partial path, try to continue the capture sequence
-        if (this.partialPath.length > 0) {
-            const fromSquare = this.partialPath[0];
-
-            // Find moves that match our partial path so far
-            const matchingMoves = this._getMovesMatchingPartialPath();
-
-            // Check if clicked square is a valid next step
-            const validNextMoves = matchingMoves.filter(m => {
-                const nextIdx = this.partialPath.length;
-                return m.path && m.path.length > nextIdx && m.path[nextIdx] === square;
-            });
-
-            if (validNextMoves.length > 0) {
-                // Extend the partial path
-                this.partialPath.push(square);
-
-                // Check if we've completed a unique move
-                const completedMoves = validNextMoves.filter(m =>
-                    m.path && m.path.length === this.partialPath.length
-                );
-
-                if (completedMoves.length === 1) {
-                    // Unique move completed - make it
-                    this.partialPath = [];
-                    this.boardUI.setSelected(null);
-                    await this._makeMove(completedMoves[0]);
-                    return;
-                }
-
-                // Still multiple continuations or not at end yet - update highlights
-                this._updatePartialPathHighlights();
-                return;
-            }
-
-            // Clicked square is not a valid continuation
-            // Check if clicking on a different piece to select
-            if (this.boardUI.hasPieceToMove(square) && square !== fromSquare) {
-                const movesFromSquare = this.legalMoves.filter(m => m.from === square);
-                if (movesFromSquare.length > 0) {
-                    this.partialPath = [square];
-                    this.boardUI.setSelected(square);
-                    this._updatePartialPathHighlights();
-                    return;
-                }
-            }
-
-            // Clear selection
-            this._clearPartialPath();
-            this.boardUI.setSelected(null);
-            return;
-        }
-
-        // No partial path - try to select a piece
-        if (this.boardUI.hasPieceToMove(square)) {
-            const movesFromSquare = this.legalMoves.filter(m => m.from === square);
-            if (movesFromSquare.length > 0) {
-                this.partialPath = [square];
-                this.boardUI.setSelected(square);
-                this._updatePartialPathHighlights();
-                return;
-            }
-        }
-
-        // Clear selection
-        this._clearPartialPath();
-        this.boardUI.setSelected(null);
-    }
+    // No _computeMoveMask needed — the engine provides move.mask directly.
 
     /**
-     * Get moves that match the current partial path
+     * Filter moves to those whose path starts with the current partialPath.
+     * Used for sequential mode (clicking in path order, including repeated squares).
      */
-    _getMovesMatchingPartialPath() {
-        if (this.partialPath.length === 0) return this.legalMoves;
-
-        return this.legalMoves.filter(m => {
+    _filterByPathPrefix(moves) {
+        if (this.partialPath.length === 0) return moves;
+        return moves.filter(m => {
             if (!m.path || m.path.length < this.partialPath.length) return false;
             for (let i = 0; i < this.partialPath.length; i++) {
                 if (m.path[i] !== this.partialPath[i]) return false;
@@ -249,38 +172,197 @@ export class GameController {
     }
 
     /**
-     * Update board highlights for partial path - show next valid squares
+     * Check if all moves represent the same engine move
+     * (same from_xor_to and captures — just different path orderings)
      */
-    _updatePartialPathHighlights() {
-        const matchingMoves = this._getMovesMatchingPartialPath();
-        const nextIdx = this.partialPath.length;
-
-        // Create pseudo-moves for highlighting next valid squares
-        const nextSquares = new Set();
-        for (const m of matchingMoves) {
-            if (m.path && m.path.length > nextIdx) {
-                nextSquares.add(m.path[nextIdx]);
-            }
-        }
-
-        // Create highlight moves with 'from' as current position and 'to' as next valid squares
-        const currentSquare = this.partialPath[this.partialPath.length - 1];
-        const highlightMoves = Array.from(nextSquares).map(sq => ({
-            from: currentSquare,
-            to: sq
-        }));
-
-        this.boardUI.setLegalMoves(highlightMoves);
-        this.boardUI.setPartialPath(this.partialPath);
+    _areAllSameEngineMove(moves) {
+        if (moves.length <= 1) return true;
+        const first = moves[0];
+        return moves.every(m =>
+            m.from_xor_to === first.from_xor_to && m.captures === first.captures
+        );
     }
 
     /**
-     * Clear partial path and reset board highlights
+     * Get moves whose mask contains all selected squares.
      */
-    _clearPartialPath() {
+    _getMovesMatchingSelection() {
+        const sel = this._selectedMask;
+        return this.legalMoves.filter(m => ((m.mask & sel) >>> 0) === sel);
+    }
+
+    /**
+     * Try to extend partialPath for in-order visualization.
+     * If partialPath is empty and the square is a piece's from, start the path.
+     * Otherwise extend if the square matches the next path entry in any matching move.
+     */
+    _tryExtendPartialPath(square, matchingMoves) {
+        if (this.partialPath.length === 0) {
+            if (matchingMoves.some(m => m.from === square)) {
+                this.partialPath = [square];
+            }
+            return;
+        }
+        const nextIdx = this.partialPath.length;
+        for (const m of matchingMoves) {
+            if (m.path && m.path.length > nextIdx && m.path[nextIdx] === square) {
+                this.partialPath.push(square);
+                return;
+            }
+        }
+        // Out of order — keep existing partial path, don't extend
+    }
+
+    /**
+     * Update board highlights:
+     * - Red outlines on selected squares
+     * - Orange outlines on unselected squares in matching moves' masks
+     * - If partialPath is active, show piece moving and captures fading
+     */
+    _updateHighlights() {
+        let matchingMoves = this._getMovesMatchingSelection();
+
+        // In sequential mode, also filter by path prefix
+        if (this.partialPath.length > 0) {
+            const prefixFiltered = this._filterByPathPrefix(matchingMoves);
+            if (prefixFiltered.length > 0) matchingMoves = prefixFiltered;
+        }
+
+        // Collect all unselected squares from matching move masks
+        let validMask = 0;
+        for (const m of matchingMoves) {
+            validMask |= m.mask;
+        }
+        validMask = (validMask & ~this._selectedMask) >>> 0;
+
+        // In sequential mode, also include next path positions
+        // (may be already-selected squares that need to be clicked again)
+        if (this.partialPath.length > 0) {
+            const nextIdx = this.partialPath.length;
+            for (const m of matchingMoves) {
+                if (m.path && m.path.length > nextIdx) {
+                    validMask |= (1 << (m.path[nextIdx] - 1));
+                }
+            }
+            validMask = validMask >>> 0;
+        }
+
+        const validSquares = [];
+        for (let i = 0; i < 32; i++) {
+            if (validMask & (1 << i)) validSquares.push(i + 1);
+        }
+
+        // Selected squares for red outlines
+        const selectedSquares = [];
+        for (let i = 0; i < 32; i++) {
+            if (this._selectedMask & (1 << i)) selectedSquares.push(i + 1);
+        }
+
+        // Batch updates to avoid multiple renders
+        this.boardUI.legalMoves = [];  // suppress default green highlights
+        this.boardUI.outOfOrderClicks = selectedSquares;  // red outlines
+        this.boardUI.flexibleHighlights = validSquares;   // orange outlines
+        if (this.partialPath.length > 0) {
+            this.boardUI.selectedSquare = this.partialPath[0];
+            this.boardUI.partialPath = this.partialPath;
+        } else {
+            this.boardUI.selectedSquare = null;
+            this.boardUI.partialPath = [];
+        }
+        this.boardUI.render();
+    }
+
+    /**
+     * Handle square click — flexible move input.
+     *
+     * Maintains a set of selected squares (as a 32-bit mask). Each click adds
+     * a square. If exactly one engine move matches, execute it. If multiple
+     * match, wait. If none match, restart with just this square; if still
+     * nothing, clear.
+     */
+    async _handleSquareClick(square) {
+        if (this.gameOver || this.isThinking) return;
+
+        const board = await this.engine.getBoard();
+        if (!this._isHumanTurn(board.whiteToMove)) return;
+
+        const bit = (1 << (square - 1)) >>> 0;
+
+        // Already selected this square — try sequential mode (for repeated landing squares)
+        if (this._selectedMask & bit) {
+            if (this.partialPath.length > 0) {
+                const pathMoves = this._filterByPathPrefix(this._getMovesMatchingSelection());
+                const nextIdx = this.partialPath.length;
+                const extended = pathMoves.filter(m =>
+                    m.path && m.path.length > nextIdx && m.path[nextIdx] === square
+                );
+                if (extended.length > 0) {
+                    this.partialPath.push(square);
+                    if (this._areAllSameEngineMove(extended)) {
+                        const move = extended[0];
+                        const animate = move.path && move.path.length > 2 && this.partialPath.length < move.path.length;
+                        this._clearInputState(false);
+                        await this._makeMove(move, true, animate);
+                        return;
+                    }
+                    this._updateHighlights();
+                    return;
+                }
+            }
+            return;
+        }
+
+        // Try adding this square to the selection
+        const newMask = (this._selectedMask | bit) >>> 0;
+        this._selectedMask = newMask;
+        let matchingMoves = this._getMovesMatchingSelection();
+
+        if (matchingMoves.length === 0) {
+            // No moves match with full set — restart with just this square
+            this._selectedMask = bit;
+            this.partialPath = [];
+            matchingMoves = this._getMovesMatchingSelection();
+
+            if (matchingMoves.length === 0) {
+                // This square is in no move at all — clear everything
+                this._clearInputState();
+                return;
+            }
+        }
+
+        // Try to extend partial path for in-order visualization
+        this._tryExtendPartialPath(square, matchingMoves);
+
+        // Exactly one engine move (possibly multiple path orderings) → execute
+        if (this._areAllSameEngineMove(matchingMoves)) {
+            const move = matchingMoves[0];
+            const animate = move.path && move.path.length > 2 && this.partialPath.length < move.path.length;
+            this._clearInputState(false);
+            await this._makeMove(move, true, animate);
+            return;
+        }
+
+        // Multiple moves still possible — show highlights and wait
+        this._updateHighlights();
+    }
+
+    /**
+     * Clear all input state and reset board highlights
+     * @param {boolean} render - if false, skip re-rendering (caller will render)
+     */
+    _clearInputState(render = true) {
+        this._selectedMask = 0;
         this.partialPath = [];
-        this.boardUI.setPartialPath([]);
-        this.boardUI.setLegalMoves(this.legalMoves);
+        this.clickedSquares = new Set();
+        this.boardUI.selectedSquare = null;
+        this.boardUI.partialPath = [];
+        this.boardUI.outOfOrderClicks = [];
+        this.boardUI.flexibleHighlights = [];
+        if (render) {
+            this.boardUI.setLegalMoves(this.legalMoves);
+        } else {
+            this.boardUI.legalMoves = this.legalMoves;
+        }
     }
 
     /**
@@ -323,9 +405,13 @@ export class GameController {
 
         // Make the move
         const newBoard = await this.engine.makeMove(move);
-        // Clear partial path before updating board (no render yet)
+        // Clear input state before updating board (no render yet)
+        this._selectedMask = 0;
         this.partialPath = [];
+        this.clickedSquares = new Set();
         this.boardUI.partialPath = [];
+        this.boardUI.outOfOrderClicks = [];
+        this.boardUI.flexibleHighlights = [];
         this._updateFromBoard(newBoard);
         this.boardUI.setSelected(null);
         this.boardUI.setLastMove(move.from, move.to);
@@ -454,7 +540,8 @@ export class GameController {
                 const mateIn = Math.ceil((30000 - Math.abs(result.score)) / 2);
                 scoreStr = result.score > 0 ? `M${mateIn}` : `-M${mateIn}`;
             } else {
-                scoreStr = (result.score / 100).toFixed(2);
+                const val = (result.score / 100).toFixed(2);
+                scoreStr = result.score > 0 ? `+${val}` : val;
             }
         }
 
@@ -498,8 +585,7 @@ export class GameController {
 
         const board = await this.engine.getBoard();
         this._updateFromBoard(board);
-        this.partialPath = [];
-        this.boardUI.setPartialPath([]);
+        this._clearInputState();
         this.boardUI.setSelected(null);
         this.boardUI.clearLastMove();
 
@@ -542,8 +628,7 @@ export class GameController {
         // Make the move on the engine
         const newBoard = await this.engine.makeMove(entry.move);
         this._updateFromBoard(newBoard);
-        this.partialPath = [];
-        this.boardUI.setPartialPath([]);
+        this._clearInputState();
         this.boardUI.setSelected(null);
         this.boardUI.setLastMove(entry.move.from, entry.move.to);
 
@@ -573,8 +658,7 @@ export class GameController {
         this.currentIndex = -1;
         this.gameOver = false;
         this.winner = null;
-        this.partialPath = [];
-        this.boardUI.setPartialPath([]);
+        this._clearInputState();
         this.boardUI.setSelected(null);
         this.boardUI.clearLastMove();
 

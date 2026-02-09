@@ -2,9 +2,9 @@
  * Main entry point for the checkers web app
  */
 
-import { GameController } from './game-controller.js?v=20260208g';
-import { getEngine } from './engine-api.js?v=20260208g';
-import { TablebaseLoader, loadNNModelFile } from './tablebase-loader.js?v=20260208g';
+import { GameController } from './game-controller.js?v=20260208m';
+import { getEngine } from './engine-api.js?v=20260208l';
+import { TablebaseLoader, loadNNModelFile } from './tablebase-loader.js?v=20260208l';
 
 // Global state
 let gameController = null;
@@ -809,7 +809,7 @@ function updateSearchInfo(info) {
         } else {
             npsStr = nps > 0 ? nps.toString() : '-';
         }
-        summaryEl.textContent = `${depth}. ${score} nodes:${nodesStr} nps:${npsStr}`;
+        summaryEl.innerHTML = `${depth}. ${score} <span class="search-label">nodes:</span> ${nodesStr} <span class="search-label">nps:</span> ${npsStr}`;
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
 }

@@ -67,7 +67,7 @@ function rowColToSquare(canvasRow, col) {
 }
 
 // Find the captured square between two landing squares in a capture move
-function getCapturedSquare(fromSq, toSq) {
+export function getCapturedSquare(fromSq, toSq) {
     const from = squareToRowCol(fromSq);
     const to = squareToRowCol(toSq);
 
@@ -77,6 +77,26 @@ function getCapturedSquare(fromSq, toSq) {
 
     // Convert back to square number
     return rowColToSquare(midRow, midCol);
+}
+
+// Find captured piece between two path squares by scanning the diagonal
+// for an opponent piece, skipping any already-captured pieces
+function findCapturedOnDiagonal(fromSq, toSq, opponentBits, excludeSet) {
+    const from = squareToRowCol(fromSq);
+    const to = squareToRowCol(toSq);
+    const dRow = Math.sign(to.row - from.row);
+    const dCol = Math.sign(to.col - from.col);
+    let r = from.row + dRow;
+    let c = from.col + dCol;
+    while (r !== to.row || c !== to.col) {
+        const sq = rowColToSquare(r, c);
+        if (sq > 0 && !excludeSet.has(sq) && (opponentBits & (1 << (sq - 1)))) {
+            return sq;
+        }
+        r += dRow;
+        c += dCol;
+    }
+    return 0;
 }
 
 export class BoardUI {
@@ -98,6 +118,8 @@ export class BoardUI {
         this.lastMove = null;        // Last move made (for highlighting)
         this.flipped = false;        // Board orientation
         this.partialPath = [];       // Squares in current partial capture path
+        this.outOfOrderClicks = [];  // Squares clicked out of path order
+        this.flexibleHighlights = []; // Squares to highlight green (flexible input)
 
         // Colors
         this.colors = {
@@ -111,6 +133,8 @@ export class BoardUI {
             legalMove: 'rgba(0, 255, 0, 0.4)',
             lastMove: 'rgba(155, 199, 0, 0.4)',
             partialPath: 'rgba(255, 165, 0, 0.5)',  // Orange for intermediate capture squares
+            selectedOutline: 'rgba(255, 0, 0, 0.85)',   // Red outline for selected squares
+            validOutline: 'rgba(255, 165, 0, 0.85)',     // Orange outline for valid next squares
             kingMark: '#FFD700'
         };
 
@@ -148,6 +172,10 @@ export class BoardUI {
      */
     setLegalMoves(moves) {
         this.legalMoves = moves || [];
+        // Clear flexible input highlights — they're tied to the old move set
+        this.outOfOrderClicks = [];
+        this.flexibleHighlights = [];
+        this.partialPath = [];
         this.render();
     }
 
@@ -180,6 +208,14 @@ export class BoardUI {
      */
     setPartialPath(path) {
         this.partialPath = path || [];
+        this.render();
+    }
+
+    /**
+     * Set out-of-order click squares for highlighting
+     */
+    setOutOfOrderClicks(squares) {
+        this.outOfOrderClicks = squares || [];
         this.render();
     }
 
@@ -249,9 +285,12 @@ export class BoardUI {
             movingPieceIsWhite = (this.white & bit) !== 0;
             movingPieceIsKing = (this.kings & bit) !== 0;
 
-            // Calculate captured squares from the path
+            // Calculate captured squares by scanning diagonals for opponent pieces
+            const opponentBits = movingPieceIsWhite ? this.black : this.white;
             for (let i = 0; i < this.partialPath.length - 1; i++) {
-                const captured = getCapturedSquare(this.partialPath[i], this.partialPath[i + 1]);
+                const captured = findCapturedOnDiagonal(
+                    this.partialPath[i], this.partialPath[i + 1],
+                    opponentBits, capturedSquares);
                 if (captured > 0) {
                     capturedSquares.add(captured);
                 }
@@ -263,23 +302,22 @@ export class BoardUI {
             }
         }
 
-        // Highlight selected square (original position of piece)
+        // Highlight selected square (original position of piece, yellow fill)
         if (this.selectedSquare) {
             this._highlightSquare(this.selectedSquare, this.colors.selected);
         }
 
-        // Highlight legal move destinations (next valid squares to click)
-        if (this.partialPath && this.partialPath.length > 0 && this.legalMoves.length > 0) {
-            // When in partial path mode, highlight from current position
-            const currentPos = this.partialPath[this.partialPath.length - 1];
-            const movesFromCurrent = this.legalMoves.filter(m => m.from === currentPos);
-            for (const move of movesFromCurrent) {
-                this._highlightSquare(move.to, this.colors.legalMove);
+        // Red outlines on selected/clicked squares
+        if (this.outOfOrderClicks && this.outOfOrderClicks.length > 0) {
+            for (const sq of this.outOfOrderClicks) {
+                this._outlineSquare(sq, this.colors.selectedOutline);
             }
-        } else if (this.selectedSquare && this.legalMoves.length > 0) {
-            const movesFromSelected = this.legalMoves.filter(m => m.from === this.selectedSquare);
-            for (const move of movesFromSelected) {
-                this._highlightSquare(move.to, this.colors.legalMove);
+        }
+
+        // Orange outlines on valid next squares (flexible input)
+        if (this.flexibleHighlights && this.flexibleHighlights.length > 0) {
+            for (const sq of this.flexibleHighlights) {
+                this._outlineSquare(sq, this.colors.validOutline);
             }
         }
 
@@ -328,6 +366,25 @@ export class BoardUI {
 
         this.ctx.fillStyle = color;
         this.ctx.fillRect(x, y, this.squareSize, this.squareSize);
+    }
+
+    /**
+     * Draw an outline around a square
+     */
+    _outlineSquare(square, color, lineWidth = 3) {
+        if (!square || square < 1 || square > 32) return;
+
+        const { row, col } = squareToRowCol(square);
+        const displayRow = this.flipped ? 7 - row : row;
+        const displayCol = this.flipped ? 7 - col : col;
+        const x = displayCol * this.squareSize;
+        const y = displayRow * this.squareSize;
+        const inset = lineWidth / 2;
+
+        this.ctx.strokeStyle = color;
+        this.ctx.lineWidth = lineWidth;
+        this.ctx.strokeRect(x + inset, y + inset,
+            this.squareSize - lineWidth, this.squareSize - lineWidth);
     }
 
     /**
