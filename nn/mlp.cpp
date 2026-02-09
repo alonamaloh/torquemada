@@ -375,41 +375,4 @@ int MLP::evaluate(const Board& board, int draw_score) const {
     return static_cast<int>(expected);
 }
 
-int MLP::evaluate_dtm(const Board& board) const {
-    alignas(32) float features[128];
-    board_to_features(board, features);
-
-    float logits[15];
-    forward(features, logits);
-
-    float probs[15];
-    softmax(logits, probs, 15);
-
-    // DTM class midpoints (in moves)
-    // Classes 0-6: WIN_1, WIN_2_3, WIN_4_7, WIN_8_15, WIN_16_31, WIN_32_63, WIN_64_127
-    // Class 7: DRAW
-    // Classes 8-14: LOSS_64_127, LOSS_32_63, LOSS_16_31, LOSS_8_15, LOSS_4_7, LOSS_2_3, LOSS_1
-    static const int dtm_midpoints[] = {1, 2, 5, 11, 23, 47, 95, 0, 95, 47, 23, 11, 5, 2, 1};
-
-    // Compute expected score using formula: WIN = 20000 - 10*M, LOSS = -(20000 - 10*M)
-    float expected = 0.0f;
-    for (int c = 0; c < 15; ++c) {
-        int m = dtm_midpoints[c];
-        int score;
-        if (c < 7) {
-            // WIN classes
-            score = 20000 - 10 * m;
-        } else if (c == 7) {
-            // DRAW
-            score = 0;
-        } else {
-            // LOSS classes
-            score = -(20000 - 10 * m);
-        }
-        expected += probs[c] * score;
-    }
-
-    return static_cast<int>(expected);
-}
-
 } // namespace nn

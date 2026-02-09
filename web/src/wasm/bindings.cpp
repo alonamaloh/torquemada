@@ -169,9 +169,8 @@ namespace {
 
     WasmDTMTablebaseManager g_tb_manager;
 
-    // Neural network models
+    // Neural network model
     std::unique_ptr<nn::MLP> g_nn_model;
-    std::unique_ptr<nn::MLP> g_dtm_nn_model;
 
     // Opening book
     struct BookMove {
@@ -183,7 +182,7 @@ namespace {
 }
 
 // Load neural network model from typed array
-void loadNNModel(val typed_array, bool is_dtm_model) {
+void loadNNModel(val typed_array) {
     unsigned int length = typed_array["length"].as<unsigned int>();
 
     // Copy data to a temporary file (Emscripten's virtual filesystem)
@@ -193,18 +192,14 @@ void loadNNModel(val typed_array, bool is_dtm_model) {
     }
 
     // Write to virtual filesystem
-    const char* path = is_dtm_model ? "/tmp/dtm_model.bin" : "/tmp/nn_model.bin";
+    const char* path = "/tmp/nn_model.bin";
     FILE* f = fopen(path, "wb");
     if (f) {
         fwrite(buffer.data(), 1, buffer.size(), f);
         fclose(f);
 
         try {
-            if (is_dtm_model) {
-                g_dtm_nn_model = std::make_unique<nn::MLP>(path);
-            } else {
-                g_nn_model = std::make_unique<nn::MLP>(path);
-            }
+            g_nn_model = std::make_unique<nn::MLP>(path);
         } catch (...) {
             // Failed to load model
         }
@@ -223,10 +218,6 @@ bool hasTablebases() {
 // Check if NN models are loaded
 bool hasNNModel() {
     return g_nn_model != nullptr;
-}
-
-bool hasDTMNNModel() {
-    return g_dtm_nn_model != nullptr;
 }
 
 // Load opening book from .cbook text format
@@ -597,10 +588,8 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     }
 
     // Set up evaluation function (no noise - variety handled by search)
-    auto eval_func = [piece_count](const Board& board, int /*ply*/) -> int {
-        if (piece_count <= 7 && g_dtm_nn_model) {
-            return g_dtm_nn_model->evaluate(board, 0);
-        } else if (g_nn_model) {
+    auto eval_func = [](const Board& board, int /*ply*/) -> int {
+        if (g_nn_model) {
             return g_nn_model->evaluate(board, 0);
         } else {
             int white_men = std::popcount(board.whitePawns());
@@ -611,7 +600,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
         }
     };
 
-    search::Searcher searcher("", 0, "", "");
+    search::Searcher searcher("", 0);
     searcher.set_eval(eval_func);
 
     // Reset and set stop flag for this search
@@ -724,7 +713,6 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("hasTablebases", &hasTablebases);
     function("hasNNModel", &hasNNModel);
     function("getEngineVersion", &getEngineVersion);
-    function("hasDTMNNModel", &hasDTMNNModel);
     function("stopSearch", &stopSearch);
     function("getStopFlagAddress", &getStopFlagAddress);
     function("loadOpeningBook", &loadOpeningBook);

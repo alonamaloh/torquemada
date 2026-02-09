@@ -181,7 +181,6 @@ void engine_move(GameState& state, search::Searcher& searcher, bool white_to_mov
 int main(int argc, char** argv) {
   std::string tb_dir = "/home/alvaro/claude/damas";
   std::string nn_model = "";
-  std::string dtm_nn_model = "";
   std::uint64_t nodes = 100000;
   int tb_limit = 7;  // Use tablebases for positions with this many pieces or fewer
   int draw_score = 0;  // Value of a draw from white's perspective
@@ -191,8 +190,6 @@ int main(int argc, char** argv) {
     std::string arg = argv[i];
     if (arg == "--model" && i + 1 < argc) {
       nn_model = argv[++i];
-    } else if (arg == "--dtm-model" && i + 1 < argc) {
-      dtm_nn_model = argv[++i];
     } else if (arg == "--tb" && i + 1 < argc) {
       tb_dir = argv[++i];
     } else if (arg == "--no-tb") {
@@ -207,8 +204,7 @@ int main(int argc, char** argv) {
     } else if (arg == "-h" || arg == "--help") {
       std::cout << "Usage: " << argv[0] << " [options]\n"
                 << "Options:\n"
-                << "  --model FILE      Neural network model (general eval)\n"
-                << "  --dtm-model FILE  DTM specialist model (endgame eval)\n"
+                << "  --model FILE      Neural network model\n"
                 << "  --tb PATH         Tablebase directory (default: /home/alvaro/claude/damas)\n"
                 << "  --tb-limit N      Use tablebases for N pieces or fewer (default: 7)\n"
                 << "  --no-tb           Disable tablebases (use NN only)\n"
@@ -235,13 +231,10 @@ int main(int argc, char** argv) {
   }
 
   if (!nn_model.empty()) {
-    std::cout << "  General model: " << nn_model << "\n";
-  }
-  if (!dtm_nn_model.empty()) {
-    std::cout << "  DTM NN model: " << dtm_nn_model << "\n";
+    std::cout << "  Model: " << nn_model << "\n";
   }
 
-  search::Searcher searcher(tb_dir, tb_limit, nn_model, dtm_nn_model);
+  search::Searcher searcher(tb_dir, tb_limit, nn_model);
   searcher.set_tt_size(64);
   searcher.set_verbose(true);
   searcher.set_stop_flag(&g_stop_requested);

@@ -198,7 +198,6 @@ static constexpr double VIRTUAL_LOSS = 3000.0;
 int main(int argc, char** argv) {
   std::string tb_dir = "/home/alvaro/claude/damas";
   std::string nn_model;
-  std::string dtm_nn_model;
   std::string book_file = "opening.book";
   uint64_t nodes = 10000000;
   double c_puct = 1000.0;
@@ -217,8 +216,6 @@ int main(int argc, char** argv) {
     std::string arg = argv[i];
     if (arg == "--model" && i + 1 < argc) {
       nn_model = argv[++i];
-    } else if (arg == "--dtm-model" && i + 1 < argc) {
-      dtm_nn_model = argv[++i];
     } else if (arg == "--tb" && i + 1 < argc) {
       tb_dir = argv[++i];
     } else if (arg == "--no-tb") {
@@ -253,7 +250,6 @@ int main(int argc, char** argv) {
                 << "Generate an opening book using PUCT-based exploration\n\n"
                 << "Options:\n"
                 << "  --model FILE       Neural network model\n"
-                << "  --dtm-model FILE   DTM specialist model\n"
                 << "  --tb PATH          Tablebase directory (default: /home/alvaro/claude/damas)\n"
                 << "  --no-tb            Disable tablebases\n"
                 << "  --nodes N          Node limit for search (default: 10000000)\n"
@@ -293,7 +289,6 @@ int main(int argc, char** argv) {
   std::cout << "Book file: " << book_file << "\n";
 
   if (!nn_model.empty()) std::cout << "Model: " << nn_model << "\n";
-  if (!dtm_nn_model.empty()) std::cout << "DTM model: " << dtm_nn_model << "\n";
   if (!tb_dir.empty()) std::cout << "Tablebases: " << tb_dir << "\n";
 
   // Load tablebases once, shared across all threads (read-only after preload)
@@ -307,7 +302,7 @@ int main(int argc, char** argv) {
   std::vector<std::unique_ptr<search::Searcher>> searchers;
   for (int i = 0; i < num_threads; ++i) {
     auto s = std::make_unique<search::Searcher>(
-        dtm_manager.get(), tb_limit, nn_model, dtm_nn_model);
+        dtm_manager.get(), tb_limit, nn_model);
     s->set_tt_size(64);
     s->set_verbose(false);
     s->set_draw_score(draw_score);

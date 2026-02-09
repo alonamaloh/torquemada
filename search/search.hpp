@@ -145,17 +145,14 @@ public:
   // tb_directory: path to directory containing dtm_*.bin files
   // tb_piece_limit: use DTM tablebases for positions with this many pieces or fewer
   // nn_model_path: path to neural network model (.bin file), empty for random eval
-  // dtm_nn_model_path: path to DTM specialist model (.bin file), for 6-7 piece positions
   explicit Searcher(const std::string& tb_directory = "", int tb_piece_limit = 7,
-                    const std::string& nn_model_path = "",
-                    const std::string& dtm_nn_model_path = "");
+                    const std::string& nn_model_path = "");
 
   // Construct with pre-loaded external DTM tablebase manager (non-owning, const).
   // The manager must outlive this Searcher and be preloaded before parallel use.
   // Using const pointer guarantees thread-safe read-only access.
   Searcher(const tablebase::DTMTablebaseManager* dtm_tb, int tb_piece_limit,
-           const std::string& nn_model_path = "",
-           const std::string& dtm_nn_model_path = "");
+           const std::string& nn_model_path = "");
 
   ~Searcher();
 
@@ -271,8 +268,7 @@ private:
   int tb_piece_limit_;  // Use DTM tablebases when <= this many pieces
 
   // Neural network evaluation
-  std::unique_ptr<nn::MLP> nn_model_;       // General evaluation (8+ pieces)
-  std::unique_ptr<nn::MLP> dtm_nn_model_;   // DTM specialist (6-7 pieces)
+  std::unique_ptr<nn::MLP> nn_model_;
 
   // Verbose output
   bool verbose_ = false;

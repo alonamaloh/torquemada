@@ -77,7 +77,7 @@ int random_eval(const Board& board, int /*ply*/) {
 }
 
 Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit,
-                   const std::string& nn_model_path, const std::string& dtm_nn_model_path)
+                   const std::string& nn_model_path)
     : tt_(64), eval_(random_eval), tb_piece_limit_(tb_piece_limit) {
   if (!tb_directory.empty() && tb_piece_limit > 0) {
     dtm_manager_owned_ = std::make_unique<tablebase::DTMTablebaseManager>(tb_directory);
@@ -85,62 +85,21 @@ Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit,
     dtm_manager_ = dtm_manager_owned_.get();
   }
 
-  // Load neural networks if paths provided
   if (!nn_model_path.empty()) {
     nn_model_ = std::make_unique<nn::MLP>(nn_model_path);
-  }
-  if (!dtm_nn_model_path.empty()) {
-    dtm_nn_model_ = std::make_unique<nn::MLP>(dtm_nn_model_path);
-  }
-
-  // Set up evaluation function based on available models
-  if (nn_model_ && dtm_nn_model_) {
-    // Use endgame model for 6-7 pieces, general model for 8+
-    eval_ = [this](const Board& board, int ply) {
-      int piece_count = std::popcount(board.allPieces());
-      if (piece_count <= 7) {
-        return dtm_nn_model_->evaluate(board, effective_draw_score(ply));
-      }
-      return nn_model_->evaluate(board, effective_draw_score(ply));
-    };
-  } else if (nn_model_) {
     eval_ = [this](const Board& board, int ply) {
       return nn_model_->evaluate(board, effective_draw_score(ply));
-    };
-  } else if (dtm_nn_model_) {
-    eval_ = [this](const Board& board, int ply) {
-      return dtm_nn_model_->evaluate(board, effective_draw_score(ply));
     };
   }
 }
 
 Searcher::Searcher(const tablebase::DTMTablebaseManager* dtm_tb, int tb_piece_limit,
-                   const std::string& nn_model_path, const std::string& dtm_nn_model_path)
+                   const std::string& nn_model_path)
     : tt_(64), eval_(random_eval), dtm_manager_(dtm_tb), tb_piece_limit_(tb_piece_limit) {
-  // Load neural networks if paths provided
   if (!nn_model_path.empty()) {
     nn_model_ = std::make_unique<nn::MLP>(nn_model_path);
-  }
-  if (!dtm_nn_model_path.empty()) {
-    dtm_nn_model_ = std::make_unique<nn::MLP>(dtm_nn_model_path);
-  }
-
-  // Set up evaluation function based on available models
-  if (nn_model_ && dtm_nn_model_) {
-    eval_ = [this](const Board& board, int ply) {
-      int piece_count = std::popcount(board.allPieces());
-      if (piece_count <= 7) {
-        return dtm_nn_model_->evaluate(board, effective_draw_score(ply));
-      }
-      return nn_model_->evaluate(board, effective_draw_score(ply));
-    };
-  } else if (nn_model_) {
     eval_ = [this](const Board& board, int ply) {
       return nn_model_->evaluate(board, effective_draw_score(ply));
-    };
-  } else if (dtm_nn_model_) {
-    eval_ = [this](const Board& board, int ply) {
-      return dtm_nn_model_->evaluate(board, effective_draw_score(ply));
     };
   }
 }

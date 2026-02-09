@@ -22,10 +22,6 @@ public:
     // Get raw output probabilities [loss, draw, win] (for 3-class WDL model)
     void predict_proba(const Board& board, float& p_loss, float& p_draw, float& p_win) const;
 
-    // Evaluate using DTM model (15-class output)
-    // Returns score: positive = winning, negative = losing, magnitude ~ 20000 - 10*DTM
-    int evaluate_dtm(const Board& board) const;
-
     // Get number of parameters
     std::size_t num_parameters() const;
 
