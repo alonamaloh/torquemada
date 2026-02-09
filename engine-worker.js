@@ -3,8 +3,9 @@
  * Handles WASM module initialization and search requests
  */
 
-// Import the WASM module
-importScripts('./engine.js');
+// Import the WASM module (propagate cache-busting version from worker URL)
+const _workerV = new URL(self.location.href).searchParams.get('v') || '';
+importScripts(_workerV ? `./engine.js?v=${_workerV}` : './engine.js');
 
 let engine = null;
 let board = null;
