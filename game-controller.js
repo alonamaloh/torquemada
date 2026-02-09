@@ -358,6 +358,7 @@ export class GameController {
         this.boardUI.partialPath = [];
         this.boardUI.outOfOrderClicks = [];
         this.boardUI.flexibleHighlights = [];
+        this.boardUI.lastMove = null;
         if (render) {
             this.boardUI.setLegalMoves(this.legalMoves);
         } else {
