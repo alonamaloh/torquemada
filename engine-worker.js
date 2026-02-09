@@ -128,8 +128,10 @@ async function init() {
         // First, init tablebase sync handles (fast)
         await initTablebaseSyncHandles();
 
-        // Then init WASM engine
-        engine = await CheckersEngine();
+        // Then init WASM engine (with cache busting for .wasm and pthread worker)
+        engine = await CheckersEngine({
+            locateFile: (path) => _workerV ? `./${path}?v=${_workerV}` : `./${path}`
+        });
 
         // Log engine version for debugging cache issues
         const version = engine.getEngineVersion();
