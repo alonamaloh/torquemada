@@ -18,6 +18,7 @@
 #include <mutex>
 #include <iostream>
 #include <iomanip>
+#include <unordered_map>
 #include <vector>
 #include <bit>
 
@@ -47,6 +48,8 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
   Board board;  // Starting position
   int ply = 0;
   GamePositions game_positions;  // Positions from this game (fixed-size, no heap allocation)
+  std::unordered_map<std::uint64_t, int> position_counts;
+  position_counts[board.position_hash()] = 1;
 
   // Phase 1: Random opening
   while (ply < random_plies) {
@@ -60,6 +63,10 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
     std::uint64_t idx = rng() % moves.size();
     board = makeMove(board, moves[idx]);
     ply++;
+
+    if (++position_counts[board.position_hash()] >= 3) {
+      return 0;  // Draw by repetition during random opening
+    }
   }
 
   // Phase 2: Play with search until tablebase or game end
@@ -127,6 +134,15 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
 
     board = next_board;
     ply++;
+
+    // Check for draw by threefold repetition
+    if (++position_counts[board.position_hash()] >= 3) {
+      for (auto& pos : game_positions) {
+        pos.outcome = 0;
+        positions.push_back(pos);
+      }
+      return 0;
+    }
 
     if (ply > 500) {
       for (auto& pos : game_positions) {

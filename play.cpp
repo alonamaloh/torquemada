@@ -18,6 +18,7 @@
 #include <csignal>
 #include <iostream>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 // Global stop flag for SIGINT handling
@@ -31,11 +32,17 @@ void sigint_handler(int) {
 struct GameState {
   Board board;
   std::vector<Board> history;  // For undo
+  std::unordered_map<std::uint64_t, int> position_counts;  // For threefold repetition
   bool engine_plays_white = false;
   bool engine_plays_black = true;  // Engine plays black by default
   bool two_player_mode = false;
   int ply = 0;
   std::uint64_t nodes = 100000;  // Search node limit
+
+  GameState() {
+    // Count initial position
+    position_counts[board.position_hash()] = 1;
+  }
 };
 
 // Print the board with side to move
@@ -176,6 +183,7 @@ void engine_move(GameState& state, search::Searcher& searcher, bool white_to_mov
   state.history.push_back(state.board);
   state.board = makeMove(state.board, result.best_move);
   state.ply++;
+  ++state.position_counts[state.board.position_hash()];
 }
 
 int main(int argc, char** argv) {
@@ -265,6 +273,18 @@ int main(int argc, char** argv) {
       break;
     }
 
+    // Check for draw by repetition
+    if (state.position_counts[state.board.position_hash()] >= 3) {
+      std::cout << "Draw by threefold repetition!\n";
+      break;
+    }
+
+    // Check for draw by 60 reversible moves
+    if (state.board.n_reversible >= 60) {
+      std::cout << "Draw by 60-move rule (no captures or pawn moves)!\n";
+      break;
+    }
+
     // Check if engine should play
     bool engine_turn = (!state.two_player_mode) &&
                        ((white_to_move && state.engine_plays_white) ||
@@ -303,6 +323,11 @@ int main(int argc, char** argv) {
       if (state.history.empty()) {
         std::cout << "Nothing to undo!\n";
       } else {
+        // Decrement position count for current position before undoing
+        auto it = state.position_counts.find(state.board.position_hash());
+        if (it != state.position_counts.end() && it->second > 0) {
+          --it->second;
+        }
         state.board = state.history.back();
         state.history.pop_back();
         state.ply--;
@@ -332,6 +357,7 @@ int main(int argc, char** argv) {
         state.history.push_back(state.board);
         state.board = makeMove(state.board, move);
         state.ply++;
+        ++state.position_counts[state.board.position_hash()];
       } else {
         std::cout << "Invalid move or command. Type '?' for legal moves.\n";
       }

@@ -11,6 +11,7 @@
 #include <iomanip>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <bit>
 
 // Generate a random opening position after N plies
@@ -32,6 +33,8 @@ int play_game(const Board& start, search::Searcher& white, search::Searcher& bla
               std::uint64_t max_nodes) {
     Board board = start;
     int ply = 0;
+    std::unordered_map<std::uint64_t, int> position_counts;
+    position_counts[board.position_hash()] = 1;
 
     while (true) {
         if (board.n_reversible >= 60) return 0;
@@ -59,6 +62,9 @@ int play_game(const Board& start, search::Searcher& white, search::Searcher& bla
 
         board = makeMove(board, result.best_move);
         ply++;
+
+        // Check for draw by threefold repetition
+        if (++position_counts[board.position_hash()] >= 3) return 0;
 
         if (ply > 500) return 0;
     }

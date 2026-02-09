@@ -299,6 +299,11 @@ struct JSBoard {
     int pieceCount() const {
         return std::popcount(board.allPieces());
     }
+
+    // Get reversible move counter (for 60-move draw rule)
+    int getNReversible() const {
+        return board.n_reversible;
+    }
 };
 
 // Move wrapper for JS
@@ -698,6 +703,7 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
         .function("getKings", &JSBoard::getKings)
         .function("isWhiteToMove", &JSBoard::isWhiteToMove)
         .function("pieceCount", &JSBoard::pieceCount)
+        .function("getNReversible", &JSBoard::getNReversible)
         .class_function("fromBitboards", &JSBoard::fromBitboards);
 
     // Free functions
