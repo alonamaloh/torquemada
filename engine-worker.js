@@ -216,7 +216,8 @@ function getBoardState() {
         black: board.getBlack(),
         kings: board.getKings(),
         whiteToMove: board.isWhiteToMove(),
-        pieceCount: board.pieceCount()
+        pieceCount: board.pieceCount(),
+        nReversible: board.getNReversible()
     };
 }
 

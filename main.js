@@ -80,7 +80,7 @@ async function init() {
         };
 
         gameController.onGameOver = (winner, reason) => {
-            showGameOver(winner);
+            showGameOver(winner, reason);
         };
 
         gameController.onThinkingStart = () => {
@@ -724,10 +724,17 @@ function updateMoveHistory() {
 /**
  * Show game over message
  */
-function showGameOver(winner) {
-    const message = winner === 'draw' ? 'Game drawn!' : `${winner.charAt(0).toUpperCase() + winner.slice(1)} wins!`;
-    // Could show a modal or alert
+function showGameOver(winner, reason) {
+    let message;
+    if (winner === 'draw') {
+        message = reason ? `Draw — ${reason}!` : 'Game drawn!';
+    } else {
+        const name = winner.charAt(0).toUpperCase() + winner.slice(1);
+        message = reason ? `${name} wins (${reason})!` : `${name} wins!`;
+    }
     console.log(message);
+    // Small delay so the board finishes rendering before the dialog appears
+    setTimeout(() => alert(message), 100);
 }
 
 /**

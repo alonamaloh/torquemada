@@ -25,6 +25,9 @@ export class GameController {
         this.useBook = true;         // Use opening book
         this.autoPlay = true;        // Engine plays automatically
 
+        // Position tracking for threefold repetition
+        this.positionCounts = new Map();  // key: "white,black,kings" → count
+
         // State flags
         this.isThinking = false;
         this.gameOver = false;
@@ -94,6 +97,7 @@ export class GameController {
         this.currentIndex = -1;
         this.gameOver = false;
         this.winner = null;
+        this.positionCounts = new Map();
         this.secondsLeft = 0;
         this._notifyTime();
         this._clearInputState();
@@ -104,6 +108,9 @@ export class GameController {
         const board = await this.engine.resetBoard();
         this._updateFromBoard(board);
 
+        // Count initial position
+        this._incrementPosition(board);
+
         // Get legal moves
         await this._updateLegalMoves();
 
@@ -111,6 +118,39 @@ export class GameController {
 
         // Engine never plays white at start (we switched above if needed)
         // So no need to trigger engine move here
+    }
+
+    /**
+     * Get a position key for repetition tracking.
+     * The engine stores the board flipped so side-to-move is always "white"
+     * internally, so the (white, black, kings) triple already encodes whose
+     * turn it is — no need to include whiteToMove separately.
+     */
+    _positionKey(board) {
+        return `${board.white},${board.black},${board.kings}`;
+    }
+
+    /**
+     * Increment position count and return the new count
+     */
+    _incrementPosition(board) {
+        const key = this._positionKey(board);
+        const count = (this.positionCounts.get(key) || 0) + 1;
+        this.positionCounts.set(key, count);
+        return count;
+    }
+
+    /**
+     * Decrement position count
+     */
+    _decrementPosition(board) {
+        const key = this._positionKey(board);
+        const count = (this.positionCounts.get(key) || 1) - 1;
+        if (count <= 0) {
+            this.positionCounts.delete(key);
+        } else {
+            this.positionCounts.set(key, count);
+        }
     }
 
     /**
@@ -131,6 +171,19 @@ export class GameController {
         if (this.legalMoves.length === 0) {
             const board = await this.engine.getBoard();
             this._setGameOver(board.whiteToMove ? 'black' : 'white', 'no moves');
+            return;
+        }
+
+        // Check for draw conditions
+        const board = await this.engine.getBoard();
+        if (board.nReversible >= 60) {
+            this._setGameOver('draw', '60 moves without progress');
+            return;
+        }
+        const key = this._positionKey(board);
+        if ((this.positionCounts.get(key) || 0) >= 3) {
+            this._setGameOver('draw', 'threefold repetition');
+            return;
         }
     }
 
@@ -145,7 +198,8 @@ export class GameController {
 
         // Format status message
         if (winner === 'draw') {
-            this._updateStatus('Draw!');
+            const msg = reason ? `Draw — ${reason}!` : 'Draw!';
+            this._updateStatus(msg);
         } else {
             const winnerName = winner.charAt(0).toUpperCase() + winner.slice(1);
             this._updateStatus(`${winnerName} wins!`);
@@ -408,6 +462,8 @@ export class GameController {
 
         // Make the move
         const newBoard = await this.engine.makeMove(move);
+        // Track position for repetition detection
+        this._incrementPosition(newBoard);
         // Clear input state before updating board (no render yet)
         this._selectedMask = 0;
         this.partialPath = [];
@@ -574,6 +630,10 @@ export class GameController {
         if (this.history.length === 0) return;
         await this.abortSearch();
 
+        // Decrement position count for current position before undoing
+        const currentBoard = await this.engine.getBoard();
+        this._decrementPosition(currentBoard);
+
         // Pop last move and save it for redo
         const last = this.history.pop();
         this.redoStack.push(last);
@@ -630,6 +690,8 @@ export class GameController {
 
         // Make the move on the engine
         const newBoard = await this.engine.makeMove(entry.move);
+        // Track position for repetition detection
+        this._incrementPosition(newBoard);
         this._updateFromBoard(newBoard);
         this._clearInputState();
         this.boardUI.setSelected(null);
@@ -661,6 +723,7 @@ export class GameController {
         this.currentIndex = -1;
         this.gameOver = false;
         this.winner = null;
+        this.positionCounts = new Map();
         this._clearInputState();
         this.boardUI.setSelected(null);
         this.boardUI.clearLastMove();
@@ -668,6 +731,9 @@ export class GameController {
         // Set the position in the engine
         const board = await this.engine.setBoard(white, black, kings, whiteToMove);
         this._updateFromBoard(board);
+
+        // Count initial position
+        this._incrementPosition(board);
 
         // Get legal moves
         await this._updateLegalMoves();
