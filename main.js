@@ -51,16 +51,9 @@ async function init() {
         try {
             // Try loading from local files first
             const nnData = await loadNNModelFile('./models/model_006.bin');
-            await engine.loadNNModel(nnData, false);
+            await engine.loadNNModel(nnData);
         } catch (err) {
             console.warn('Could not load NN model:', err);
-        }
-
-        try {
-            const dtmNNData = await loadNNModelFile('./models/endgame_wdl.bin');
-            await engine.loadNNModel(dtmNNData, true);
-        } catch (err) {
-            console.warn('Could not load DTM NN model:', err);
         }
 
         // Try to load opening book

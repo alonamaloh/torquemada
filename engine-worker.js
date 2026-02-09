@@ -158,9 +158,9 @@ async function init() {
 /**
  * Load neural network model
  */
-function loadNNModel(data, isDTMModel) {
+function loadNNModel(data) {
     if (!engine) return;
-    engine.loadNNModel(data, isDTMModel);
+    engine.loadNNModel(data);
 }
 
 /**
@@ -318,11 +318,10 @@ function parseMove(notation) {
  * Check if tablebases/models are loaded
  */
 function getLoadedStatus() {
-    if (!engine) return { tablebases: false, nnModel: false, dtmNNModel: false };
+    if (!engine) return { tablebases: false, nnModel: false };
     return {
         tablebases: tablebasesAvailable,
         nnModel: engine.hasNNModel(),
-        dtmNNModel: engine.hasDTMNNModel(),
         openingBook: engine.hasOpeningBook()
     };
 }
@@ -348,7 +347,7 @@ self.onmessage = function(e) {
                 return;
 
             case 'loadNNModel':
-                loadNNModel(data.data, data.isDTMModel);
+                loadNNModel(data.data);
                 response.success = true;
                 break;
 

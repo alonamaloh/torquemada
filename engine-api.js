@@ -115,10 +115,9 @@ export class EngineAPI {
     /**
      * Load a neural network model
      * @param {Uint8Array} data - Raw model data
-     * @param {boolean} isDTMModel - True if this is the DTM specialist model
      */
-    async loadNNModel(data, isDTMModel = false) {
-        return this.request('loadNNModel', { data, isDTMModel });
+    async loadNNModel(data) {
+        return this.request('loadNNModel', { data });
     }
 
     /**
