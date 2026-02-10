@@ -52,6 +52,11 @@ TimeControl TimeControl::with_nodes(std::uint64_t soft, std::uint64_t hard) {
   return tc;
 }
 
+double TimeControl::elapsed_seconds() const {
+  auto now = std::chrono::steady_clock::now();
+  return std::chrono::duration<double>(now - start_time_).count();
+}
+
 TimeControl TimeControl::with_time(double soft_seconds, double hard_seconds) {
   TimeControl tc;
   tc.soft_time_seconds = soft_seconds;
@@ -587,6 +592,113 @@ MultiSearchResult Searcher::search_multi(const Board& board, int max_depth,
   return result;
 }
 
+SearchResult Searcher::secondary_search(const Board& board, MoveList& root_moves,
+                                         const SearchResult& primary, int primary_depth,
+                                         int max_depth) {
+  // Check remaining time
+  double elapsed = tc_.elapsed_seconds();
+  double remaining = tc_.hard_time_seconds - elapsed;
+  if (remaining < 0.5) return primary;
+
+  bool is_winning = (primary.score >= SCORE_SPECIAL && primary.score <= SCORE_TB_WIN);
+
+  MoveList* search_moves = &root_moves;
+  MoveList winning_moves;
+
+  if (is_winning) {
+    // Classify which root moves maintain the win via null-window searches
+    // WDL probes are still ENABLED here so the classification works correctly
+
+    // Primary best move is known to win
+    winning_moves.push_back(primary.best_move);
+
+    // Store root position hash for repetition detection
+    pos_hash_history_[0] = board.position_hash();
+
+    // Test each other root move with a null-window search
+    for (const Move& move : root_moves) {
+      if (move == primary.best_move) {
+        continue;  // Skip the already-classified best move
+      }
+
+      try {
+        Board child = makeMove(board, move);
+        int score = -negamax(child, primary_depth - 1, -SCORE_SPECIAL - 1, -SCORE_SPECIAL, 1);
+        if (score > SCORE_SPECIAL) {
+          winning_moves.push_back(move);
+        }
+      } catch (const SearchInterrupted&) {
+        // Time ran out during classification — use what we have
+        break;
+      }
+    }
+
+    // If only one winning move, no choice to make
+    if (winning_moves.size() <= 1) {
+      return primary;
+    }
+
+    search_moves = &winning_moves;
+
+    // Recompute remaining time after classification
+    remaining = tc_.hard_time_seconds - tc_.elapsed_seconds();
+    if (remaining < 0.5) {
+      SearchResult r = primary;
+      r.best_move = winning_moves[0];
+      return r;
+    }
+  }
+
+  // Now disable WDL probes for the secondary iterative deepening
+  // RAII guard saves and restores wdl_probe_func_ on all exit paths
+  auto saved_wdl = std::move(wdl_probe_func_);
+  wdl_probe_func_ = nullptr;
+  struct WDLGuard {
+    WDLProbeFunc& dst;
+    WDLProbeFunc saved;
+    WDLGuard(WDLProbeFunc& d, WDLProbeFunc&& s) : dst(d), saved(std::move(s)) {}
+    ~WDLGuard() { dst = std::move(saved); }
+  } wdl_guard(wdl_probe_func_, std::move(saved_wdl));
+
+  // Clear TT to purge WDL-based scores that would cause cutoffs
+  // before the NN gets a chance to differentiate between moves
+  tt_.clear();
+  std::memset(killers_, 0, sizeof(killers_));
+  std::memset(history_, 0, sizeof(history_));
+  stats_ = SearchStats{};
+
+  tc_ = TimeControl::with_time(remaining * 0.4, remaining * 0.9);
+  tc_.start();
+
+  SearchResult secondary = is_winning ? primary : SearchResult{};
+  for (int depth = 1; depth <= max_depth; ++depth) {
+    try {
+      SearchResult r = search_root(board, *search_moves, depth);
+      r.depth = depth;
+      if (is_winning) {
+        secondary.best_move = r.best_move;
+        secondary.score = r.score;
+        secondary.pv = r.pv;
+        secondary.nodes += r.nodes;
+      } else {
+        secondary = r;
+      }
+    } catch (const SearchInterrupted&) {
+      break;
+    }
+
+    if (progress_callback_) {
+      SearchResult report = secondary;
+      report.depth = depth;
+      progress_callback_(report);
+    }
+
+    if (tc_.exceeded_soft(stats_.nodes)) break;
+  }
+
+  return secondary;
+}
+
 SearchResult Searcher::search(const Board& board, int max_depth, const TimeControl& tc) {
   stats_ = SearchStats{};
   tt_.new_search();
@@ -687,6 +799,16 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
     // Early exit if we found a forced mate or forced move
     if (is_mate_score(result.score) || result.nodes == 0) {
       break;
+    }
+
+    // WDL score detected — switch to secondary search immediately
+    if (wdl_probe_func_) {
+      bool is_wdl_score = (result.score <= -SCORE_SPECIAL) ||
+                          (result.score >= SCORE_SPECIAL && result.score <= SCORE_TB_WIN);
+      if (is_wdl_score) {
+        result = secondary_search(board, root_moves, result, result.depth, max_depth);
+        break;
+      }
     }
 
     // Stop if we've exceeded any soft limit

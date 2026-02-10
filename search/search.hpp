@@ -134,6 +134,9 @@ struct TimeControl {
   // Factory: time-based limits
   static TimeControl with_time(double soft_seconds, double hard_seconds = 0);
 
+  // Elapsed time since start() was called
+  double elapsed_seconds() const;
+
 private:
   std::chrono::steady_clock::time_point start_time_;
   static constexpr std::uint64_t CHECK_INTERVAL = 4096;
@@ -229,6 +232,13 @@ public:
   const SearchStats& stats() const { return stats_; }
 
 private:
+  // Secondary search for WDL tablebase positions
+  // After a primary search returns a WDL score, re-search with WDL disabled
+  // so the NN guides move selection among theoretically equivalent moves
+  SearchResult secondary_search(const Board& board, MoveList& root_moves,
+                                const SearchResult& primary, int primary_depth,
+                                int max_depth);
+
   // Root search at a fixed depth
   // root_moves is reordered to put the best move first
   SearchResult search_root(const Board& board, MoveList& root_moves, int depth);
