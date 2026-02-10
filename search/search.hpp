@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -91,6 +92,10 @@ using EvalFunc = std::function<int(const Board&, int ply)>;
 // Returns DTM value (DTM_UNKNOWN if not found)
 using DTMProbeFunc = std::function<tablebase::DTM(const Board&)>;
 
+// WDL probe function type for compressed WDL tablebases
+// Returns: 1=WIN, 0=DRAW, -1=LOSS, or nullopt if not found
+using WDLProbeFunc = std::function<std::optional<int>(const Board&)>;
+
 // Callback for iterative deepening progress updates
 // Called after each depth is completed with the current result
 using SearchProgressCallback = std::function<void(const SearchResult&)>;
@@ -166,6 +171,12 @@ public:
     tb_piece_limit_ = piece_limit;
   }
 
+  // Set a WDL probe function for compressed WDL tablebases (6-7 piece endgames)
+  void set_wdl_probe(WDLProbeFunc probe, int piece_limit) {
+    wdl_probe_func_ = std::move(probe);
+    wdl_piece_limit_ = piece_limit;
+  }
+
   // Set transposition table size in MB
   void set_tt_size(std::size_t mb) { tt_ = TranspositionTable(mb); }
 
@@ -233,9 +244,13 @@ private:
   // Continues searching beyond depth 0 if captures are available (quiescence)
   int negamax(const Board& board, int depth, int alpha, int beta, int ply);
 
-  // Probe tablebase if available
+  // Probe DTM tablebase if available
   // Returns true if position was found, sets score (adjusted for ply)
   bool probe_tb(const Board& board, int ply, int& score);
+
+  // Probe WDL tablebase if available (for 6-7 piece endgames)
+  // Returns true if position was found, sets score (adjusted for ply)
+  bool probe_wdl(const Board& board, int ply, int& score);
 
   // Order moves for better pruning
   void order_moves(MoveList& moves, const Board& board, const Move& tt_move);
@@ -266,6 +281,10 @@ private:
   // Custom DTM probe function (alternative to dtm_manager_)
   DTMProbeFunc dtm_probe_func_;
   int tb_piece_limit_;  // Use DTM tablebases when <= this many pieces
+
+  // WDL probe function for compressed WDL tablebases
+  WDLProbeFunc wdl_probe_func_;
+  int wdl_piece_limit_ = 0;  // Use WDL tablebases when <= this many pieces
 
   // Neural network evaluation
   std::unique_ptr<nn::MLP> nn_model_;

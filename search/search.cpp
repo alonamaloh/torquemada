@@ -148,6 +148,39 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   return true;
 }
 
+bool Searcher::probe_wdl(const Board& board, int ply, int& score) {
+  if (!wdl_probe_func_) return false;
+
+  int piece_count = std::popcount(board.allPieces());
+  if (piece_count > wdl_piece_limit_) return false;
+
+  // Don't probe if DTM covers this piece count (DTM is more precise)
+  if (piece_count <= tb_piece_limit_ && (dtm_manager_ || dtm_probe_func_)) return false;
+
+  auto result = wdl_probe_func_(board);
+  if (!result.has_value()) return false;
+
+  int wdl = *result;
+
+  if (wdl == 0) {
+    // DRAW: always trust
+    stats_.tb_hits++;
+    score = effective_draw_score(ply);
+    return true;
+  }
+
+  // WIN/LOSS: only trust when n_reversible == 0
+  if (board.n_reversible != 0) return false;
+
+  stats_.tb_hits++;
+  if (wdl > 0) {
+    score = SCORE_TB_WIN - ply;  // Prefer shorter paths to TB win
+  } else {
+    score = -SCORE_TB_WIN + ply;
+  }
+  return true;
+}
+
 int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int ply) {
   check_stop();  // Throws SearchInterrupted if we should stop
 
@@ -173,8 +206,12 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   }
 
   // Check for tablebase hit (before TT to get exact values)
+  // DTM first (exact distance-to-mate), then WDL (game-theoretic value)
   int tb_score;
   if (probe_tb(board, ply, tb_score)) {
+    return tb_score;
+  }
+  if (probe_wdl(board, ply, tb_score)) {
     return tb_score;
   }
 
