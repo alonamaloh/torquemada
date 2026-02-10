@@ -588,7 +588,13 @@ function setupEventHandlers() {
     // Download tablebases button
     const downloadBtn = document.getElementById('btn-download-tb');
     if (downloadBtn) {
-        downloadBtn.addEventListener('click', showDownloadDialog);
+        downloadBtn.addEventListener('click', () => showDownloadDialog('dtm'));
+    }
+
+    // Download CWDL tablebases button
+    const downloadCwdlBtn = document.getElementById('btn-download-cwdl');
+    if (downloadCwdlBtn) {
+        downloadCwdlBtn.addEventListener('click', () => showDownloadDialog('cwdl'));
     }
 
     // Edit mode button
@@ -639,8 +645,9 @@ function setupEventHandlers() {
 
 /**
  * Show tablebase download dialog
+ * @param {string} type - 'dtm' for 5-piece DTM, 'cwdl' for 6-7 piece WDL
  */
-async function showDownloadDialog() {
+async function showDownloadDialog(type = 'dtm') {
     const dialog = document.getElementById('download-dialog');
     if (!dialog) {
         alert('Tablebase download not available');
@@ -656,7 +663,14 @@ async function showDownloadDialog() {
 
     const progressEl = dialog.querySelector('.progress');
     const statusEl = dialog.querySelector('.status');
+    const titleEl = dialog.querySelector('h2');
     const cancelBtn = dialog.querySelector('.cancel-btn');
+
+    if (titleEl) {
+        titleEl.textContent = type === 'cwdl'
+            ? 'Downloading 6-7 Piece WDL Tables'
+            : 'Downloading 5-Piece DTM Tables';
+    }
 
     let cancelled = false;
     cancelBtn.onclick = () => {
@@ -665,7 +679,11 @@ async function showDownloadDialog() {
     };
 
     try {
-        await tablebaseLoader.downloadTablebases((loaded, total, file) => {
+        const downloadFn = type === 'cwdl'
+            ? tablebaseLoader.downloadCWDLTablebases.bind(tablebaseLoader)
+            : tablebaseLoader.downloadTablebases.bind(tablebaseLoader);
+
+        await downloadFn((loaded, total, file) => {
             if (cancelled) return;
             const pct = Math.round((loaded / total) * 100);
             if (progressEl) progressEl.style.width = `${pct}%`;
