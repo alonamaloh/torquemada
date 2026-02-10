@@ -113,6 +113,10 @@ int Searcher::dtm_to_score(tablebase::DTM dtm, int ply) {
   if (dtm == tablebase::DTM_DRAW) {
     return effective_draw_score(ply);
   }
+  if (dtm == tablebase::DTM_LOSS_TERMINAL) {
+    // Terminal loss: no legal moves, lost right now
+    return -SCORE_MATE + ply;
+  }
   if (dtm > 0) {
     // Win in dtm moves - convert to mate-like score
     // DTM is in "moves" (winning side's moves), score uses plies from root

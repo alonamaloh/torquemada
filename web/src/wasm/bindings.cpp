@@ -11,6 +11,7 @@
 #include <string>
 #include <sstream>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "../../../core/board.hpp"
 #include "../../../core/movegen.hpp"
@@ -176,118 +177,159 @@ namespace {
     // conjugate material via depth-1 search.
     class WasmCWDLTablebaseManager {
     public:
+        // Main entry point: look up WDL for any position (quiet or tense).
+        // Handles capture sequences, sub-tablebases, and conjugate trick.
         std::optional<int> lookup_wdl(const Board& board) const {
-            // Check if CWDL tablebases are available in JS
-            val cwdlAvail = val::global("cwdlAvailable");
-            if (cwdlAvail.isUndefined() || !cwdlAvail().as<bool>()) {
-                return std::nullopt;
-            }
-
             Material m = get_material(board);
 
-            // Terminal: opponent has no pieces
-            if (m.white_pieces() == 0) {
-                return -1;  // LOSS
+            // Terminal checks
+            if (m.white_pieces() == 0) return -1;  // LOSS
+            if (m.black_pieces() == 0) return 1;   // WIN
+
+            // For quiet positions, try direct or conjugate lookup
+            if (!has_captures(board)) {
+                return lookup_quiet(board);
             }
 
-            // Try direct lookup first
-            const CompressedTablebase* tb = get_table(material_key(m));
-            if (tb) {
-                return lookup_in_table(board, *tb);
-            }
-
-            // Try conjugate: flip the board and look up the flipped material
-            Material conj_m = flip(m);
-            const CompressedTablebase* conj_tb = get_table(material_key(conj_m));
-            if (conj_tb) {
-                return lookup_via_conjugate(board, *conj_tb);
-            }
-
-            return std::nullopt;
+            // Tense position: search through forced captures
+            return capture_search(board);
         }
 
     private:
+        // Cache with size limit to prevent OOM.
+        // 730 CWDL files × ~600KB avg = ~439 MB total, which exceeds WASM memory.
+        // Only a handful of material configs are needed per search position.
+        static constexpr std::size_t MAX_CACHE_ENTRIES = 100;
         mutable std::unordered_map<std::string, CompressedTablebase> cache_;
+        mutable std::unordered_set<std::string> not_found_;  // Keys with no file
 
         const CompressedTablebase* get_table(const std::string& key) const {
             // Check cache
             auto it = cache_.find(key);
             if (it != cache_.end()) {
-                return it->second.empty() ? nullptr : &it->second;
+                return &it->second;
+            }
+
+            // Check negative cache (keys we know have no file)
+            if (not_found_.count(key)) {
+                return nullptr;
             }
 
             // Load from JS
             val loadFile = val::global("loadCWDLFile");
             if (loadFile.isUndefined()) {
-                cache_[key] = CompressedTablebase{};
+                not_found_.insert(key);
                 return nullptr;
             }
 
             val data = loadFile(key);
             if (data.isNull() || data.isUndefined()) {
-                cache_[key] = CompressedTablebase{};
+                not_found_.insert(key);
                 return nullptr;
             }
 
-            // Copy JS Uint8Array to C++ buffer
+            // Evict all cached tables if we're at the limit.
+            // The working set for the current position will reload quickly.
+            if (cache_.size() >= MAX_CACHE_ENTRIES) {
+                cache_.clear();
+            }
+
+            // Bulk copy JS Uint8Array to C++ buffer via typed_memory_view
             unsigned int length = data["length"].as<unsigned int>();
             std::vector<std::uint8_t> buffer(length);
-            for (unsigned int i = 0; i < length; ++i) {
-                buffer[i] = data[i].as<std::uint8_t>();
-            }
+            val memoryView = val(typed_memory_view(length, buffer.data()));
+            memoryView.call<void>("set", data);
 
             CompressedTablebase tb = load_compressed_from_buffer(buffer.data(), buffer.size());
-            cache_[key] = std::move(tb);
-
-            return cache_[key].empty() ? nullptr : &cache_[key];
-        }
-
-        // Direct lookup: search through captures to reach quiet position, then index
-        std::optional<int> lookup_in_table(const Board& board,
-                                            const CompressedTablebase& tb) const {
-            Value v = lookup_with_capture_search(board, tb);
-            if (v == Value::UNKNOWN) return std::nullopt;
-            return value_to_wdl(v);
-        }
-
-        // Conjugate lookup: for each legal move, look up the child position
-        // in the conjugate table, then minimax the results
-        std::optional<int> lookup_via_conjugate(const Board& board,
-                                                 const CompressedTablebase& conj_tb) const {
-            MoveList moves;
-            generateMoves(board, moves);
-
-            if (moves.empty()) {
-                return -1;  // No moves = loss
+            if (tb.empty()) {
+                not_found_.insert(key);
+                return nullptr;
             }
 
-            int best = -2;  // Worse than any valid result
+            cache_[key] = std::move(tb);
+            return &cache_[key];
+        }
+
+        // Look up a quiet position directly in whatever table it belongs to
+        std::optional<int> lookup_quiet(const Board& board) const {
+            Material m = get_material(board);
+            if (m.white_pieces() == 0) return -1;
+            if (m.black_pieces() == 0) return 1;
+
+            // Try direct table
+            const CompressedTablebase* tb = get_table(material_key(m));
+            if (tb) {
+                std::size_t idx = board_to_index(board, m);
+                Value v = lookup_compressed(*tb, idx);
+                if (v == Value::UNKNOWN) return std::nullopt;
+                return value_to_wdl(v);
+            }
+
+            // Try conjugate: generate all moves, look up each child
+            Material conj_m = flip(m);
+            const CompressedTablebase* conj_tb = get_table(material_key(conj_m));
+            if (conj_tb) {
+                return conjugate_search(board);
+            }
+
+            return std::nullopt;
+        }
+
+        // Negamax through forced capture sequences, using multi-table lookup
+        // for quiet leaf positions (handles material changes from captures)
+        std::optional<int> capture_search(const Board& board) const {
+            MoveList moves;
+            generateMoves(board, moves);
+            if (moves.empty()) return -1;
+
+            int best = -2;
             for (const Move& move : moves) {
                 Board child = makeMove(board, move);
+                if (child.white == 0) return 1;  // Captured all opponent pieces
 
-                // Check terminal
-                if (child.white == 0) {
-                    return 1;  // Captured all opponent pieces = win
+                std::optional<int> child_wdl;
+                if (has_captures(child)) {
+                    child_wdl = capture_search(child);  // Continue capture sequence
+                } else {
+                    child_wdl = lookup_quiet(child);    // Quiet: look up in table
                 }
+                if (!child_wdl) return std::nullopt;
 
-                // The child is from the opponent's perspective (board is flipped).
-                // The conjugate table stores the position for the flipped material.
-                Value v = lookup_with_capture_search(child, conj_tb);
-                if (v == Value::UNKNOWN) return std::nullopt;
-
-                int child_wdl = value_to_wdl(v);
-                int score = -child_wdl;  // Negate for our perspective
+                int score = -(*child_wdl);
                 if (score > best) best = score;
-                if (best == 1) break;  // Can't do better than WIN
+                if (best == 1) break;
             }
 
             return (best > -2) ? std::optional<int>(best) : std::nullopt;
         }
 
-        // Look up a position in a CWDL table, handling capture sequences
-        Value lookup_with_capture_search(const Board& board,
-                                          const CompressedTablebase& tb) const {
-            return lookup_compressed_with_search(board, tb);
+        // Conjugate lookup: generate all legal moves, look up each child
+        // position via lookup_wdl (which handles captures/sub-tables properly)
+        std::optional<int> conjugate_search(const Board& board) const {
+            MoveList moves;
+            generateMoves(board, moves);
+            if (moves.empty()) return -1;
+
+            int best = -2;
+            for (const Move& move : moves) {
+                Board child = makeMove(board, move);
+                if (child.white == 0) return 1;
+
+                // Child has conjugate material — recursively look it up
+                std::optional<int> child_wdl;
+                if (has_captures(child)) {
+                    child_wdl = capture_search(child);
+                } else {
+                    child_wdl = lookup_quiet(child);
+                }
+                if (!child_wdl) return std::nullopt;
+
+                int score = -(*child_wdl);
+                if (score > best) best = score;
+                if (best == 1) break;
+            }
+
+            return (best > -2) ? std::optional<int>(best) : std::nullopt;
         }
 
         static int value_to_wdl(Value v) {
@@ -318,11 +360,10 @@ namespace {
 void loadNNModel(val typed_array) {
     unsigned int length = typed_array["length"].as<unsigned int>();
 
-    // Copy data to a temporary file (Emscripten's virtual filesystem)
+    // Bulk copy JS typed array to C++ buffer via typed_memory_view
     std::vector<uint8_t> buffer(length);
-    for (unsigned int i = 0; i < length; ++i) {
-        buffer[i] = typed_array[i].as<uint8_t>();
-    }
+    val memoryView = val(typed_memory_view(length, buffer.data()));
+    memoryView.call<void>("set", typed_array);
 
     // Write to virtual filesystem
     const char* path = "/tmp/nn_model.bin";
