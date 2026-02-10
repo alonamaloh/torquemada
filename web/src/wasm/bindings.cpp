@@ -652,6 +652,13 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
     result.set("nodes", static_cast<double>(sr.nodes));
     result.set("tb_hits", static_cast<double>(sr.tb_hits));
 
+    // Secondary search phase indicator
+    if (sr.phase == search::SearchPhase::SECONDARY_WINNING) {
+        result.set("phase", std::string("winning"));
+    } else if (sr.phase == search::SearchPhase::SECONDARY_LOSING) {
+        result.set("phase", std::string("losing"));
+    }
+
     // Build PV with full paths for captures
     val pv = val::array();
     if (!sr.pv.empty()) {

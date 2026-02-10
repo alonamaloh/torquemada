@@ -40,6 +40,9 @@ inline bool is_mate_score(int score) {
   return score > SCORE_TB_WIN || score < -SCORE_TB_WIN;
 }
 
+// Secondary search phase indicator
+enum class SearchPhase { PRIMARY, SECONDARY_WINNING, SECONDARY_LOSING };
+
 // Search result
 struct SearchResult {
   Move best_move;
@@ -48,6 +51,7 @@ struct SearchResult {
   std::uint64_t nodes;
   std::uint64_t tb_hits;
   std::vector<Move> pv;  // Principal variation
+  SearchPhase phase = SearchPhase::PRIMARY;
 
   SearchResult() : score(0), depth(0), nodes(0), tb_hits(0) {}
 };

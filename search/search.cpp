@@ -671,6 +671,7 @@ SearchResult Searcher::secondary_search(const Board& board, MoveList& root_moves
   tc_.start();
 
   SearchResult secondary = is_winning ? primary : SearchResult{};
+  secondary.phase = is_winning ? SearchPhase::SECONDARY_WINNING : SearchPhase::SECONDARY_LOSING;
   for (int depth = 1; depth <= max_depth; ++depth) {
     try {
       SearchResult r = search_root(board, *search_moves, depth);
@@ -682,6 +683,7 @@ SearchResult Searcher::secondary_search(const Board& board, MoveList& root_moves
         secondary.nodes += r.nodes;
       } else {
         secondary = r;
+        secondary.phase = SearchPhase::SECONDARY_LOSING;
       }
     } catch (const SearchInterrupted&) {
       break;
