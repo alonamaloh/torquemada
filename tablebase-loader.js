@@ -339,7 +339,7 @@ export class TablebaseLoader {
      */
     async downloadTablebases(onProgress = null) {
         if (!this.isAvailable()) {
-            throw new Error('OPFS not available. Tablebase storage requires a browser with Origin Private File System support (Chrome, Edge, Firefox). Safari does not support OPFS.');
+            throw new Error('OPFS not available. Tablebase storage requires a browser with Origin Private File System support.');
         }
 
         this.onProgress = onProgress;
