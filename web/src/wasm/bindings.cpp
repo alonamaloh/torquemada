@@ -193,7 +193,7 @@ namespace {
             // Try direct lookup first
             const CompressedTablebase* tb = get_table(material_key(m));
             if (tb) {
-                return lookup_in_table(board, m, *tb);
+                return lookup_in_table(board, *tb);
             }
 
             // Try conjugate: flip the board and look up the flipped material
@@ -243,7 +243,7 @@ namespace {
         }
 
         // Direct lookup: search through captures to reach quiet position, then index
-        std::optional<int> lookup_in_table(const Board& board, const Material& m,
+        std::optional<int> lookup_in_table(const Board& board,
                                             const CompressedTablebase& tb) const {
             Value v = lookup_with_capture_search(board, tb);
             if (v == Value::UNKNOWN) return std::nullopt;
