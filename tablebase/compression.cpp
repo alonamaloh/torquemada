@@ -769,6 +769,52 @@ CompressedTablebase load_compressed_tablebase(const std::string& filename) {
   return tb;
 }
 
+CompressedTablebase load_compressed_from_buffer(const std::uint8_t* data, std::size_t size) {
+  CompressedTablebase tb;
+  std::size_t pos = 0;
+
+  // Header: magic(4) + version(1) + material(6) + num_positions(8) + num_blocks(4) = 23 bytes
+  if (size < 23) return tb;
+
+  // Verify magic number
+  if (std::memcmp(data + pos, CWDL_MAGIC, 4) != 0) return tb;
+  pos += 4;
+
+  // Verify version
+  if (data[pos] != CWDL_VERSION) return tb;
+  pos += 1;
+
+  // Read material (6 bytes)
+  tb.material.back_white_pawns = data[pos + 0];
+  tb.material.back_black_pawns = data[pos + 1];
+  tb.material.other_white_pawns = data[pos + 2];
+  tb.material.other_black_pawns = data[pos + 3];
+  tb.material.white_queens = data[pos + 4];
+  tb.material.black_queens = data[pos + 5];
+  pos += 6;
+
+  // Read num_positions (8 bytes)
+  std::memcpy(&tb.num_positions, data + pos, 8);
+  pos += 8;
+
+  // Read num_blocks (4 bytes)
+  std::memcpy(&tb.num_blocks, data + pos, 4);
+  pos += 4;
+
+  // Read block offsets
+  std::size_t offsets_size = tb.num_blocks * sizeof(std::uint32_t);
+  if (pos + offsets_size > size) return CompressedTablebase{};
+  tb.block_offsets.resize(tb.num_blocks);
+  std::memcpy(tb.block_offsets.data(), data + pos, offsets_size);
+  pos += offsets_size;
+
+  // Read block data (rest of buffer)
+  std::size_t block_data_size = size - pos;
+  tb.block_data.assign(data + pos, data + pos + block_data_size);
+
+  return tb;
+}
+
 // ============================================================================
 // CompressedTablebaseManager Implementation
 // ============================================================================

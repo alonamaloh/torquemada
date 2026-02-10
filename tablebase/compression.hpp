@@ -80,6 +80,10 @@ constexpr std::uint8_t CWDL_VERSION = 2;  // v2: 64-bit num_positions
 // Returns an empty tablebase (num_positions == 0) on error.
 CompressedTablebase load_compressed_tablebase(const std::string& filename);
 
+// Load a compressed tablebase from a memory buffer (for WASM).
+// Returns an empty tablebase (num_positions == 0) on error.
+CompressedTablebase load_compressed_from_buffer(const std::uint8_t* data, std::size_t size);
+
 // ============================================================================
 // BitReader for Huffman Decoding
 // ============================================================================
