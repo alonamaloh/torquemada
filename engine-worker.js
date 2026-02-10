@@ -26,6 +26,11 @@ let tbFileSizes = new Map();    // materialKey -> file size
 let chunkCache = new Map();     // materialKey -> Map<chunkIdx, Int8Array>
 let tablebasesAvailable = false;
 
+// CWDL (compressed WDL) tablebase support
+let cwdlSyncHandles = new Map();  // materialKey -> FileSystemSyncAccessHandle
+let cwdlFileSizes = new Map();    // materialKey -> file size
+let cwdlAvailable = false;
+
 /**
  * Initialize sync access handles for all tablebase files
  * This is fast - just opens handles without reading data
@@ -46,9 +51,12 @@ async function initTablebaseSyncHandles() {
             return;
         }
 
-        let count = 0;
+        let dtmCount = 0;
+        let cwdlCount = 0;
         for await (const entry of tbDir.values()) {
-            if (entry.kind === 'file' && entry.name.startsWith('dtm_') && entry.name.endsWith('.bin')) {
+            if (entry.kind !== 'file' || !entry.name.endsWith('.bin')) continue;
+
+            if (entry.name.startsWith('dtm_')) {
                 const materialKey = entry.name.slice(4, 10);  // Extract XXXXXX from dtm_XXXXXX.bin
                 try {
                     const fileHandle = await tbDir.getFileHandle(entry.name);
@@ -57,16 +65,33 @@ async function initTablebaseSyncHandles() {
 
                     tbSyncHandles.set(materialKey, syncHandle);
                     tbFileSizes.set(materialKey, fileSize);
-                    count++;
+                    dtmCount++;
+                } catch (e) {
+                    console.warn(`Failed to open sync handle for ${entry.name}:`, e);
+                }
+            } else if (entry.name.startsWith('cwdl_')) {
+                const materialKey = entry.name.slice(5, 11);  // Extract XXXXXX from cwdl_XXXXXX.bin
+                try {
+                    const fileHandle = await tbDir.getFileHandle(entry.name);
+                    const syncHandle = await fileHandle.createSyncAccessHandle();
+                    const fileSize = syncHandle.getSize();
+
+                    cwdlSyncHandles.set(materialKey, syncHandle);
+                    cwdlFileSizes.set(materialKey, fileSize);
+                    cwdlCount++;
                 } catch (e) {
                     console.warn(`Failed to open sync handle for ${entry.name}:`, e);
                 }
             }
         }
 
-        if (count > 0) {
+        if (dtmCount > 0) {
             tablebasesAvailable = true;
-            console.log(`Opened sync handles for ${count} tablebase files`);
+            console.log(`Opened sync handles for ${dtmCount} DTM tablebase files`);
+        }
+        if (cwdlCount > 0) {
+            cwdlAvailable = true;
+            console.log(`Opened sync handles for ${cwdlCount} CWDL tablebase files`);
         }
     } catch (err) {
         console.warn('Failed to init tablebase sync handles:', err);
@@ -118,6 +143,28 @@ globalThis.loadTablebaseChunk = function(materialKey, chunkIdx) {
  */
 globalThis.tablebasesAvailable = function() {
     return tablebasesAvailable;
+};
+
+/**
+ * Check if CWDL tablebases are available
+ */
+globalThis.cwdlAvailable = function() {
+    return cwdlAvailable;
+};
+
+/**
+ * Load an entire CWDL file by material key
+ * Called from WASM to load compressed WDL tablebase data
+ * Returns Uint8Array or null if not found
+ */
+globalThis.loadCWDLFile = function(materialKey) {
+    const handle = cwdlSyncHandles.get(materialKey);
+    if (!handle) return null;
+
+    const size = cwdlFileSizes.get(materialKey);
+    const buffer = new Uint8Array(size);
+    handle.read(buffer, { at: 0 });
+    return buffer;
 };
 
 /**
@@ -322,9 +369,10 @@ function parseMove(notation) {
  * Check if tablebases/models are loaded
  */
 function getLoadedStatus() {
-    if (!engine) return { tablebases: false, nnModel: false };
+    if (!engine) return { tablebases: false, cwdl: false, nnModel: false };
     return {
         tablebases: tablebasesAvailable,
+        cwdl: cwdlAvailable,
         nnModel: engine.hasNNModel(),
         openingBook: engine.hasOpeningBook()
     };
