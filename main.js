@@ -816,7 +816,10 @@ function updateSearchInfo(info) {
     const pvEl = document.getElementById('search-pv');
 
     if (summaryEl) {
-        const depth = info.depth || '-';
+        let depth = info.depth || '-';
+        if (info.phase) {
+            depth += ` (${info.phase})`;
+        }
         const score = info.scoreStr || '-';
         const nodes = info.nodes || 0;
         const nodesStr = nodes.toLocaleString();

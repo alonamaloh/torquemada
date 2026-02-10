@@ -610,7 +610,7 @@ export class GameController {
 
         // Call search info callback with full details
         if (this.onSearchInfo) {
-            this.onSearchInfo({
+            const info = {
                 depth: result.depth,
                 score: result.score,
                 scoreStr: scoreStr,
@@ -619,7 +619,9 @@ export class GameController {
                 tbHits: result.tbHits,
                 pv: result.pv || [],
                 pvStr: pvStr
-            });
+            };
+            if (result.phase) info.phase = result.phase;
+            this.onSearchInfo(info);
         }
     }
 

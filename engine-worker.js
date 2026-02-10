@@ -301,18 +301,20 @@ function search(softTime, hardTime, requestId) {
                 const elapsedMs = performance.now() - searchStart;
                 const nodes = result.nodes || 0;
                 const nps = elapsedMs > 0 ? Math.round(nodes / (elapsedMs / 1000)) : 0;
+                const progress = {
+                    bestMove: result.best_move,
+                    score: result.score,
+                    depth: result.depth,
+                    nodes: nodes,
+                    nps: nps,
+                    tbHits: result.tb_hits,
+                    pv: result.pv || []
+                };
+                if (result.phase) progress.phase = result.phase;
                 postMessage({
                     id: currentSearchId,
                     type: 'searchProgress',
-                    result: {
-                        bestMove: result.best_move,
-                        score: result.score,
-                        depth: result.depth,
-                        nodes: nodes,
-                        nps: nps,
-                        tbHits: result.tb_hits,
-                        pv: result.pv || []
-                    }
+                    result: progress
                 });
             }
         };
@@ -331,7 +333,7 @@ function search(softTime, hardTime, requestId) {
         const nps = totalElapsedMs > 0 ? Math.round(totalNodes / (totalElapsedMs / 1000)) : 0;
 
         currentSearchId = null;
-        return {
+        const searchResult = {
             bestMove: result.best_move,
             score: result.score,
             depth: result.depth,
@@ -340,6 +342,8 @@ function search(softTime, hardTime, requestId) {
             tbHits: result.tb_hits,
             pv: result.pv || []
         };
+        if (result.phase) searchResult.phase = result.phase;
+        return searchResult;
     } catch (err) {
         console.error('Worker: search error:', err);
         currentSearchId = null;
