@@ -18,6 +18,7 @@
 #include "../../../core/random.hpp"
 #include "../../../search/search.hpp"
 #include "../../../tablebase/tablebase.hpp"
+#include "../../../tablebase/compression.hpp"
 #include "../../../nn/mlp.hpp"
 
 using namespace emscripten;
@@ -169,6 +170,138 @@ namespace {
 
     WasmDTMTablebaseManager g_tb_manager;
 
+    // Lazy-loading CWDL (compressed WDL) tablebase manager
+    // Loads entire CWDL files from JS on demand, caches in memory.
+    // Handles the conjugate trick: if direct lookup fails, tries the
+    // conjugate material via depth-1 search.
+    class WasmCWDLTablebaseManager {
+    public:
+        std::optional<int> lookup_wdl(const Board& board) const {
+            // Check if CWDL tablebases are available in JS
+            val cwdlAvail = val::global("cwdlAvailable");
+            if (cwdlAvail.isUndefined() || !cwdlAvail().as<bool>()) {
+                return std::nullopt;
+            }
+
+            Material m = get_material(board);
+
+            // Terminal: opponent has no pieces
+            if (m.white_pieces() == 0) {
+                return -1;  // LOSS
+            }
+
+            // Try direct lookup first
+            const CompressedTablebase* tb = get_table(material_key(m));
+            if (tb) {
+                return lookup_in_table(board, m, *tb);
+            }
+
+            // Try conjugate: flip the board and look up the flipped material
+            Material conj_m = flip(m);
+            const CompressedTablebase* conj_tb = get_table(material_key(conj_m));
+            if (conj_tb) {
+                return lookup_via_conjugate(board, *conj_tb);
+            }
+
+            return std::nullopt;
+        }
+
+    private:
+        mutable std::unordered_map<std::string, CompressedTablebase> cache_;
+
+        const CompressedTablebase* get_table(const std::string& key) const {
+            // Check cache
+            auto it = cache_.find(key);
+            if (it != cache_.end()) {
+                return it->second.empty() ? nullptr : &it->second;
+            }
+
+            // Load from JS
+            val loadFile = val::global("loadCWDLFile");
+            if (loadFile.isUndefined()) {
+                cache_[key] = CompressedTablebase{};
+                return nullptr;
+            }
+
+            val data = loadFile(key);
+            if (data.isNull() || data.isUndefined()) {
+                cache_[key] = CompressedTablebase{};
+                return nullptr;
+            }
+
+            // Copy JS Uint8Array to C++ buffer
+            unsigned int length = data["length"].as<unsigned int>();
+            std::vector<std::uint8_t> buffer(length);
+            for (unsigned int i = 0; i < length; ++i) {
+                buffer[i] = data[i].as<std::uint8_t>();
+            }
+
+            CompressedTablebase tb = load_compressed_from_buffer(buffer.data(), buffer.size());
+            cache_[key] = std::move(tb);
+
+            return cache_[key].empty() ? nullptr : &cache_[key];
+        }
+
+        // Direct lookup: search through captures to reach quiet position, then index
+        std::optional<int> lookup_in_table(const Board& board, const Material& m,
+                                            const CompressedTablebase& tb) const {
+            Value v = lookup_with_capture_search(board, tb);
+            if (v == Value::UNKNOWN) return std::nullopt;
+            return value_to_wdl(v);
+        }
+
+        // Conjugate lookup: for each legal move, look up the child position
+        // in the conjugate table, then minimax the results
+        std::optional<int> lookup_via_conjugate(const Board& board,
+                                                 const CompressedTablebase& conj_tb) const {
+            MoveList moves;
+            generateMoves(board, moves);
+
+            if (moves.empty()) {
+                return -1;  // No moves = loss
+            }
+
+            int best = -2;  // Worse than any valid result
+            for (const Move& move : moves) {
+                Board child = makeMove(board, move);
+
+                // Check terminal
+                if (child.white == 0) {
+                    return 1;  // Captured all opponent pieces = win
+                }
+
+                // The child is from the opponent's perspective (board is flipped).
+                // The conjugate table stores the position for the flipped material.
+                Value v = lookup_with_capture_search(child, conj_tb);
+                if (v == Value::UNKNOWN) return std::nullopt;
+
+                int child_wdl = value_to_wdl(v);
+                int score = -child_wdl;  // Negate for our perspective
+                if (score > best) best = score;
+                if (best == 1) break;  // Can't do better than WIN
+            }
+
+            return (best > -2) ? std::optional<int>(best) : std::nullopt;
+        }
+
+        // Look up a position in a CWDL table, handling capture sequences
+        Value lookup_with_capture_search(const Board& board,
+                                          const CompressedTablebase& tb) const {
+            return lookup_compressed_with_search(board, tb);
+        }
+
+        static int value_to_wdl(Value v) {
+            switch (v) {
+                case Value::WIN: return 1;
+                case Value::DRAW: return 0;
+                case Value::LOSS: return -1;
+                default: return 0;
+            }
+        }
+    };
+
+    WasmCWDLTablebaseManager g_cwdl_manager;
+
     // Neural network model
     std::unique_ptr<nn::MLP> g_nn_model;
 
@@ -213,6 +346,13 @@ bool hasTablebases() {
         return false;
     }
     return tablebasesAvailable().as<bool>();
+}
+
+// Check if CWDL (WDL) tablebases are available
+bool hasCWDLTablebases() {
+    val cwdlAvail = val::global("cwdlAvailable");
+    if (cwdlAvail.isUndefined()) return false;
+    return cwdlAvail().as<bool>();
 }
 
 // Check if NN models are loaded
@@ -620,6 +760,16 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
         }, 5);  // 5-piece tablebases
     }
 
+    // Set up WDL probe function if CWDL tablebases are available
+    {
+        val cwdlAvail = val::global("cwdlAvailable");
+        if (!cwdlAvail.isUndefined() && cwdlAvail().as<bool>()) {
+            searcher.set_wdl_probe([](const Board& b) -> std::optional<int> {
+                return g_cwdl_manager.lookup_wdl(b);
+            }, 7);  // 7-piece WDL tablebases
+        }
+    }
+
     // Set progress callback if provided
     bool has_callback = !progress_callback.isNull() && !progress_callback.isUndefined();
     if (has_callback) {
@@ -718,6 +868,7 @@ EMSCRIPTEN_BINDINGS(checkers_engine) {
     function("parseMove", &doParseMove);
     function("loadNNModel", &loadNNModel);
     function("hasTablebases", &hasTablebases);
+    function("hasCWDLTablebases", &hasCWDLTablebases);
     function("hasNNModel", &hasNNModel);
     function("getEngineVersion", &getEngineVersion);
     function("stopSearch", &stopSearch);
