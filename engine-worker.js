@@ -149,7 +149,7 @@ globalThis.tablebasesAvailable = function() {
  * Check if CWDL tablebases are available
  */
 globalThis.cwdlAvailable = function() {
-    return cwdlAvailable;
+    return false;  // Disabled pending performance fix
 };
 
 /**
