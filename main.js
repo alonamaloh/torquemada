@@ -113,7 +113,10 @@ async function init() {
 
         gameController.onDrawOffer = () => {
             return new Promise(resolve => {
-                drawOfferResolve = resolve;
+                drawOfferResolve = (accepted) => {
+                    if (!accepted) gameController.onDrawOffer = null;
+                    resolve(accepted);
+                };
                 document.getElementById('draw-offer-dialog').style.display = 'flex';
             });
         };
