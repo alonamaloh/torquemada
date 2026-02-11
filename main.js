@@ -689,6 +689,37 @@ function setupEventHandlers() {
         matchResignBtn.addEventListener('click', matchResign);
     }
 
+    // Resign confirm dialog buttons
+    const resignYesBtn = document.getElementById('btn-resign-yes');
+    const resignNoBtn = document.getElementById('btn-resign-no');
+    const resignDialog = document.getElementById('resign-confirm-dialog');
+    if (resignYesBtn) {
+        resignYesBtn.addEventListener('click', () => {
+            resignDialog.style.display = 'none';
+            if (resignResolve) { resignResolve(true); resignResolve = null; }
+        });
+    }
+    if (resignNoBtn) {
+        resignNoBtn.addEventListener('click', () => {
+            resignDialog.style.display = 'none';
+            if (resignResolve) { resignResolve(false); resignResolve = null; }
+        });
+    }
+    if (resignDialog) {
+        resignDialog.addEventListener('click', (e) => {
+            if (e.target === resignDialog) {
+                resignDialog.style.display = 'none';
+                if (resignResolve) { resignResolve(false); resignResolve = null; }
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && resignDialog.style.display !== 'none') {
+                resignDialog.style.display = 'none';
+                if (resignResolve) { resignResolve(false); resignResolve = null; }
+            }
+        });
+    }
+
     // Match result dialog OK button
     const matchResultOkBtn = document.getElementById('btn-match-result-ok');
     if (matchResultOkBtn) {
@@ -971,11 +1002,19 @@ async function startMatchPlay() {
     gameController.boardUI.setFlipped(color === 'black');
 }
 
-async function matchResign() {
-    await gameController.abortSearch();
-    matchStats.losses++;
-    saveMatchStats();
-    showMatchResultDialog('Abandono', 'Has abandonado la partida.');
+let resignResolve = null;
+
+function matchResign() {
+    document.getElementById('resign-confirm-dialog').style.display = 'flex';
+    return new Promise(resolve => {
+        resignResolve = resolve;
+    }).then(async (confirmed) => {
+        if (!confirmed) return;
+        await gameController.abortSearch();
+        matchStats.losses++;
+        saveMatchStats();
+        showMatchResultDialog('Abandono', 'Has abandonado la partida.');
+    });
 }
 
 function showMatchResultDialog(title, message) {

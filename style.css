@@ -373,7 +373,8 @@ body {
 .help-text {
     font-size: 0.8rem;
     color: var(--text-secondary);
-    margin-top: 0.5rem;
+    margin-top: 0.25rem;
+    margin-bottom: 0.75rem;
 }
 
 /* Toggle button group */
