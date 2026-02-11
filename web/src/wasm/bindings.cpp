@@ -157,7 +157,7 @@ namespace {
                 if (best_opp_dtm == tablebase::DTM_LOSS_TERMINAL) {
                     best_dtm = 1;
                 } else if (best_opp_dtm < 0) {
-                    best_dtm = static_cast<tablebase::DTM>(-best_opp_dtm);
+                    best_dtm = static_cast<tablebase::DTM>(-best_opp_dtm + 1);
                 } else if (best_opp_dtm == 0) {
                     best_dtm = 0;
                 } else {
