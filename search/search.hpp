@@ -240,7 +240,7 @@ private:
   // After a primary search returns a WDL score, re-search with WDL disabled
   // so the NN guides move selection among theoretically equivalent moves
   SearchResult secondary_search(const Board& board, MoveList& root_moves,
-                                const SearchResult& primary, int primary_depth,
+                                const SearchResult& primary,
                                 int max_depth);
 
   // Root search at a fixed depth

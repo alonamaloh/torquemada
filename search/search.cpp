@@ -593,7 +593,7 @@ MultiSearchResult Searcher::search_multi(const Board& board, int max_depth,
 }
 
 SearchResult Searcher::secondary_search(const Board& board, MoveList& root_moves,
-                                         const SearchResult& primary, int primary_depth,
+                                         const SearchResult& primary,
                                          int max_depth) {
   // Check remaining time
   double elapsed = tc_.elapsed_seconds();
@@ -602,55 +602,9 @@ SearchResult Searcher::secondary_search(const Board& board, MoveList& root_moves
 
   bool is_winning = (primary.score >= SCORE_SPECIAL && primary.score <= SCORE_TB_WIN);
 
-  MoveList* search_moves = &root_moves;
-  MoveList winning_moves;
-
-  if (is_winning) {
-    // Classify which root moves maintain the win via null-window searches
-    // WDL probes are still ENABLED here so the classification works correctly
-
-    // Primary best move is known to win
-    winning_moves.push_back(primary.best_move);
-
-    // Store root position hash for repetition detection
-    pos_hash_history_[0] = board.position_hash();
-
-    // Test each other root move with a null-window search
-    for (const Move& move : root_moves) {
-      if (move == primary.best_move) {
-        continue;  // Skip the already-classified best move
-      }
-
-      try {
-        Board child = makeMove(board, move);
-        int score = -negamax(child, primary_depth - 1, -SCORE_SPECIAL - 1, -SCORE_SPECIAL, 1);
-        if (score > SCORE_SPECIAL) {
-          winning_moves.push_back(move);
-        }
-      } catch (const SearchInterrupted&) {
-        // Time ran out during classification — use what we have
-        break;
-      }
-    }
-
-    // If only one winning move, no choice to make
-    if (winning_moves.size() <= 1) {
-      return primary;
-    }
-
-    search_moves = &winning_moves;
-
-    // Recompute remaining time after classification
-    remaining = tc_.hard_time_seconds - tc_.elapsed_seconds();
-    if (remaining < 0.5) {
-      SearchResult r = primary;
-      r.best_move = winning_moves[0];
-      return r;
-    }
-  }
-
-  // Now disable WDL probes for the secondary iterative deepening
-  // RAII guard saves and restores wdl_probe_func_ on all exit paths
+  // Disable WDL probes for the secondary search.
+  // DTM probes remain active so the search can find actual mates.
+  // RAII guard restores wdl_probe_func_ on all exit paths.
   auto saved_wdl = std::move(wdl_probe_func_);
   wdl_probe_func_ = nullptr;
   struct WDLGuard {
@@ -660,8 +614,7 @@ SearchResult Searcher::secondary_search(const Board& board, MoveList& root_moves
     ~WDLGuard() { dst = std::move(saved); }
   } wdl_guard(wdl_probe_func_, std::move(saved_wdl));
 
-  // Clear TT to purge WDL-based scores that would cause cutoffs
-  // before the NN gets a chance to differentiate between moves
+  // Clear TT to purge WDL-based scores
   tt_.clear();
   std::memset(killers_, 0, sizeof(killers_));
   std::memset(history_, 0, sizeof(history_));
@@ -672,14 +625,19 @@ SearchResult Searcher::secondary_search(const Board& board, MoveList& root_moves
 
   SearchResult secondary = is_winning ? primary : SearchResult{};
   secondary.phase = is_winning ? SearchPhase::SECONDARY_WINNING : SearchPhase::SECONDARY_LOSING;
+
   for (int depth = 1; depth <= max_depth; ++depth) {
     try {
-      SearchResult r = search_root(board, *search_moves, depth);
+      SearchResult r = search_root(board, root_moves, depth);
       r.depth = depth;
       if (is_winning) {
-        secondary.best_move = r.best_move;
-        secondary.score = r.score;
-        secondary.pv = r.pv;
+        // Only adopt the secondary result if it found an actual mate.
+        // Otherwise we'll stick with the known WDL winning move.
+        if (is_mate_score(r.score)) {
+          secondary.best_move = r.best_move;
+          secondary.score = r.score;
+          secondary.pv = r.pv;
+        }
         secondary.nodes += r.nodes;
       } else {
         secondary = r;
@@ -695,8 +653,17 @@ SearchResult Searcher::secondary_search(const Board& board, MoveList& root_moves
       progress_callback_(report);
     }
 
+    // Found a mate — no need to search deeper
+    if (is_winning && is_mate_score(secondary.score)) break;
+
     if (tc_.exceeded_soft(stats_.nodes)) break;
   }
+
+  // Clear TT after secondary search so scores without WDL
+  // don't pollute the next search (which will use WDL probes)
+  tt_.clear();
+  std::memset(killers_, 0, sizeof(killers_));
+  std::memset(history_, 0, sizeof(history_));
 
   return secondary;
 }
@@ -808,7 +775,7 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
       bool is_wdl_score = (result.score <= -SCORE_SPECIAL) ||
                           (result.score >= SCORE_SPECIAL && result.score <= SCORE_TB_WIN);
       if (is_wdl_score) {
-        result = secondary_search(board, root_moves, result, result.depth, max_depth);
+        result = secondary_search(board, root_moves, result, max_depth);
         break;
       }
     }
