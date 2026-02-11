@@ -616,16 +616,6 @@ body {
 body.match-play .controls-section { display: none !important; }
 body.match-play #search-info { display: none !important; }
 
-.match-mode-label {
-    flex: 1;
-    text-align: center;
-    font-size: 0.9rem;
-    color: var(--text-secondary);
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
 .btn-danger {
     background: #8b0000;
     border-color: #8b0000;
