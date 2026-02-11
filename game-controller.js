@@ -42,6 +42,7 @@ export class GameController {
         this.onSearchInfo = null;    // (info) => void - called with search results
         this.onModeChange = null;    // (humanColor) => void - called when mode changes
         this.onTimeUpdate = null;    // (secondsLeft) => void - called when time bank changes
+        this.onDrawOffer = null;     // async () => boolean - called when engine offers a draw
 
         // Flexible move input state
         this._selectedMask = 0;      // 32-bit mask of selected squares
@@ -566,6 +567,20 @@ export class GameController {
             const elapsed = Date.now() - startTime;
             if (elapsed < 200) {
                 await this._sleep(200 - elapsed);
+            }
+
+            // Draw offer: score exactly 0, not book, 4 or fewer pieces
+            if (this.onDrawOffer && result.score === 0 && !result.book) {
+                const board = await this.engine.getBoard();
+                if (board.pieceCount <= 4) {
+                    const accepted = await this.onDrawOffer();
+                    if (accepted) {
+                        this.isThinking = false;
+                        if (this.onThinkingEnd) this.onThinkingEnd();
+                        this._setGameOver('draw', 'draw offer accepted');
+                        return;
+                    }
+                }
             }
 
             // Make the move

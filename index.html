@@ -38,6 +38,11 @@
                     <button id="btn-edit" class="btn btn-small">Edit</button>
                     <button id="btn-stop" class="btn btn-small" disabled>Stop</button>
                 </div>
+                <div id="match-toolbar" class="game-toolbar" style="display: none;">
+                    <button id="btn-match-stats" class="btn btn-small">Stats</button>
+                    <span class="match-mode-label">Match Play</span>
+                    <button id="btn-match-resign" class="btn btn-small btn-danger">Resign</button>
+                </div>
                 <div id="board-container" class="board-container">
                     <canvas id="board" width="480" height="480"></canvas>
                 </div>
@@ -150,6 +155,10 @@
                 <button id="btn-play-black" class="btn">Black</button>
                 <button id="btn-play-both" class="btn">Both</button>
             </div>
+            <hr style="border-color: var(--border); margin: 1rem 0;">
+            <div class="dialog-buttons">
+                <button id="btn-match-play" class="btn btn-primary">Match Play</button>
+            </div>
         </div>
     </div>
 
@@ -164,6 +173,49 @@
             <div class="time-dialog-buttons">
                 <button id="btn-time-ok" class="btn btn-primary">OK</button>
                 <button id="btn-time-cancel" class="btn">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Draw offer dialog -->
+    <div id="draw-offer-dialog" class="dialog" style="display: none;">
+        <div class="dialog-content dialog-narrow">
+            <h2>Draw Offer</h2>
+            <p class="dialog-label">The engine offers a draw.</p>
+            <div class="dialog-buttons">
+                <button id="btn-accept-draw" class="btn btn-primary">Accept</button>
+                <button id="btn-decline-draw" class="btn">Decline</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Match result dialog -->
+    <div id="match-result-dialog" class="dialog" style="display: none;">
+        <div class="dialog-content dialog-narrow">
+            <h2 id="match-result-title">Game Over</h2>
+            <p id="match-result-message" class="dialog-label"></p>
+            <div class="match-stats">
+                <span class="stat-win">W: <span id="match-stat-w">0</span></span>
+                <span class="stat-draw">D: <span id="match-stat-d">0</span></span>
+                <span class="stat-loss">L: <span id="match-stat-l">0</span></span>
+            </div>
+            <div class="dialog-buttons">
+                <button id="btn-match-result-ok" class="btn btn-primary">OK</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Match stats dialog -->
+    <div id="match-stats-dialog" class="dialog" style="display: none;">
+        <div class="dialog-content dialog-narrow">
+            <h2>Match Stats</h2>
+            <div class="match-stats">
+                <span class="stat-win">W: <span id="match-stats-w">0</span></span>
+                <span class="stat-draw">D: <span id="match-stats-d">0</span></span>
+                <span class="stat-loss">L: <span id="match-stats-l">0</span></span>
+            </div>
+            <div class="dialog-buttons">
+                <button id="btn-match-stats-close" class="btn">Close</button>
             </div>
         </div>
     </div>

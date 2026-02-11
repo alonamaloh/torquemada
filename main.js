@@ -18,6 +18,12 @@ let editPieceType = 'empty';  // 'empty', 'white-man', 'white-king', 'black-man'
 let editWhiteToMove = true;
 let editBoard = { white: 0, black: 0, kings: 0 };  // Bitboards for editing
 
+// Match play state
+let matchPlayActive = false;
+let matchStats = { wins: 0, draws: 0, losses: 0 };
+const MATCH_STATS_KEY = 'torquemada-match-stats';
+let drawOfferResolve = null;
+
 /**
  * Initialize the application
  */
@@ -103,6 +109,13 @@ async function init() {
 
         gameController.onTimeUpdate = (secondsLeft) => {
             updateTimeDisplay(secondsLeft);
+        };
+
+        gameController.onDrawOffer = () => {
+            return new Promise(resolve => {
+                drawOfferResolve = resolve;
+                document.getElementById('draw-offer-dialog').style.display = 'flex';
+            });
         };
 
         // Set up UI event handlers
@@ -639,6 +652,61 @@ function setupEventHandlers() {
     if (doneBtn) {
         doneBtn.addEventListener('click', exitEditMode);
     }
+
+    // Draw offer dialog buttons
+    const acceptDrawBtn = document.getElementById('btn-accept-draw');
+    const declineDrawBtn = document.getElementById('btn-decline-draw');
+    if (acceptDrawBtn) {
+        acceptDrawBtn.addEventListener('click', () => {
+            document.getElementById('draw-offer-dialog').style.display = 'none';
+            if (drawOfferResolve) { drawOfferResolve(true); drawOfferResolve = null; }
+        });
+    }
+    if (declineDrawBtn) {
+        declineDrawBtn.addEventListener('click', () => {
+            document.getElementById('draw-offer-dialog').style.display = 'none';
+            if (drawOfferResolve) { drawOfferResolve(false); drawOfferResolve = null; }
+        });
+    }
+
+    // Match Play button in new game dialog
+    const matchPlayBtn = document.getElementById('btn-match-play');
+    if (matchPlayBtn) {
+        matchPlayBtn.addEventListener('click', startMatchPlay);
+    }
+
+    // Match toolbar buttons
+    const matchStatsBtn = document.getElementById('btn-match-stats');
+    if (matchStatsBtn) {
+        matchStatsBtn.addEventListener('click', showMatchStatsDialog);
+    }
+
+    const matchResignBtn = document.getElementById('btn-match-resign');
+    if (matchResignBtn) {
+        matchResignBtn.addEventListener('click', matchResign);
+    }
+
+    // Match result dialog OK button
+    const matchResultOkBtn = document.getElementById('btn-match-result-ok');
+    if (matchResultOkBtn) {
+        matchResultOkBtn.addEventListener('click', exitMatchPlay);
+    }
+
+    // Match stats dialog
+    const matchStatsCloseBtn = document.getElementById('btn-match-stats-close');
+    if (matchStatsCloseBtn) {
+        matchStatsCloseBtn.addEventListener('click', () => {
+            document.getElementById('match-stats-dialog').style.display = 'none';
+        });
+    }
+    const matchStatsDialog = document.getElementById('match-stats-dialog');
+    if (matchStatsDialog) {
+        matchStatsDialog.addEventListener('click', (e) => {
+            if (e.target === matchStatsDialog) {
+                matchStatsDialog.style.display = 'none';
+            }
+        });
+    }
 }
 
 // Tablebases are now loaded lazily by the worker - no need to load them here
@@ -751,8 +819,29 @@ function showGameOver(winner, reason) {
         message = reason ? `${name} wins (${reason})!` : `${name} wins!`;
     }
     console.log(message);
-    // Small delay so the board finishes rendering before the dialog appears
-    setTimeout(() => alert(message), 100);
+
+    if (matchPlayActive) {
+        // Determine result from player's perspective
+        let title, resultMsg;
+        if (winner === 'draw') {
+            matchStats.draws++;
+            title = 'Draw';
+            resultMsg = message;
+        } else if (winner === gameController.humanColor) {
+            matchStats.wins++;
+            title = 'You Win!';
+            resultMsg = message;
+        } else {
+            matchStats.losses++;
+            title = 'You Lose';
+            resultMsg = message;
+        }
+        saveMatchStats();
+        setTimeout(() => showMatchResultDialog(title, resultMsg), 100);
+    } else {
+        // Small delay so the board finishes rendering before the dialog appears
+        setTimeout(() => alert(message), 100);
+    }
 }
 
 /**
@@ -807,6 +896,7 @@ function clearSearchInfo() {
  * Update search info display
  */
 function updateSearchInfo(info) {
+    if (matchPlayActive) return;
     const searchInfo = document.getElementById('search-info');
     if (!searchInfo) return;
 
@@ -835,6 +925,83 @@ function updateSearchInfo(info) {
         summaryEl.innerHTML = `${depth}. ${score} <span class="search-label">nodes:</span> ${nodesStr} <span class="search-label">nps:</span> ${npsStr}`;
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
+}
+
+// --- Match Play ---
+
+function loadMatchStats() {
+    try {
+        const data = localStorage.getItem(MATCH_STATS_KEY);
+        if (data) matchStats = JSON.parse(data);
+    } catch (e) {
+        matchStats = { wins: 0, draws: 0, losses: 0 };
+    }
+}
+
+function saveMatchStats() {
+    try {
+        localStorage.setItem(MATCH_STATS_KEY, JSON.stringify(matchStats));
+    } catch (e) {
+        console.warn('Could not save match stats:', e);
+    }
+}
+
+async function startMatchPlay() {
+    hideNewGameDialog();
+    loadMatchStats();
+    matchPlayActive = true;
+    document.body.classList.add('match-play');
+    document.getElementById('game-controls').style.display = 'none';
+    document.getElementById('match-toolbar').style.display = 'flex';
+    clearSearchInfo();
+
+    // Compute player color: alternate based on total games played
+    const totalGames = matchStats.wins + matchStats.draws + matchStats.losses;
+    const color = (totalGames % 2 === 0) ? 'white' : 'black';
+
+    // Fixed settings for match play
+    gameController.setSecondsPerMove(3);
+    gameController.setUseBook(true);
+
+    await gameController.newGame();
+    gameController.setHumanColor(color);
+    gameController.boardUI.setFlipped(color === 'black');
+}
+
+async function matchResign() {
+    await gameController.abortSearch();
+    matchStats.losses++;
+    saveMatchStats();
+    showMatchResultDialog('Resigned', 'You resigned the game.');
+}
+
+function showMatchResultDialog(title, message) {
+    document.getElementById('match-result-title').textContent = title;
+    document.getElementById('match-result-message').textContent = message;
+    document.getElementById('match-stat-w').textContent = matchStats.wins;
+    document.getElementById('match-stat-d').textContent = matchStats.draws;
+    document.getElementById('match-stat-l').textContent = matchStats.losses;
+    document.getElementById('match-result-dialog').style.display = 'flex';
+}
+
+function showMatchStatsDialog() {
+    document.getElementById('match-stats-w').textContent = matchStats.wins;
+    document.getElementById('match-stats-d').textContent = matchStats.draws;
+    document.getElementById('match-stats-l').textContent = matchStats.losses;
+    document.getElementById('match-stats-dialog').style.display = 'flex';
+}
+
+function exitMatchPlay() {
+    matchPlayActive = false;
+    document.body.classList.remove('match-play');
+    document.getElementById('match-toolbar').style.display = 'none';
+    document.getElementById('game-controls').style.display = 'flex';
+    document.getElementById('match-result-dialog').style.display = 'none';
+
+    // Refresh UI state
+    updateModeButtons();
+    updateUndoRedoButtons();
+    updateMoveHistory();
 }
 
 /**

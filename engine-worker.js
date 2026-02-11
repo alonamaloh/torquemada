@@ -343,6 +343,7 @@ function search(softTime, hardTime, requestId) {
             pv: result.pv || []
         };
         if (result.phase) searchResult.phase = result.phase;
+        if (result.book) searchResult.book = true;
         return searchResult;
     } catch (err) {
         console.error('Worker: search error:', err);
