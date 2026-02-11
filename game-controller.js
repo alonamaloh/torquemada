@@ -115,7 +115,7 @@ export class GameController {
         // Get legal moves
         await this._updateLegalMoves();
 
-        this._updateStatus('New game started');
+        this._updateStatus('Nueva partida');
 
         // Engine never plays white at start (we switched above if needed)
         // So no need to trigger engine move here
@@ -171,19 +171,19 @@ export class GameController {
         // Check for game over (no legal moves = loss for side to move)
         if (this.legalMoves.length === 0) {
             const board = await this.engine.getBoard();
-            this._setGameOver(board.whiteToMove ? 'black' : 'white', 'no moves');
+            this._setGameOver(board.whiteToMove ? 'black' : 'white', 'sin jugadas');
             return;
         }
 
         // Check for draw conditions
         const board = await this.engine.getBoard();
         if (board.nReversible >= 60) {
-            this._setGameOver('draw', '60 moves without progress');
+            this._setGameOver('draw', '60 jugadas sin progreso');
             return;
         }
         const key = this._positionKey(board);
         if ((this.positionCounts.get(key) || 0) >= 3) {
-            this._setGameOver('draw', 'threefold repetition');
+            this._setGameOver('draw', 'triple repetición');
             return;
         }
     }
@@ -199,11 +199,11 @@ export class GameController {
 
         // Format status message
         if (winner === 'draw') {
-            const msg = reason ? `Draw — ${reason}!` : 'Draw!';
+            const msg = reason ? `¡Tablas — ${reason}!` : '¡Tablas!';
             this._updateStatus(msg);
         } else {
-            const winnerName = winner.charAt(0).toUpperCase() + winner.slice(1);
-            this._updateStatus(`${winnerName} wins!`);
+            const winnerName = winner === 'white' ? 'blancas' : 'negras';
+            this._updateStatus(`¡Ganan ${winnerName}!`);
         }
 
         if (this.onGameOver) {
@@ -487,8 +487,8 @@ export class GameController {
 
         // Update status only if game is not over
         if (!this.gameOver) {
-            const side = newBoard.whiteToMove ? 'White' : 'Black';
-            this._updateStatus(`${side} to move`);
+            const side = newBoard.whiteToMove ? 'blancas' : 'negras';
+            this._updateStatus(`Mueven ${side}`);
         }
 
         // If game not over and it's engine's turn, make engine move
@@ -514,7 +514,7 @@ export class GameController {
         this.isThinking = true;
         this._triggerAutoPlay = triggerAutoPlay;  // Store for use after search completes
         if (this.onThinkingStart) this.onThinkingStart();
-        this._updateStatus('Engine thinking...');
+        this._updateStatus('Motor pensando...');
 
         try {
             // Time control: bank time, compute soft/hard limits
@@ -556,7 +556,7 @@ export class GameController {
 
             if (result.error) {
                 console.error('Engine error:', result.error);
-                this._updateStatus('Engine error: ' + result.error);
+                this._updateStatus('Error del motor: ' + result.error);
                 return;
             }
 
@@ -577,7 +577,7 @@ export class GameController {
                     if (accepted) {
                         this.isThinking = false;
                         if (this.onThinkingEnd) this.onThinkingEnd();
-                        this._setGameOver('draw', 'draw offer accepted');
+                        this._setGameOver('draw', 'tablas aceptadas');
                         return;
                     }
                 }
@@ -593,11 +593,11 @@ export class GameController {
                 return;  // _makeMove handles the next engine move if needed
             } else {
                 console.warn('No valid bestMove in result:', result.bestMove);
-                this._updateStatus('No move found');
+                this._updateStatus('No se encontró jugada');
             }
         } catch (err) {
             console.error('Search exception:', err);
-            this._updateStatus('Search error: ' + err.message);
+            this._updateStatus('Error de búsqueda: ' + err.message);
         } finally {
             this.isThinking = false;
             if (this.onThinkingEnd) this.onThinkingEnd();
@@ -690,7 +690,7 @@ export class GameController {
             if (this.onModeChange) this.onModeChange(this.humanColor);
         }
 
-        this._updateStatus('Move undone');
+        this._updateStatus('Jugada deshecha');
     }
 
     /**
@@ -725,7 +725,7 @@ export class GameController {
             if (this.onModeChange) this.onModeChange(this.humanColor);
         }
 
-        this._updateStatus('Move redone');
+        this._updateStatus('Jugada rehecha');
     }
 
     /**
@@ -756,7 +756,7 @@ export class GameController {
         // Get legal moves
         await this._updateLegalMoves();
 
-        this._updateStatus('Position set');
+        this._updateStatus('Posición establecida');
 
         // If engine's turn and autoPlay is on, start thinking
         if (!this.gameOver && this.autoPlay && !this._isHumanTurn(whiteToMove)) {

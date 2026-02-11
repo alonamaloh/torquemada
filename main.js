@@ -40,7 +40,7 @@ async function init() {
 
     try {
         // Initialize engine
-        updateLoadingStatus('Initializing engine...');
+        updateLoadingStatus('Iniciando motor...');
         const engine = getEngine();
         await engine.init();
 
@@ -53,7 +53,7 @@ async function init() {
         }
 
         // Try to load NN models
-        updateLoadingStatus('Loading neural network...');
+        updateLoadingStatus('Cargando red neuronal...');
         try {
             // Try loading from local files first
             const nnData = await loadNNModelFile('./models/model_006.bin');
@@ -75,7 +75,7 @@ async function init() {
         }
 
         // Set up game controller
-        updateLoadingStatus('Starting game...');
+        updateLoadingStatus('Iniciando partida...');
         gameController = new GameController(canvas, engine, statusEl);
         await gameController.init();
 
@@ -411,9 +411,9 @@ function updateTimePerMoveLabel(seconds) {
     // Format: remove trailing zeros after decimal, but keep at least one decimal for < 1
     let text;
     if (seconds >= 1 && seconds === Math.floor(seconds)) {
-        text = `+${seconds}s/move`;
+        text = `+${seconds}s/mov`;
     } else {
-        text = `+${parseFloat(seconds.toFixed(1))}s/move`;
+        text = `+${parseFloat(seconds.toFixed(1))}s/mov`;
     }
     el.textContent = text;
 }
@@ -562,7 +562,7 @@ function setupEventHandlers() {
     if (useBookBtn) {
         useBookBtn.addEventListener('click', () => {
             gameController.setUseBook(!gameController.useBook);
-            useBookBtn.textContent = gameController.useBook ? 'Book: Yes' : 'Book: No';
+            useBookBtn.textContent = gameController.useBook ? 'Libro: Sí' : 'Libro: No';
         });
     }
 
@@ -718,12 +718,12 @@ function setupEventHandlers() {
 async function showDownloadDialog(type = 'dtm') {
     const dialog = document.getElementById('download-dialog');
     if (!dialog) {
-        alert('Tablebase download not available');
+        alert('Descarga de finales no disponible');
         return;
     }
 
     if (!tablebaseLoader || !tablebaseLoader.isAvailable()) {
-        alert('Tablebase storage requires OPFS (Origin Private File System), which requires HTTPS or localhost. Make sure you are using the HTTPS server.');
+        alert('El almacenamiento de finales requiere OPFS (Origin Private File System), que necesita HTTPS o localhost.');
         return;
     }
 
@@ -736,8 +736,8 @@ async function showDownloadDialog(type = 'dtm') {
 
     if (titleEl) {
         titleEl.textContent = type === 'cwdl'
-            ? 'Downloading 6-7 Piece WDL Tables'
-            : 'Downloading 5-Piece DTM Tables';
+            ? 'Descargando finales WDL 6-7 piezas'
+            : 'Descargando finales DTM 5 piezas';
     }
 
     let cancelled = false;
@@ -755,11 +755,11 @@ async function showDownloadDialog(type = 'dtm') {
             if (cancelled) return;
             const pct = Math.round((loaded / total) * 100);
             if (progressEl) progressEl.style.width = `${pct}%`;
-            if (statusEl) statusEl.textContent = `Downloading: ${file} (${loaded}/${total})`;
+            if (statusEl) statusEl.textContent = `Descargando: ${file} (${loaded}/${total})`;
         });
 
         if (!cancelled) {
-            statusEl.textContent = 'Complete! Tablebases will be used automatically.';
+            statusEl.textContent = '¡Listo! Se usarán automáticamente.';
             setTimeout(() => {
                 dialog.style.display = 'none';
                 // Reload to pick up the new tablebases
@@ -813,10 +813,10 @@ function updateMoveHistory() {
 function showGameOver(winner, reason) {
     let message;
     if (winner === 'draw') {
-        message = reason ? `Draw — ${reason}!` : 'Game drawn!';
+        message = reason ? `¡Tablas — ${reason}!` : '¡Tablas!';
     } else {
-        const name = winner.charAt(0).toUpperCase() + winner.slice(1);
-        message = reason ? `${name} wins (${reason})!` : `${name} wins!`;
+        const name = winner === 'white' ? 'blancas' : 'negras';
+        message = reason ? `¡Ganan ${name} (${reason})!` : `¡Ganan ${name}!`;
     }
     console.log(message);
 
@@ -825,15 +825,15 @@ function showGameOver(winner, reason) {
         let title, resultMsg;
         if (winner === 'draw') {
             matchStats.draws++;
-            title = 'Draw';
+            title = 'Tablas';
             resultMsg = message;
         } else if (winner === gameController.humanColor) {
             matchStats.wins++;
-            title = 'You Win!';
+            title = '¡Ganaste!';
             resultMsg = message;
         } else {
             matchStats.losses++;
-            title = 'You Lose';
+            title = 'Perdiste';
             resultMsg = message;
         }
         saveMatchStats();
@@ -972,7 +972,7 @@ async function matchResign() {
     await gameController.abortSearch();
     matchStats.losses++;
     saveMatchStats();
-    showMatchResultDialog('Resigned', 'You resigned the game.');
+    showMatchResultDialog('Abandono', 'Has abandonado la partida.');
 }
 
 function showMatchResultDialog(title, message) {

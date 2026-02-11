@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +7,7 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <title>Torquemada Checkers</title>
+    <title>Torquemada Damas</title>
     <link id="main-css" rel="stylesheet">
     <script>document.getElementById('main-css').href = 'style.css?v=' + Date.now();</script>
     <!-- Enable SharedArrayBuffer for stop functionality -->
@@ -17,9 +17,9 @@
     <!-- Loading screen -->
     <div id="loading" class="loading-container">
         <div class="loading-content">
-            <h1>Torquemada Checkers</h1>
+            <h1>Torquemada Damas</h1>
             <div class="spinner"></div>
-            <p id="loading-status">Loading...</p>
+            <p id="loading-status">Cargando...</p>
         </div>
     </div>
 
@@ -31,22 +31,22 @@
             <section class="board-section">
                 <!-- Game toolbar -->
                 <div id="game-controls" class="game-toolbar">
-                    <button id="btn-new-game" class="btn btn-small">New Game</button>
-                    <button id="btn-undo" class="btn btn-small btn-arrow" title="Undo" disabled>&#x25C0;</button>
-                    <button id="btn-redo" class="btn btn-small btn-arrow" title="Redo" disabled>&#x25B6;</button>
-                    <button id="btn-flip" class="btn btn-small">Flip</button>
-                    <button id="btn-edit" class="btn btn-small">Edit</button>
-                    <button id="btn-stop" class="btn btn-small" disabled>Stop</button>
+                    <button id="btn-new-game" class="btn btn-small">Nueva partida</button>
+                    <button id="btn-undo" class="btn btn-small btn-arrow" title="Deshacer" disabled>&#x25C0;</button>
+                    <button id="btn-redo" class="btn btn-small btn-arrow" title="Rehacer" disabled>&#x25B6;</button>
+                    <button id="btn-flip" class="btn btn-small">Girar</button>
+                    <button id="btn-edit" class="btn btn-small">Editar</button>
+                    <button id="btn-stop" class="btn btn-small" disabled>Parar</button>
                 </div>
                 <div id="match-toolbar" class="game-toolbar" style="display: none;">
-                    <button id="btn-match-stats" class="btn btn-small">Stats</button>
-                    <span class="match-mode-label">Match Play</span>
-                    <button id="btn-match-resign" class="btn btn-small btn-danger">Resign</button>
+                    <button id="btn-match-stats" class="btn btn-small">Marcador</button>
+                    <span class="match-mode-label">Partida seria</span>
+                    <button id="btn-match-resign" class="btn btn-small btn-danger">Abandonar</button>
                 </div>
                 <div id="board-container" class="board-container">
                     <canvas id="board" width="480" height="480"></canvas>
                 </div>
-                <p id="status" class="status-text">White to move</p>
+                <p id="status" class="status-text">Mueven blancas</p>
 
                 <!-- Search info display -->
                 <div id="search-info" class="search-info" style="display: none;">
@@ -64,100 +64,100 @@
 
                 <!-- Edit mode controls (hidden by default) -->
                 <div id="edit-controls" class="control-group" style="display: none;">
-                    <h3>Edit Position</h3>
+                    <h3>Editar posición</h3>
                     <div class="piece-selector">
-                        <button class="piece-btn active" data-piece="empty" title="Empty">
+                        <button class="piece-btn active" data-piece="empty" title="Vacía">
                             <span class="piece-icon empty"></span>
                         </button>
-                        <button class="piece-btn" data-piece="white-man" title="White Man">
+                        <button class="piece-btn" data-piece="white-man" title="Peón blanco">
                             <span class="piece-icon white-man"></span>
                         </button>
-                        <button class="piece-btn" data-piece="white-king" title="White King">
+                        <button class="piece-btn" data-piece="white-king" title="Dama blanca">
                             <span class="piece-icon white-king"></span>
                         </button>
-                        <button class="piece-btn" data-piece="black-man" title="Black Man">
+                        <button class="piece-btn" data-piece="black-man" title="Peón negro">
                             <span class="piece-icon black-man"></span>
                         </button>
-                        <button class="piece-btn" data-piece="black-king" title="Black King">
+                        <button class="piece-btn" data-piece="black-king" title="Dama negra">
                             <span class="piece-icon black-king"></span>
                         </button>
                     </div>
                     <div class="edit-actions">
-                        <button id="btn-clear-board" class="btn btn-small">Clear</button>
+                        <button id="btn-clear-board" class="btn btn-small">Limpiar</button>
                     </div>
                     <div class="side-to-move">
-                        <label>Side to move:</label>
+                        <label>Turno:</label>
                         <div class="toggle-group">
-                            <button id="btn-white-to-move" class="toggle-btn active">White</button>
-                            <button id="btn-black-to-move" class="toggle-btn">Black</button>
+                            <button id="btn-white-to-move" class="toggle-btn active">Blancas</button>
+                            <button id="btn-black-to-move" class="toggle-btn">Negras</button>
                         </div>
                     </div>
-                    <button id="btn-edit-done" class="btn btn-primary">Done</button>
+                    <button id="btn-edit-done" class="btn btn-primary">Listo</button>
                 </div>
 
                 <!-- Engine controls -->
                 <div class="control-group">
-                    <h3>Engine</h3>
+                    <h3>Motor</h3>
                     <div class="input-group">
                         <span id="engine-time-left" class="time-left">00:00.0</span>
-                        <span id="btn-time-per-move" class="time-per-move" title="Click to change">+3s/move</span>
-                        <span id="btn-use-book" class="time-per-move" title="Click to toggle">Book: Yes</span>
+                        <span id="btn-time-per-move" class="time-per-move" title="Clic para cambiar">+3s/mov</span>
+                        <span id="btn-use-book" class="time-per-move" title="Clic para alternar">Libro: Sí</span>
                     </div>
                     <div class="toggle-group">
-                        <button id="btn-engine-white" class="toggle-btn">Engine White</button>
-                        <button id="btn-engine-black" class="toggle-btn active">Engine Black</button>
-                        <button id="btn-two-player" class="toggle-btn">2 Player</button>
+                        <button id="btn-engine-white" class="toggle-btn">Motor blancas</button>
+                        <button id="btn-engine-black" class="toggle-btn active">Motor negras</button>
+                        <button id="btn-two-player" class="toggle-btn">2 jugadores</button>
                     </div>
                 </div>
 
                 <!-- Move history -->
                 <div class="control-group">
-                    <h3>Move History</h3>
+                    <h3>Historial</h3>
                     <div id="move-history" class="move-history"></div>
                 </div>
 
                 <!-- Tablebases -->
                 <div class="control-group">
-                    <h3>Tablebases</h3>
-                    <button id="btn-download-tb" class="btn">Download 5-piece DTM</button>
-                    <p class="help-text">Perfect endgame play (~140 MB)</p>
-                    <button id="btn-download-cwdl" class="btn">Download 6-7 piece WDL</button>
-                    <p class="help-text">Win/Draw/Loss tables (~440 MB)</p>
+                    <h3>Finales</h3>
+                    <button id="btn-download-tb" class="btn">Descargar DTM 5 piezas</button>
+                    <p class="help-text">Finales perfectos (~140 MB)</p>
+                    <button id="btn-download-cwdl" class="btn">Descargar WDL 6-7 piezas</button>
+                    <p class="help-text">Victoria/Tablas/Derrota (~440 MB)</p>
                 </div>
             </section>
         </main>
 
         <!-- Footer -->
         <footer class="footer">
-            <p>Torquemada Checkers Engine - WebAssembly Edition</p>
+            <p>Motor de Damas Torquemada - Edición WebAssembly</p>
         </footer>
     </div>
 
     <!-- Download dialog -->
     <div id="download-dialog" class="dialog" style="display: none;">
         <div class="dialog-content">
-            <h2>Downloading Tablebases</h2>
+            <h2>Descargando finales</h2>
             <div class="progress-bar">
                 <div class="progress" style="width: 0%"></div>
             </div>
-            <p class="status">Preparing...</p>
-            <button class="btn cancel-btn">Cancel</button>
+            <p class="status">Preparando...</p>
+            <button class="btn cancel-btn">Cancelar</button>
         </div>
     </div>
 
     <!-- New game dialog -->
     <div id="new-game-dialog" class="dialog" style="display: none;">
         <div class="dialog-content dialog-narrow">
-            <h2>New Game</h2>
-            <p class="dialog-label">Play as:</p>
+            <h2>Nueva partida</h2>
+            <p class="dialog-label">Jugar con:</p>
             <div class="dialog-buttons">
-                <button id="btn-play-white" class="btn">White</button>
-                <button id="btn-play-black" class="btn">Black</button>
-                <button id="btn-play-both" class="btn">Both</button>
+                <button id="btn-play-white" class="btn">Blancas</button>
+                <button id="btn-play-black" class="btn">Negras</button>
+                <button id="btn-play-both" class="btn">Ambos</button>
             </div>
             <hr style="border-color: var(--border); margin: 1rem 0;">
             <div class="dialog-buttons">
-                <button id="btn-match-play" class="btn btn-primary">Match Play</button>
+                <button id="btn-match-play" class="btn btn-primary">Partida seria</button>
             </div>
         </div>
     </div>
@@ -165,14 +165,14 @@
     <!-- Time per move dialog -->
     <div id="time-dialog" class="dialog" style="display: none;">
         <div class="dialog-content dialog-narrow">
-            <h2>Time per Move</h2>
+            <h2>Tiempo por jugada</h2>
             <div class="time-dialog-input">
                 <input id="time-input" type="number" min="0.1" step="0.1" value="3">
-                <span>seconds</span>
+                <span>segundos</span>
             </div>
             <div class="time-dialog-buttons">
-                <button id="btn-time-ok" class="btn btn-primary">OK</button>
-                <button id="btn-time-cancel" class="btn">Cancel</button>
+                <button id="btn-time-ok" class="btn btn-primary">Aceptar</button>
+                <button id="btn-time-cancel" class="btn">Cancelar</button>
             </div>
         </div>
     </div>
@@ -180,11 +180,11 @@
     <!-- Draw offer dialog -->
     <div id="draw-offer-dialog" class="dialog" style="display: none;">
         <div class="dialog-content dialog-narrow">
-            <h2>Draw Offer</h2>
-            <p class="dialog-label">The engine offers a draw.</p>
+            <h2>Oferta de tablas</h2>
+            <p class="dialog-label">El motor ofrece tablas.</p>
             <div class="dialog-buttons">
-                <button id="btn-accept-draw" class="btn btn-primary">Accept</button>
-                <button id="btn-decline-draw" class="btn">Decline</button>
+                <button id="btn-accept-draw" class="btn btn-primary">Aceptar</button>
+                <button id="btn-decline-draw" class="btn">Rechazar</button>
             </div>
         </div>
     </div>
@@ -192,15 +192,15 @@
     <!-- Match result dialog -->
     <div id="match-result-dialog" class="dialog" style="display: none;">
         <div class="dialog-content dialog-narrow">
-            <h2 id="match-result-title">Game Over</h2>
+            <h2 id="match-result-title">Fin de partida</h2>
             <p id="match-result-message" class="dialog-label"></p>
             <div class="match-stats">
-                <span class="stat-win">W: <span id="match-stat-w">0</span></span>
-                <span class="stat-draw">D: <span id="match-stat-d">0</span></span>
-                <span class="stat-loss">L: <span id="match-stat-l">0</span></span>
+                <span class="stat-win">V: <span id="match-stat-w">0</span></span>
+                <span class="stat-draw">T: <span id="match-stat-d">0</span></span>
+                <span class="stat-loss">D: <span id="match-stat-l">0</span></span>
             </div>
             <div class="dialog-buttons">
-                <button id="btn-match-result-ok" class="btn btn-primary">OK</button>
+                <button id="btn-match-result-ok" class="btn btn-primary">Aceptar</button>
             </div>
         </div>
     </div>
@@ -208,14 +208,14 @@
     <!-- Match stats dialog -->
     <div id="match-stats-dialog" class="dialog" style="display: none;">
         <div class="dialog-content dialog-narrow">
-            <h2>Match Stats</h2>
+            <h2>Marcador</h2>
             <div class="match-stats">
-                <span class="stat-win">W: <span id="match-stats-w">0</span></span>
-                <span class="stat-draw">D: <span id="match-stats-d">0</span></span>
-                <span class="stat-loss">L: <span id="match-stats-l">0</span></span>
+                <span class="stat-win">V: <span id="match-stats-w">0</span></span>
+                <span class="stat-draw">T: <span id="match-stats-d">0</span></span>
+                <span class="stat-loss">D: <span id="match-stats-l">0</span></span>
             </div>
             <div class="dialog-buttons">
-                <button id="btn-match-stats-close" class="btn">Close</button>
+                <button id="btn-match-stats-close" class="btn">Cerrar</button>
             </div>
         </div>
     </div>
