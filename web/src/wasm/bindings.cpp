@@ -622,11 +622,11 @@ val createMoveObject(const Move& m, const std::vector<int>& path, bool white_to_
 
 // Forward declaration
 val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time,
-                         double hard_time, val progress_callback);
+                         double hard_time, val progress_callback, bool analyze_mode);
 
 // Perform search without callback - wrapper for backwards compatibility
 val doSearch(const JSBoard& jsboard, int max_depth, double soft_time, double hard_time) {
-    return doSearchWithCallback(jsboard, max_depth, soft_time, hard_time, val::null());
+    return doSearchWithCallback(jsboard, max_depth, soft_time, hard_time, val::null(), false);
 }
 
 // Helper to build a result val from SearchResult and board
@@ -710,7 +710,7 @@ void setUseBook(bool use_book) {
 }
 
 val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time,
-                         double hard_time, val progress_callback) {
+                         double hard_time, val progress_callback, bool analyze_mode = false) {
     val result = val::object();
     int piece_count = jsboard.pieceCount();
 
@@ -796,6 +796,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
 
     search::Searcher searcher("", 0);
     searcher.set_eval(eval_func);
+    searcher.set_analyze_mode(analyze_mode);
 
     // Reset and set stop flag for this search
     g_stop_flag.store(false, std::memory_order_relaxed);

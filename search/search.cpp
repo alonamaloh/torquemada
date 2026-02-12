@@ -551,7 +551,7 @@ MultiSearchResult Searcher::search_multi(const Board& board, int max_depth,
   if (root_moves.empty()) return result;
 
   // Only one legal move — no decision to make, return immediately
-  if (root_moves.size() == 1) {
+  if (root_moves.size() == 1 && !analyze_mode_) {
     result.moves.push_back({root_moves[0], 0});
     result.depth = 0;
     return result;
@@ -704,7 +704,7 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
   }
 
   // Only one legal move - no need to search, just return it
-  if (root_moves.size() == 1) {
+  if (root_moves.size() == 1 && !analyze_mode_) {
     result.best_move = root_moves[0];
     result.nodes = 0;
     result.depth = 1;

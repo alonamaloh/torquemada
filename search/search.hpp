@@ -212,6 +212,9 @@ public:
   // Set callback for iterative deepening progress updates
   void set_progress_callback(SearchProgressCallback cb) { progress_callback_ = std::move(cb); }
 
+  // Set analysis mode: search even when there's only one legal move
+  void set_analyze_mode(bool v) { analyze_mode_ = v; }
+
   // Check if search should stop and throw if so
   void check_stop() {
     if (stop_flag_ && stop_flag_->load(std::memory_order_relaxed)) throw SearchInterrupted{};
@@ -312,6 +315,9 @@ private:
 
   // Whether white is to move at the root (from the game's perspective)
   bool root_white_to_move_ = true;
+
+  // Analysis mode: search even with only one legal move
+  bool analyze_mode_ = false;
 
   // External stop flag (for SIGINT handling)
   std::atomic<bool>* stop_flag_ = nullptr;
