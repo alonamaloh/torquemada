@@ -985,6 +985,18 @@ function updateSearchInfo(info) {
  * @param {number} score - Raw centipawn score (from side-to-move's perspective)
  * @param {string} scoreStr - Formatted score string for the label
  */
+/**
+ * Normalize a search score to the [-10000, +10000] NN-eval scale:
+ *   Proven draws (|score| <= 10000) → 0
+ *   Undecided → strip ±10000 offset
+ *   Mate/TB (|score| > 28000) → ±10000
+ */
+function normalizeScore(score) {
+    if (Math.abs(score) <= 10000) return 0;           // proven draw
+    if (Math.abs(score) > 28000) return score > 0 ? 10000 : -10000;  // mate/TB
+    return score > 0 ? score - 10000 : score + 10000; // undecided
+}
+
 function updateEvalBar(score) {
     const bar = document.getElementById('eval-bar-white');
     if (!bar) return;
@@ -992,8 +1004,11 @@ function updateEvalBar(score) {
     // Convert score to white's perspective (engine score is side-to-move)
     const whiteScore = gameController.boardUI.whiteToMove ? score : -score;
 
-    // Clamp to [-10000, 10000] and linearly interpolate to [0%, 100%]
-    const clamped = Math.max(-10000, Math.min(10000, whiteScore));
+    // Collapse to [-10000, +10000]: draws→0, undecided→strip offset, wins/losses→±10000
+    const displayScore = normalizeScore(whiteScore);
+
+    // Linearly interpolate to [0%, 100%]
+    const clamped = Math.max(-10000, Math.min(10000, displayScore));
     const pct = ((clamped + 10000) / 20000) * 100;
     bar.style.height = `${pct}%`;
 }

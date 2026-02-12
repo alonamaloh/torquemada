@@ -584,8 +584,8 @@ export class GameController {
                 await this._sleep(200 - elapsed);
             }
 
-            // Draw offer: score exactly 0, not book, 4 or fewer pieces
-            if (this.onDrawOffer && result.score === 0 && !result.book) {
+            // Draw offer: proven draw (score in [-10000, +10000]), not book, 4 or fewer pieces
+            if (this.onDrawOffer && Math.abs(result.score) <= 10000 && !result.book) {
                 const board = await this.engine.getBoard();
                 if (board.pieceCount <= 4) {
                     const accepted = await this.onDrawOffer();
@@ -661,11 +661,18 @@ export class GameController {
         let scoreStr = '?';
         if (result.score !== undefined) {
             if (Math.abs(result.score) > 29000) {
+                // Mate scores
                 const mateIn = Math.ceil((30000 - Math.abs(result.score)) / 2);
                 scoreStr = result.score > 0 ? `M${mateIn}` : `-M${mateIn}`;
-            } else {
+            } else if (Math.abs(result.score) <= 10000) {
+                // Proven draw: score in [-10000, +10000]
                 const val = (result.score / 100).toFixed(2);
-                scoreStr = result.score > 0 ? `+${val}` : val;
+                scoreStr = (result.score >= 0 ? '+' : '') + val + '(draw)';
+            } else {
+                // Undecided: strip ±10000 offset
+                const raw = result.score > 0 ? result.score - 10000 : result.score + 10000;
+                const val = (raw / 100).toFixed(2);
+                scoreStr = raw > 0 ? `+${val}` : val;
             }
         }
 
