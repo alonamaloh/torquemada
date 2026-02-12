@@ -982,7 +982,7 @@ function updateSearchInfo(info) {
 
 /**
  * Update the evaluation bar
- * @param {number} score - Raw centipawn score
+ * @param {number} score - Raw centipawn score (from side-to-move's perspective)
  * @param {string} scoreStr - Formatted score string for the label
  */
 function updateEvalBar(score, scoreStr) {
@@ -990,8 +990,11 @@ function updateEvalBar(score, scoreStr) {
     const label = document.getElementById('eval-bar-label');
     if (!bar || !label) return;
 
+    // Convert score to white's perspective (engine score is side-to-move)
+    const whiteScore = gameController.boardUI.whiteToMove ? score : -score;
+
     // Clamp to [-10000, 10000] and linearly interpolate to [0%, 100%]
-    const clamped = Math.max(-10000, Math.min(10000, score));
+    const clamped = Math.max(-10000, Math.min(10000, whiteScore));
     const pct = ((clamped + 10000) / 20000) * 100;
     bar.style.height = `${pct}%`;
 
