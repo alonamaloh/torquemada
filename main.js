@@ -536,7 +536,10 @@ function setupEventHandlers() {
     // Flip board button
     const flipBtn = document.getElementById('btn-flip');
     if (flipBtn) {
-        flipBtn.addEventListener('click', () => gameController.flipBoard());
+        flipBtn.addEventListener('click', () => {
+            gameController.flipBoard();
+            if (lastEvalScore !== null) updateEvalBar(lastEvalScore);
+        });
     }
 
     // Mode toggle buttons
@@ -956,7 +959,8 @@ function updateSearchInfo(info) {
     if (summaryEl) {
         let depth = info.depth || '-';
         if (info.phase) {
-            depth += ` (${info.phase})`;
+            const phaseLabel = info.phase === 'winning' ? 'ganando' : info.phase === 'losing' ? 'perdiendo' : info.phase;
+            depth += ` (${phaseLabel})`;
         }
         const score = info.scoreStr || '-';
         const nodes = info.nodes || 0;
@@ -997,9 +1001,14 @@ function normalizeScore(score) {
     return score > 0 ? score - 10000 : score + 10000; // undecided
 }
 
+let lastEvalScore = null;  // Track last score for immediate eval bar updates on flip
+
 function updateEvalBar(score) {
+    lastEvalScore = score;
     const bar = document.getElementById('eval-bar-white');
     if (!bar) return;
+
+    const flipped = gameController.boardUI.flipped;
 
     // Convert score to white's perspective (engine score is side-to-move)
     const whiteScore = gameController.boardUI.whiteToMove ? score : -score;
@@ -1011,6 +1020,15 @@ function updateEvalBar(score) {
     const clamped = Math.max(-10000, Math.min(10000, displayScore));
     const pct = ((clamped + 10000) / 20000) * 100;
     bar.style.height = `${pct}%`;
+
+    // Anchor white's portion to bottom (normal) or top (flipped)
+    if (flipped) {
+        bar.style.bottom = '';
+        bar.style.top = '0';
+    } else {
+        bar.style.top = '';
+        bar.style.bottom = '0';
+    }
 }
 
 /**

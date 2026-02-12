@@ -667,7 +667,7 @@ export class GameController {
             } else if (Math.abs(result.score) <= 10000) {
                 // Proven draw: score in [-10000, +10000]
                 const val = (result.score / 100).toFixed(2);
-                scoreStr = (result.score >= 0 ? '+' : '') + val + '(draw)';
+                scoreStr = (result.score >= 0 ? '+' : '') + val + '(tablas)';
             } else {
                 // Undecided: strip ±10000 offset
                 const raw = result.score > 0 ? result.score - 10000 : result.score + 10000;
