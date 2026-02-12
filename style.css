@@ -111,15 +111,60 @@ body {
     width: 100%;
     max-width: calc(480px + 1rem);
     box-sizing: border-box;
+    display: flex;
+    align-items: stretch;
+    gap: 0.4rem;
 }
 
 #board {
     display: block;
     border-radius: 4px;
-    width: 100%;
+    flex: 1;
+    min-width: 0;
     max-width: 480px;
     height: auto;
     touch-action: manipulation;
+}
+
+/* Evaluation bar */
+.eval-bar {
+    width: 1.2rem;
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+    flex-shrink: 0;
+}
+
+.eval-bar-black {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: #333;
+}
+
+.eval-bar-white {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #eee;
+    transition: height 0.3s ease;
+}
+
+.eval-bar-label {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    font-size: 0.65rem;
+    font-weight: 700;
+    font-family: monospace;
+    white-space: nowrap;
+    color: #888;
+    text-shadow: 0 0 3px var(--bg-primary), 0 0 3px var(--bg-primary);
+    pointer-events: none;
 }
 
 .status-text {

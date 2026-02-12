@@ -44,6 +44,11 @@
                     <button id="btn-match-resign" class="btn btn-small btn-danger">Abandonar</button>
                 </div>
                 <div id="board-container" class="board-container">
+                    <div id="eval-bar" class="eval-bar" style="display: none;">
+                        <div class="eval-bar-black"></div>
+                        <div id="eval-bar-white" class="eval-bar-white" style="height: 50%"></div>
+                        <span id="eval-bar-label" class="eval-bar-label">0.00</span>
+                    </div>
                     <canvas id="board" width="480" height="480"></canvas>
                 </div>
                 <p id="status" class="status-text">Mueven blancas</p>

@@ -973,6 +973,29 @@ function updateSearchInfo(info) {
         summaryEl.innerHTML = `${depth}. ${score} <span class="search-label">nodes:</span> ${nodesStr} <span class="search-label">nps:</span> ${npsStr}`;
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
+
+    // Update eval bar in analysis mode
+    if (gameController.analysisMode && info.score !== undefined) {
+        updateEvalBar(info.score, info.scoreStr);
+    }
+}
+
+/**
+ * Update the evaluation bar
+ * @param {number} score - Raw centipawn score
+ * @param {string} scoreStr - Formatted score string for the label
+ */
+function updateEvalBar(score, scoreStr) {
+    const bar = document.getElementById('eval-bar-white');
+    const label = document.getElementById('eval-bar-label');
+    if (!bar || !label) return;
+
+    // Clamp to [-10000, 10000] and linearly interpolate to [0%, 100%]
+    const clamped = Math.max(-10000, Math.min(10000, score));
+    const pct = ((clamped + 10000) / 20000) * 100;
+    bar.style.height = `${pct}%`;
+
+    label.textContent = scoreStr || '0.00';
 }
 
 /**
@@ -1026,6 +1049,10 @@ async function enterAnalysisMode() {
     const engineTimeGroup = document.querySelector('.input-group');
     if (engineTimeGroup) engineTimeGroup.style.display = 'none';
 
+    // Show eval bar
+    const evalBar = document.getElementById('eval-bar');
+    if (evalBar) evalBar.style.display = '';
+
     // Start analyzing current position
     if (!gameController.gameOver) {
         gameController._analyzePosition();
@@ -1042,6 +1069,10 @@ function exitAnalysisMode() {
     // Show time/book controls again
     const engineTimeGroup = document.querySelector('.input-group');
     if (engineTimeGroup) engineTimeGroup.style.display = 'flex';
+
+    // Hide eval bar
+    const evalBar = document.getElementById('eval-bar');
+    if (evalBar) evalBar.style.display = 'none';
 
     clearSearchInfo();
 }
