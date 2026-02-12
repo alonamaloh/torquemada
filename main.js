@@ -159,6 +159,7 @@ function updateModeButtons() {
     const btnEngineWhite = document.getElementById('btn-engine-white');
     const btnEngineBlack = document.getElementById('btn-engine-black');
     const btnTwoPlayer = document.getElementById('btn-two-player');
+    const btnAnalysis = document.getElementById('btn-analysis');
 
     if (!btnEngineWhite || !btnEngineBlack || !btnTwoPlayer) return;
 
@@ -166,6 +167,12 @@ function updateModeButtons() {
     btnEngineWhite.classList.remove('active');
     btnEngineBlack.classList.remove('active');
     btnTwoPlayer.classList.remove('active');
+    if (btnAnalysis) btnAnalysis.classList.remove('active');
+
+    if (gameController.analysisMode) {
+        if (btnAnalysis) btnAnalysis.classList.add('active');
+        return;
+    }
 
     // Set active based on humanColor
     // humanColor='black' means engine plays white
@@ -447,6 +454,7 @@ function hideNewGameDialog() {
  */
 async function startNewGame(playAs) {
     hideNewGameDialog();
+    exitAnalysisMode();
 
     clearSearchInfo();
     await gameController.newGame();
@@ -537,21 +545,30 @@ function setupEventHandlers() {
 
     if (btnEngineWhite) {
         btnEngineWhite.addEventListener('click', () => {
+            exitAnalysisMode();
             gameController.setHumanColor('black'); // human plays black = engine plays white
             updateModeButtons();
         });
     }
     if (btnEngineBlack) {
         btnEngineBlack.addEventListener('click', () => {
+            exitAnalysisMode();
             gameController.setHumanColor('white'); // human plays white = engine plays black
             updateModeButtons();
         });
     }
     if (btnTwoPlayer) {
         btnTwoPlayer.addEventListener('click', () => {
+            exitAnalysisMode();
             gameController.setHumanColor('both');
             updateModeButtons();
         });
+    }
+
+    // Analysis mode button
+    const btnAnalysis = document.getElementById('btn-analysis');
+    if (btnAnalysis) {
+        btnAnalysis.addEventListener('click', () => enterAnalysisMode());
     }
 
     // Time per move - click to open dialog
@@ -930,7 +947,7 @@ function clearSearchInfo() {
  * Update search info display
  */
 function updateSearchInfo(info) {
-    if (matchPlayActive) return;
+    if (matchPlayActive && !gameController.analysisMode) return;
     const searchInfo = document.getElementById('search-info');
     if (!searchInfo) return;
 
@@ -959,6 +976,38 @@ function updateSearchInfo(info) {
         summaryEl.innerHTML = `${depth}. ${score} <span class="search-label">nodes:</span> ${nodesStr} <span class="search-label">nps:</span> ${npsStr}`;
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
+}
+
+// --- Analysis Mode ---
+
+async function enterAnalysisMode() {
+    if (gameController.analysisMode) return;
+
+    // Stop any running search
+    await gameController.abortSearch();
+
+    gameController.analysisMode = true;
+    updateModeButtons();
+
+    // Hide time/book controls (not relevant in analysis)
+    const engineTimeGroup = document.querySelector('.input-group');
+    if (engineTimeGroup) engineTimeGroup.style.display = 'none';
+
+    // Start analyzing current position
+    if (!gameController.gameOver) {
+        gameController._analyzePosition();
+    }
+}
+
+function exitAnalysisMode() {
+    if (!gameController.analysisMode) return;
+    gameController.analysisMode = false;
+
+    // Show time/book controls again
+    const engineTimeGroup = document.querySelector('.input-group');
+    if (engineTimeGroup) engineTimeGroup.style.display = 'flex';
+
+    clearSearchInfo();
 }
 
 // --- Match Play ---

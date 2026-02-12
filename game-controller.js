@@ -24,6 +24,7 @@ export class GameController {
         this.secondsLeft = 0;        // Time bank (accumulates/drains)
         this.useBook = true;         // Use opening book
         this.autoPlay = true;        // Engine plays automatically
+        this.analysisMode = false;   // Analysis mode: engine analyzes, human plays both sides
 
         // Position tracking for threefold repetition
         this.positionCounts = new Map();  // key: "white,black,kings" → count
@@ -338,7 +339,14 @@ export class GameController {
      * nothing, clear.
      */
     async _handleSquareClick(square) {
-        if (this.gameOver || this.isThinking) return;
+        if (this.gameOver) return;
+
+        // In analysis mode, stop the running analysis to accept the move
+        if (this.analysisMode && this.isThinking) {
+            await this.abortSearch();
+        }
+
+        if (this.isThinking) return;
 
         const board = await this.engine.getBoard();
         if (!this._isHumanTurn(board.whiteToMove)) return;
@@ -427,6 +435,7 @@ export class GameController {
      * Check if it's human's turn
      */
     _isHumanTurn(whiteToMove) {
+        if (this.analysisMode) return true;  // Human plays both sides in analysis mode
         if (this.humanColor === 'both') return true;
         if (this.humanColor === 'white') return whiteToMove;
         return !whiteToMove;
@@ -489,6 +498,12 @@ export class GameController {
         if (!this.gameOver) {
             const side = newBoard.whiteToMove ? 'blancas' : 'negras';
             this._updateStatus(`Mueven ${side}`);
+        }
+
+        // If analysis mode, start analyzing the new position
+        if (this.analysisMode && !this.gameOver) {
+            await this._analyzePosition();
+            return;
         }
 
         // If game not over and it's engine's turn, make engine move
@@ -605,6 +620,40 @@ export class GameController {
     }
 
     /**
+     * Start background analysis of current position.
+     * Runs an open-ended search that reports progress but never plays a move.
+     */
+    async _analyzePosition() {
+        if (this.gameOver || this.isThinking) return;
+
+        this.isThinking = true;
+        if (this.onThinkingStart) this.onThinkingStart();
+
+        try {
+            const onProgress = (progressResult) => {
+                this._reportSearchInfo(progressResult);
+            };
+
+            const result = await this.engine.search(999999, 999999, onProgress);
+
+            // Abort if search was cancelled
+            if (this._aborting) return;
+
+            if (result && !result.error) {
+                this._reportSearchInfo(result);
+            }
+        } catch (err) {
+            // Search was likely stopped — that's normal in analysis mode
+            if (!this._aborting) {
+                console.error('Analysis error:', err);
+            }
+        } finally {
+            this.isThinking = false;
+            if (this.onThinkingEnd) this.onThinkingEnd();
+        }
+    }
+
+    /**
      * Report search info (used for both progress updates and final result)
      */
     _reportSearchInfo(result) {
@@ -684,20 +733,32 @@ export class GameController {
         this.winner = null;
 
         // Switch mode so human can play the side that's now to move
-        // (unless in 2-player mode)
-        if (this.humanColor !== 'both') {
+        // (unless in 2-player or analysis mode)
+        if (this.humanColor !== 'both' && !this.analysisMode) {
             this.humanColor = board.whiteToMove ? 'white' : 'black';
             if (this.onModeChange) this.onModeChange(this.humanColor);
         }
 
         this._updateStatus('Jugada deshecha');
+
+        // In analysis mode, start analyzing the restored position
+        if (this.analysisMode && !this.gameOver) {
+            await this._analyzePosition();
+        }
     }
 
     /**
      * Redo last undone move
      */
     async redo() {
-        if (this.redoStack.length === 0 || this.isThinking) return;
+        if (this.redoStack.length === 0) return;
+        if (this.isThinking) {
+            if (this.analysisMode) {
+                await this.abortSearch();
+            } else {
+                return;
+            }
+        }
 
         // Pop move from redo stack
         const entry = this.redoStack.pop();
@@ -719,13 +780,18 @@ export class GameController {
         this.boardUI.setLastMove(entry.move.from, entry.move.to);
 
         // Switch mode so human can play the side that's now to move
-        // (unless in 2-player mode)
-        if (this.humanColor !== 'both') {
+        // (unless in 2-player or analysis mode)
+        if (this.humanColor !== 'both' && !this.analysisMode) {
             this.humanColor = newBoard.whiteToMove ? 'white' : 'black';
             if (this.onModeChange) this.onModeChange(this.humanColor);
         }
 
         this._updateStatus('Jugada rehecha');
+
+        // In analysis mode, start analyzing the restored position
+        if (this.analysisMode && !this.gameOver) {
+            await this._analyzePosition();
+        }
     }
 
     /**
@@ -867,8 +933,8 @@ export class GameController {
      */
     getUndoRedoState() {
         return {
-            canUndo: this.history.length > 0,
-            canRedo: this.redoStack.length > 0 && !this.isThinking
+            canUndo: this.history.length > 0 && (!this.isThinking || this.analysisMode),
+            canRedo: this.redoStack.length > 0 && (!this.isThinking || this.analysisMode)
         };
     }
 
