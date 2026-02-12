@@ -177,20 +177,20 @@ export class EngineAPI {
 
     /**
      * Search for the best move
-     * @param {number} maxDepth - Maximum search depth
      * @param {number} softTime - Soft time limit in seconds
      * @param {number} hardTime - Hard time limit in seconds
      * @param {Function} onProgress - Optional callback for progress updates
+     * @param {boolean} analyzeMode - If true, search even with only one legal move
      * @returns {Promise<Object>} Search result with bestMove, score, depth, nodes
      */
-    async search(softTime = 3, hardTime = 10, onProgress = null) {
+    async search(softTime = 3, hardTime = 10, onProgress = null, analyzeMode = false) {
         // Reset stop flag before starting search
         if (this.wasmMemory && this.wasmStopFlagAddress) {
             this.wasmMemory[this.wasmStopFlagAddress] = 0;
         } else if (this.stopFlagView) {
             Atomics.store(this.stopFlagView, 0, 0);
         }
-        const response = await this.requestWithProgress('search', { softTime, hardTime }, onProgress);
+        const response = await this.requestWithProgress('search', { softTime, hardTime, analyzeMode }, onProgress);
         return response.result;
     }
 

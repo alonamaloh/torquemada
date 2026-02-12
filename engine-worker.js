@@ -279,8 +279,9 @@ let currentSearchId = null;
  * @param {number} softTime - Soft time limit in seconds
  * @param {number} hardTime - Hard time limit in seconds
  * @param {number} requestId - Request ID for progress updates
+ * @param {boolean} analyzeMode - If true, search even with only one legal move
  */
-function search(softTime, hardTime, requestId) {
+function search(softTime, hardTime, requestId, analyzeMode) {
     if (!engine || !board) {
         return { error: 'Engine not ready' };
     }
@@ -322,7 +323,7 @@ function search(softTime, hardTime, requestId) {
         let result;
         if (engine.searchWithCallback) {
             result = engine.searchWithCallback(
-                board, 100, softTime || 3, hardTime || 10, progressCallback
+                board, 100, softTime || 3, hardTime || 10, progressCallback, !!analyzeMode
             );
         } else {
             result = engine.search(board, 100, softTime || 3, hardTime || 10);
@@ -435,7 +436,7 @@ self.onmessage = function(e) {
                 break;
 
             case 'search':
-                response.result = search(data.softTime, data.hardTime, id);
+                response.result = search(data.softTime, data.hardTime, id, data.analyzeMode);
                 break;
 
             case 'setUseBook':

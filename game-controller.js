@@ -634,7 +634,7 @@ export class GameController {
                 this._reportSearchInfo(progressResult);
             };
 
-            const result = await this.engine.search(999999, 999999, onProgress);
+            const result = await this.engine.search(999999, 999999, onProgress, true);
 
             // Abort if search was cancelled
             if (this._aborting) return;
