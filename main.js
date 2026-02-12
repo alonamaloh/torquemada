@@ -1092,6 +1092,7 @@ function getLegacyStats() {
 
 async function startMatchPlay() {
     hideNewGameDialog();
+    exitAnalysisMode();
     matchStats = computeStats();
     matchPlayActive = true;
     document.body.classList.add('match-play');
