@@ -153,19 +153,6 @@ body {
     transition: height 0.3s ease;
 }
 
-.eval-bar-label {
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%) rotate(-90deg);
-    font-size: 0.65rem;
-    font-weight: 700;
-    font-family: monospace;
-    white-space: nowrap;
-    color: #888;
-    text-shadow: 0 0 3px var(--bg-primary), 0 0 3px var(--bg-primary);
-    pointer-events: none;
-}
 
 .status-text {
     margin-top: 1rem;

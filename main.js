@@ -976,7 +976,7 @@ function updateSearchInfo(info) {
 
     // Update eval bar in analysis mode
     if (gameController.analysisMode && info.score !== undefined) {
-        updateEvalBar(info.score, info.scoreStr);
+        updateEvalBar(info.score);
     }
 }
 
@@ -985,10 +985,9 @@ function updateSearchInfo(info) {
  * @param {number} score - Raw centipawn score (from side-to-move's perspective)
  * @param {string} scoreStr - Formatted score string for the label
  */
-function updateEvalBar(score, scoreStr) {
+function updateEvalBar(score) {
     const bar = document.getElementById('eval-bar-white');
-    const label = document.getElementById('eval-bar-label');
-    if (!bar || !label) return;
+    if (!bar) return;
 
     // Convert score to white's perspective (engine score is side-to-move)
     const whiteScore = gameController.boardUI.whiteToMove ? score : -score;
@@ -997,8 +996,6 @@ function updateEvalBar(score, scoreStr) {
     const clamped = Math.max(-10000, Math.min(10000, whiteScore));
     const pct = ((clamped + 10000) / 20000) * 100;
     bar.style.height = `${pct}%`;
-
-    label.textContent = scoreStr || '0.00';
 }
 
 /**
