@@ -784,7 +784,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     // Set up evaluation function (no noise - variety handled by search)
     auto eval_func = [](const Board& board, int /*ply*/) -> int {
         if (g_nn_model) {
-            return g_nn_model->evaluate(board, 0);
+            return g_nn_model->evaluate(board);
         } else {
             int white_men = std::popcount(board.whitePawns());
             int white_kings = std::popcount(board.whiteQueens());

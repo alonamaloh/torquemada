@@ -196,15 +196,6 @@ public:
   // Set perspective for PV display (true = white's view, false = black's view)
   void set_perspective(bool white) { white_perspective_ = white; }
 
-  // Set the value of a draw from white's perspective
-  // Default is 0. Use negative values (e.g., -100) to make the engine avoid draws.
-  // Use -10000 to make draws as bad as losses for white.
-  void set_draw_score(int score) { draw_score_ = score; }
-  int draw_score() const { return draw_score_; }
-
-  // Set whether white is to move at the root of the search (from the game's perspective)
-  // This is needed to correctly apply draw_score based on whose turn it originally is
-  void set_root_white_to_move(bool white) { root_white_to_move_ = white; }
 
   // Set external stop flag (for SIGINT handling)
   void set_stop_flag(std::atomic<bool>* flag) { stop_flag_ = flag; }
@@ -278,14 +269,6 @@ private:
   // Convert DTM to search score
   int dtm_to_score(tablebase::DTM dtm, int ply);
 
-  // Get effective draw score for a given search ply
-  // Combines root_white_to_move_ with ply to determine if it's original white's turn
-  int effective_draw_score(int ply) const {
-    // If root is white's turn and ply is even, or root is black's turn and ply is odd,
-    // then it's original white's turn
-    bool is_original_white = (root_white_to_move_ == (ply % 2 == 0));
-    return is_original_white ? draw_score_ : -draw_score_;
-  }
 
   TranspositionTable tt_;
   EvalFunc eval_;
@@ -310,11 +293,6 @@ private:
   bool verbose_ = false;
   bool white_perspective_ = true;  // For PV display
 
-  // Draw score from white's perspective (default 0)
-  int draw_score_ = 0;
-
-  // Whether white is to move at the root (from the game's perspective)
-  bool root_white_to_move_ = true;
 
   // Analysis mode: search even with only one legal move
   bool analyze_mode_ = false;

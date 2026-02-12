@@ -49,8 +49,6 @@ int play_game(const Board& start, search::Searcher& white, search::Searcher& bla
 
         bool white_to_move = (ply % 2 == 0);
         search::Searcher& searcher = white_to_move ? white : black;
-        searcher.set_root_white_to_move(white_to_move);
-
         search::TimeControl tc;
         tc.soft_node_limit = max_nodes;
         tc.hard_node_limit = max_nodes * 5;

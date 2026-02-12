@@ -16,8 +16,7 @@ public:
 
     // Evaluate a position, returns score in centipawns-like units
     // Positive = good for side to move, negative = bad
-    // draw_score: value of a draw (default 0, use negative for aggression)
-    int evaluate(const Board& board, int draw_score = 0) const;
+    int evaluate(const Board& board) const;
 
     // Get raw output probabilities [loss, draw, win] (for 3-class WDL model)
     void predict_proba(const Board& board, float& p_loss, float& p_draw, float& p_win) const;

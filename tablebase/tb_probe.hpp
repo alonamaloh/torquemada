@@ -30,11 +30,11 @@ using ::load_dtm;
 using ::dtm_exists;
 
 // Convert tablebase Value to a search score
-inline int value_to_score(Value v, int win_score, int loss_score, int draw_score) {
+inline int value_to_score(Value v, int win_score, int loss_score) {
   switch (v) {
     case Value::WIN:  return win_score;
     case Value::LOSS: return loss_score;
-    case Value::DRAW: return draw_score;
+    case Value::DRAW: return 0;
     default:          return 0;  // UNKNOWN
   }
 }

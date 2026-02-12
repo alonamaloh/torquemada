@@ -210,8 +210,6 @@ int main(int argc, char** argv) {
   double max_visit_share = 0.7;
   double q_threshold = 500.0;
   double max_leaf_value = 10000.0;
-  int draw_score = 0;
-
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
     if (arg == "--model" && i + 1 < argc) {
@@ -243,8 +241,6 @@ int main(int argc, char** argv) {
       q_threshold = std::stod(argv[++i]);
     } else if (arg == "--max-leaf-value" && i + 1 < argc) {
       max_leaf_value = std::stod(argv[++i]);
-    } else if (arg == "--draw-score" && i + 1 < argc) {
-      draw_score = std::stoi(argv[++i]);
     } else if (arg == "-h" || arg == "--help") {
       std::cout << "Usage: " << argv[0] << " [options]\n"
                 << "Generate an opening book using PUCT-based exploration\n\n"
@@ -263,8 +259,7 @@ int main(int argc, char** argv) {
                 << "  --max-visit-share F  Cap move visits at F*total when alternatives\n"
                 << "                       are within Q threshold (default: 0.7)\n"
                 << "  --q-threshold T    Q difference to consider a move competitive (default: 500)\n"
-                << "  --max-leaf-value V Cap leaf search scores to +/-V (default: 10000)\n"
-                << "  --draw-score N     Score assigned to draws (default: 0)\n";
+                << "  --max-leaf-value V Cap leaf search scores to +/-V (default: 10000)\n";
       return 0;
     } else {
       std::cerr << "Unknown argument: " << arg << "\n";
@@ -284,7 +279,6 @@ int main(int argc, char** argv) {
   std::cout << "Max visit share: " << max_visit_share << "\n";
   std::cout << "Q threshold: " << q_threshold << "\n";
   std::cout << "Max leaf value: " << max_leaf_value << "\n";
-  std::cout << "Draw score: " << draw_score << "\n";
   std::cout << "Save interval: " << save_interval << "\n";
   std::cout << "Book file: " << book_file << "\n";
 
@@ -305,7 +299,6 @@ int main(int argc, char** argv) {
         dtm_manager.get(), tb_limit, nn_model);
     s->set_tt_size(64);
     s->set_verbose(false);
-    s->set_draw_score(draw_score);
     s->set_stop_flag(&g_stop_requested);
     searchers.push_back(std::move(s));
   }
@@ -487,7 +480,6 @@ int main(int argc, char** argv) {
 
       if (need_search && !g_stop_requested.load(std::memory_order_relaxed)) {
         bool wtm = (target_ply % 2 == 0);
-        searcher.set_root_white_to_move(wtm);
         searcher.set_perspective(wtm);
         searcher.clear_tt();
 

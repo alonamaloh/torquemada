@@ -92,8 +92,8 @@ Searcher::Searcher(const std::string& tb_directory, int tb_piece_limit,
 
   if (!nn_model_path.empty()) {
     nn_model_ = std::make_unique<nn::MLP>(nn_model_path);
-    eval_ = [this](const Board& board, int ply) {
-      return nn_model_->evaluate(board, effective_draw_score(ply));
+    eval_ = [this](const Board& board, int /*ply*/) {
+      return nn_model_->evaluate(board);
     };
   }
 }
@@ -103,8 +103,8 @@ Searcher::Searcher(const tablebase::DTMTablebaseManager* dtm_tb, int tb_piece_li
     : tt_(64), eval_(random_eval), dtm_manager_(dtm_tb), tb_piece_limit_(tb_piece_limit) {
   if (!nn_model_path.empty()) {
     nn_model_ = std::make_unique<nn::MLP>(nn_model_path);
-    eval_ = [this](const Board& board, int ply) {
-      return nn_model_->evaluate(board, effective_draw_score(ply));
+    eval_ = [this](const Board& board, int /*ply*/) {
+      return nn_model_->evaluate(board);
     };
   }
 }
@@ -116,7 +116,7 @@ int Searcher::dtm_to_score(tablebase::DTM dtm, int ply) {
     return 0;  // Shouldn't happen
   }
   if (dtm == tablebase::DTM_DRAW) {
-    return effective_draw_score(ply);
+    return 0;
   }
   if (dtm == tablebase::DTM_LOSS_TERMINAL) {
     // Terminal loss: no legal moves, lost right now
@@ -174,7 +174,7 @@ bool Searcher::probe_wdl(const Board& board, int ply, int& score) {
   if (wdl == 0) {
     // DRAW: always trust
     stats_.tb_hits++;
-    score = effective_draw_score(ply);
+    score = 0;
     return true;
   }
 
@@ -209,7 +209,7 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     for (int back = 4; back <= max_back; back += 2) {
       if (pos_hash_history_[ply - back] == pos_hash) {
         // Found a repetition - return draw score
-        return effective_draw_score(ply);
+        return 0;
       }
     }
   }
@@ -281,8 +281,7 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     // Scale factor: (256 - n_reversible) / 256, capped at 50 reversible moves
     if (board.n_reversible > 0 && !is_special_score(score)) {
       int scale = std::max(256 - static_cast<int>(board.n_reversible) * 4, 56);  // Min 56/256 ~= 22%
-      int draw = effective_draw_score(ply);
-      score = draw + (score - draw) * scale / 256;
+      score = score * scale / 256;
     }
     return score;
   }
