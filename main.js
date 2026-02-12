@@ -7,6 +7,7 @@ const _q = _v ? `?v=${_v}` : '';
 const { GameController } = await import(`./game-controller.js${_q}`);
 const { getEngine } = await import(`./engine-api.js${_q}`);
 const { TablebaseLoader, loadNNModelFile } = await import(`./tablebase-loader.js${_q}`);
+const { saveGame, getGames, deleteGame, clearGames, computeStats } = await import(`./game-storage.js${_q}`);
 
 // Global state
 let gameController = null;
@@ -872,22 +873,31 @@ function showGameOver(winner, reason) {
     console.log(message);
 
     if (matchPlayActive) {
-        // Determine result from player's perspective
+        // Record the game
+        saveGame({
+            id: Date.now(),
+            date: new Date().toISOString(),
+            moves: gameController.history.map(h => h.notation),
+            result: winner,
+            resultReason: reason || null,
+            playerColor: gameController.humanColor
+        });
+
+        // Recompute stats from stored games
+        matchStats = computeStats();
+
+        // Determine result message from player's perspective
         let title, resultMsg;
         if (winner === 'draw') {
-            matchStats.draws++;
             title = 'Tablas';
             resultMsg = message;
         } else if (winner === gameController.humanColor) {
-            matchStats.wins++;
             title = '¡Ganaste!';
             resultMsg = message;
         } else {
-            matchStats.losses++;
             title = 'Perdiste';
             resultMsg = message;
         }
-        saveMatchStats();
         setTimeout(() => showMatchResultDialog(title, resultMsg), 100);
     } else {
         // Small delay so the board finishes rendering before the dialog appears
@@ -1012,26 +1022,20 @@ function exitAnalysisMode() {
 
 // --- Match Play ---
 
-function loadMatchStats() {
+// Migration: old match stats were stored as a simple counter.
+// Since we now derive stats from the game list, the old key is no longer written.
+// We keep legacy stats for display if no games exist yet.
+function getLegacyStats() {
     try {
         const data = localStorage.getItem(MATCH_STATS_KEY);
-        if (data) matchStats = JSON.parse(data);
-    } catch (e) {
-        matchStats = { wins: 0, draws: 0, losses: 0 };
-    }
-}
-
-function saveMatchStats() {
-    try {
-        localStorage.setItem(MATCH_STATS_KEY, JSON.stringify(matchStats));
-    } catch (e) {
-        console.warn('Could not save match stats:', e);
-    }
+        if (data) return JSON.parse(data);
+    } catch (e) { /* ignore */ }
+    return null;
 }
 
 async function startMatchPlay() {
     hideNewGameDialog();
-    loadMatchStats();
+    matchStats = computeStats();
     matchPlayActive = true;
     document.body.classList.add('match-play');
     document.getElementById('game-controls').style.display = 'none';
@@ -1039,7 +1043,14 @@ async function startMatchPlay() {
     clearSearchInfo();
 
     // Compute player color: alternate based on total games played
-    const totalGames = matchStats.wins + matchStats.draws + matchStats.losses;
+    // Include legacy stats for the count if no recorded games exist yet
+    let totalGames = matchStats.wins + matchStats.draws + matchStats.losses;
+    if (totalGames === 0) {
+        const legacy = getLegacyStats();
+        if (legacy) {
+            totalGames = (legacy.wins || 0) + (legacy.draws || 0) + (legacy.losses || 0);
+        }
+    }
     const color = (totalGames % 2 === 0) ? 'white' : 'black';
 
     // Fixed settings for match play
@@ -1060,8 +1071,18 @@ function matchResign() {
     }).then(async (confirmed) => {
         if (!confirmed) return;
         await gameController.abortSearch();
-        matchStats.losses++;
-        saveMatchStats();
+
+        // Determine winner (the side the engine plays)
+        const engineColor = gameController.humanColor === 'white' ? 'black' : 'white';
+        saveGame({
+            id: Date.now(),
+            date: new Date().toISOString(),
+            moves: gameController.history.map(h => h.notation),
+            result: engineColor,
+            resultReason: 'abandono',
+            playerColor: gameController.humanColor
+        });
+        matchStats = computeStats();
         showMatchResultDialog('Abandono', 'Has abandonado la partida.');
     });
 }
