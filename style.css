@@ -642,6 +642,104 @@ body.match-play #search-info { display: none !important; }
 .stat-draw { color: var(--text-secondary); }
 .stat-loss { color: var(--accent); }
 
+/* Stats & game history dialog */
+.dialog-wide {
+    min-width: 300px;
+    max-width: 520px;
+    width: 90vw;
+}
+
+.history-list {
+    max-height: 320px;
+    overflow-y: auto;
+    margin: 0.75rem 0;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-secondary);
+}
+
+.history-empty {
+    padding: 2rem 1rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.history-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    cursor: pointer;
+    font-size: 0.85rem;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+
+.history-item:last-child {
+    border-bottom: none;
+}
+
+@media (hover: hover) {
+    .history-item:hover {
+        background: rgba(255, 255, 255, 0.05);
+    }
+}
+
+.history-item.selected {
+    background: rgba(233, 69, 96, 0.2);
+    border-color: var(--accent);
+}
+
+.history-date {
+    color: var(--text-secondary);
+    white-space: nowrap;
+    min-width: 5em;
+}
+
+.history-color {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.history-color.white { background: #eee; }
+.history-color.black { background: #333; }
+
+.history-moves {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.history-result {
+    font-weight: 700;
+    font-size: 0.9rem;
+    min-width: 1.2em;
+    text-align: center;
+}
+
+.history-result.win { color: var(--success); }
+.history-result.draw { color: var(--text-secondary); }
+.history-result.loss { color: var(--accent); }
+
+.history-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+}
+
+.history-buttons .btn {
+    margin: 0;
+    min-width: 5rem;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .main-content {

@@ -696,10 +696,10 @@ function setupEventHandlers() {
         matchPlayBtn.addEventListener('click', startMatchPlay);
     }
 
-    // Match toolbar buttons
-    const matchStatsBtn = document.getElementById('btn-match-stats');
-    if (matchStatsBtn) {
-        matchStatsBtn.addEventListener('click', showMatchStatsDialog);
+    // Stats/history button (in main toolbar)
+    const statsBtn = document.getElementById('btn-stats');
+    if (statsBtn) {
+        statsBtn.addEventListener('click', showHistoryDialog);
     }
 
     const matchResignBtn = document.getElementById('btn-match-resign');
@@ -744,21 +744,8 @@ function setupEventHandlers() {
         matchResultOkBtn.addEventListener('click', exitMatchPlay);
     }
 
-    // Match stats dialog
-    const matchStatsCloseBtn = document.getElementById('btn-match-stats-close');
-    if (matchStatsCloseBtn) {
-        matchStatsCloseBtn.addEventListener('click', () => {
-            document.getElementById('match-stats-dialog').style.display = 'none';
-        });
-    }
-    const matchStatsDialog = document.getElementById('match-stats-dialog');
-    if (matchStatsDialog) {
-        matchStatsDialog.addEventListener('click', (e) => {
-            if (e.target === matchStatsDialog) {
-                matchStatsDialog.style.display = 'none';
-            }
-        });
-    }
+    // History dialog
+    setupHistoryDialogHandlers();
 }
 
 // Tablebases are now loaded lazily by the worker - no need to load them here
@@ -988,6 +975,14 @@ function updateSearchInfo(info) {
     if (pvEl) pvEl.textContent = info.pvStr || '-';
 }
 
+/**
+ * Load a recorded game for analysis (stub — fully implemented in next step)
+ */
+async function loadGameForAnalysis(game) {
+    // Will be implemented fully in the Load Game for Analysis task
+    console.log('Load game for analysis:', game.id, game.moves);
+}
+
 // --- Analysis Mode ---
 
 async function enterAnalysisMode() {
@@ -1096,11 +1091,127 @@ function showMatchResultDialog(title, message) {
     document.getElementById('match-result-dialog').style.display = 'flex';
 }
 
-function showMatchStatsDialog() {
-    document.getElementById('match-stats-w').textContent = matchStats.wins;
-    document.getElementById('match-stats-d').textContent = matchStats.draws;
-    document.getElementById('match-stats-l').textContent = matchStats.losses;
-    document.getElementById('match-stats-dialog').style.display = 'flex';
+// --- History Dialog ---
+
+let selectedGameId = null;
+
+function showHistoryDialog() {
+    const dialog = document.getElementById('history-dialog');
+    if (!dialog) return;
+
+    // Compute stats (include legacy if no games yet)
+    const stats = computeStats();
+    const legacy = getLegacyStats();
+    const displayStats = (stats.wins + stats.draws + stats.losses > 0) ? stats
+        : legacy || { wins: 0, draws: 0, losses: 0 };
+
+    document.getElementById('history-stat-w').textContent = displayStats.wins;
+    document.getElementById('history-stat-d').textContent = displayStats.draws;
+    document.getElementById('history-stat-l').textContent = displayStats.losses;
+
+    // Populate game list
+    const games = getGames();
+    const listEl = document.getElementById('history-list');
+    selectedGameId = null;
+    updateHistoryButtons();
+
+    if (games.length === 0) {
+        listEl.innerHTML = '<div class="history-empty">No hay partidas registradas.</div>';
+    } else {
+        // Most recent first
+        let html = '';
+        for (let i = games.length - 1; i >= 0; i--) {
+            const g = games[i];
+            const d = new Date(g.date);
+            const dateStr = d.toLocaleDateString('es', { month: 'short', day: 'numeric' });
+            const timeStr = d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+            const movesPreview = g.moves.slice(0, 6).join(' ') + (g.moves.length > 6 ? ' ...' : '');
+
+            // Result from player perspective
+            let resultLabel, resultClass;
+            if (g.result === 'draw') {
+                resultLabel = 'T';
+                resultClass = 'draw';
+            } else if (g.result === g.playerColor) {
+                resultLabel = 'V';
+                resultClass = 'win';
+            } else {
+                resultLabel = 'D';
+                resultClass = 'loss';
+            }
+
+            html += `<div class="history-item" data-id="${g.id}">
+                <span class="history-date">${dateStr} ${timeStr}</span>
+                <span class="history-color ${g.playerColor}"></span>
+                <span class="history-moves">${movesPreview}</span>
+                <span class="history-result ${resultClass}">${resultLabel}</span>
+            </div>`;
+        }
+        listEl.innerHTML = html;
+    }
+
+    dialog.style.display = 'flex';
+}
+
+function hideHistoryDialog() {
+    const dialog = document.getElementById('history-dialog');
+    if (dialog) dialog.style.display = 'none';
+    selectedGameId = null;
+}
+
+function updateHistoryButtons() {
+    const analyzeBtn = document.getElementById('btn-history-analyze');
+    const deleteBtn = document.getElementById('btn-history-delete');
+    if (analyzeBtn) analyzeBtn.disabled = !selectedGameId;
+    if (deleteBtn) deleteBtn.disabled = !selectedGameId;
+}
+
+function setupHistoryDialogHandlers() {
+    const dialog = document.getElementById('history-dialog');
+    if (!dialog) return;
+
+    // Click on game list items
+    const listEl = document.getElementById('history-list');
+    listEl.addEventListener('click', (e) => {
+        const item = e.target.closest('.history-item');
+        if (!item) return;
+
+        // Deselect previous
+        listEl.querySelectorAll('.history-item.selected').forEach(el => el.classList.remove('selected'));
+
+        // Select this one
+        item.classList.add('selected');
+        selectedGameId = parseInt(item.dataset.id);
+        updateHistoryButtons();
+    });
+
+    // Close button
+    document.getElementById('btn-history-close').addEventListener('click', hideHistoryDialog);
+
+    // Click outside to close
+    dialog.addEventListener('click', (e) => {
+        if (e.target === dialog) hideHistoryDialog();
+    });
+
+    // Delete button
+    document.getElementById('btn-history-delete').addEventListener('click', () => {
+        if (!selectedGameId) return;
+        deleteGame(selectedGameId);
+        selectedGameId = null;
+        // Refresh the dialog
+        showHistoryDialog();
+    });
+
+    // Analyze button (placeholder - will be fully implemented in task 4)
+    document.getElementById('btn-history-analyze').addEventListener('click', () => {
+        if (!selectedGameId) return;
+        const games = getGames();
+        const game = games.find(g => g.id === selectedGameId);
+        if (game) {
+            hideHistoryDialog();
+            loadGameForAnalysis(game);
+        }
+    });
 }
 
 function exitMatchPlay() {

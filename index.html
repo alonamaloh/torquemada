@@ -37,9 +37,9 @@
                     <button id="btn-flip" class="btn btn-small">Girar</button>
                     <button id="btn-edit" class="btn btn-small">Editar</button>
                     <button id="btn-stop" class="btn btn-small" disabled>Parar</button>
+                    <button id="btn-stats" class="btn btn-small">Partidas</button>
                 </div>
                 <div id="match-toolbar" class="game-toolbar" style="display: none;">
-                    <button id="btn-match-stats" class="btn btn-small">Marcador</button>
                     <span style="flex:1"></span>
                     <button id="btn-match-resign" class="btn btn-small btn-danger">Abandonar</button>
                 </div>
@@ -218,17 +218,20 @@
         </div>
     </div>
 
-    <!-- Match stats dialog -->
-    <div id="match-stats-dialog" class="dialog" style="display: none;">
-        <div class="dialog-content dialog-narrow">
-            <h2>Marcador</h2>
+    <!-- Stats & game history dialog -->
+    <div id="history-dialog" class="dialog" style="display: none;">
+        <div class="dialog-content dialog-wide">
+            <h2>Partidas serias</h2>
             <div class="match-stats">
-                <span class="stat-win">V: <span id="match-stats-w">0</span></span>
-                <span class="stat-draw">T: <span id="match-stats-d">0</span></span>
-                <span class="stat-loss">D: <span id="match-stats-l">0</span></span>
+                <span class="stat-win">V: <span id="history-stat-w">0</span></span>
+                <span class="stat-draw">T: <span id="history-stat-d">0</span></span>
+                <span class="stat-loss">D: <span id="history-stat-l">0</span></span>
             </div>
-            <div class="dialog-buttons">
-                <button id="btn-match-stats-close" class="btn">Cerrar</button>
+            <div id="history-list" class="history-list"></div>
+            <div class="history-buttons">
+                <button id="btn-history-analyze" class="btn btn-primary" disabled>Analizar</button>
+                <button id="btn-history-delete" class="btn btn-danger" disabled>Borrar</button>
+                <button id="btn-history-close" class="btn">Cerrar</button>
             </div>
         </div>
     </div>
