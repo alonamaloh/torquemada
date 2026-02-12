@@ -976,11 +976,33 @@ function updateSearchInfo(info) {
 }
 
 /**
- * Load a recorded game for analysis (stub — fully implemented in next step)
+ * Load a recorded game for analysis.
+ * Replays all moves, rewinds to start, enters analysis mode.
  */
 async function loadGameForAnalysis(game) {
-    // Will be implemented fully in the Load Game for Analysis task
-    console.log('Load game for analysis:', game.id, game.moves);
+    // Exit any current mode
+    exitAnalysisMode();
+    clearSearchInfo();
+
+    // Disable auto-play during load
+    const savedAutoPlay = gameController.autoPlay;
+    gameController.autoPlay = false;
+
+    // Load the game (replays moves, rewinds to start)
+    await gameController.loadGame(game.moves);
+
+    // Restore auto-play
+    gameController.autoPlay = savedAutoPlay;
+
+    // Orient board from player's perspective
+    gameController.boardUI.setFlipped(game.playerColor === 'black');
+
+    // Enter analysis mode
+    await enterAnalysisMode();
+
+    // Update UI
+    updateMoveHistory();
+    updateUndoRedoButtons();
 }
 
 // --- Analysis Mode ---

@@ -979,6 +979,80 @@ export class GameController {
     }
 
     /**
+     * Load a recorded game for replay/analysis.
+     * Replays all moves to build history, then rewinds to the start
+     * so the user can step through the game with redo.
+     * @param {string[]} moves - Array of move notations
+     */
+    async loadGame(moves) {
+        await this.abortSearch();
+
+        // Reset to initial position
+        this.history = [];
+        this.redoStack = [];
+        this.currentIndex = -1;
+        this.gameOver = false;
+        this.winner = null;
+        this.positionCounts = new Map();
+        this.secondsLeft = 0;
+        this._notifyTime();
+        this._clearInputState();
+        this.boardUI.setSelected(null);
+        this.boardUI.clearLastMove();
+
+        const board = await this.engine.resetBoard();
+        this._incrementPosition(board);
+
+        // Replay all moves to build history
+        for (const notation of moves) {
+            const legalMoves = await this.engine.getLegalMoves();
+            const parsed = await this.engine.parseMove(notation);
+            if (!parsed) {
+                console.warn('loadGame: could not parse move:', notation);
+                break;
+            }
+
+            // Find matching legal move
+            const move = legalMoves.find(m =>
+                m.from_xor_to === parsed.from_xor_to && m.captures === parsed.captures
+            );
+            if (!move) {
+                console.warn('loadGame: illegal move:', notation);
+                break;
+            }
+
+            // Record in history
+            const prevBoard = await this.engine.getBoard();
+            this.history.push({
+                board: { ...prevBoard },
+                move: move,
+                notation: move.notation
+            });
+
+            // Make the move on the engine
+            const newBoard = await this.engine.makeMove(move);
+            this._incrementPosition(newBoard);
+        }
+
+        // Now rewind: move entire history to redo stack and reset to initial position
+        // Redo stack is in reverse order (last item is first to redo)
+        this.redoStack = this.history.reverse();
+        this.history = [];
+        this.currentIndex = -1;
+
+        // Reset engine to initial position
+        await this.engine.resetBoard();
+        this.positionCounts = new Map();
+        const initialBoard = await this.engine.getBoard();
+        this._incrementPosition(initialBoard);
+
+        this._updateFromBoard(initialBoard);
+        await this._updateLegalMoves();
+
+        this._updateStatus('Partida cargada');
+    }
+
+    /**
      * Input move from notation
      */
     async inputMove(notation) {
