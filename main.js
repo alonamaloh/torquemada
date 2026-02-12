@@ -1007,6 +1007,8 @@ async function loadGameForAnalysis(game) {
 
 // --- Analysis Mode ---
 
+let savedUseBook = true;  // Book setting before entering analysis mode
+
 async function enterAnalysisMode() {
     if (gameController.analysisMode) return;
 
@@ -1015,6 +1017,10 @@ async function enterAnalysisMode() {
 
     gameController.analysisMode = true;
     updateModeButtons();
+
+    // Disable opening book (we want real engine evaluation)
+    savedUseBook = gameController.useBook;
+    gameController.setUseBook(false);
 
     // Hide time/book controls (not relevant in analysis)
     const engineTimeGroup = document.querySelector('.input-group');
@@ -1029,6 +1035,9 @@ async function enterAnalysisMode() {
 function exitAnalysisMode() {
     if (!gameController.analysisMode) return;
     gameController.analysisMode = false;
+
+    // Restore opening book setting
+    gameController.setUseBook(savedUseBook);
 
     // Show time/book controls again
     const engineTimeGroup = document.querySelector('.input-group');
