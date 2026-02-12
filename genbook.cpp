@@ -488,13 +488,16 @@ int main(int argc, char** argv) {
 
         if (!result.moves.empty() &&
             !g_stop_requested.load(std::memory_order_relaxed)) {
-          best_score = result.moves[0].score;
+          // Normalize scores: collapse proven draws to 0, strip undecided offset,
+          // clamp wins/losses to ±10000.  This keeps Q values on the original
+          // NN-eval scale so that thresholds and softmax behave correctly.
+          best_score = search::score_to_normalized(result.moves[0].score);
           search_depth = result.depth;
           search_nodes = result.nodes;
           leaf_value = best_score;
           got_leaf = true;
           for (const auto& ms : result.moves) {
-            scored_moves.push_back({ms.move, ms.score});
+            scored_moves.push_back({ms.move, search::score_to_normalized(ms.score)});
           }
         }
       }

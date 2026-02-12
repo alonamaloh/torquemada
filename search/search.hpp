@@ -25,6 +25,7 @@ constexpr int SCORE_MATE = 30000;      // Mate at root = 30000, mate in N ply = 
 constexpr int SCORE_TB_WIN = 29000;    // Tablebase win
 constexpr int SCORE_TB_LOSS = -29000;  // Tablebase loss
 constexpr int SCORE_SPECIAL = 28000;   // Scores with |score| > this need special TT handling
+constexpr int SCORE_DRAW = 10000;      // Proven draw range: [-SCORE_DRAW, +SCORE_DRAW]
 
 // Adjust mate score for ply distance (so we prefer shorter mates)
 inline int mate_score(int ply) { return SCORE_MATE - ply; }
@@ -38,6 +39,41 @@ inline bool is_special_score(int score) {
 // Check if score indicates a forced mate
 inline bool is_mate_score(int score) {
   return score > SCORE_TB_WIN || score < -SCORE_TB_WIN;
+}
+
+// Check if score is in the proven-draw range
+inline bool is_proven_draw(int score) {
+  return score >= -SCORE_DRAW && score <= SCORE_DRAW;
+}
+
+// Shift NN eval score (in [-10000, +10000]) to the undecided range
+// Positive scores go to [+10001, +20000], negative to [-20000, -10001]
+// Zero stays at 0 (in the draw range — ambiguous but rare and harmless)
+inline int to_undecided(int nn_score) {
+  if (nn_score > 0) return nn_score + SCORE_DRAW;
+  if (nn_score < 0) return nn_score - SCORE_DRAW;
+  return 0;
+}
+
+// Strip the undecided offset for display purposes
+inline int undecided_to_display(int score) {
+  if (score > SCORE_DRAW) return score - SCORE_DRAW;
+  if (score < -SCORE_DRAW) return score + SCORE_DRAW;
+  return score;
+}
+
+// Collapse search score to the [-10000, +10000] NN-eval scale:
+//   Proven draws → 0
+//   Undecided    → strip ±SCORE_DRAW offset (back to NN eval)
+//   TB win/mate  → +10000
+//   TB loss/mated→ -10000
+// Useful for book Q values, eval bars, and any context that needs a
+// single unified scale without the proven-draw / undecided distinction.
+inline int score_to_normalized(int score) {
+  if (is_proven_draw(score)) return 0;
+  if (is_special_score(score)) return (score > 0) ? SCORE_DRAW : -SCORE_DRAW;
+  // Undecided range: strip offset
+  return (score > 0) ? score - SCORE_DRAW : score + SCORE_DRAW;
 }
 
 // Secondary search phase indicator
@@ -256,9 +292,14 @@ private:
   // Returns true if position was found, sets score (adjusted for ply)
   bool probe_tb(const Board& board, int ply, int& score);
 
+  // WDL probe result for tri-state handling
+  enum class WDLProbeResult { NOT_FOUND, SCORE_READY, DRAW_REDUCE };
+
   // Probe WDL tablebase if available (for 6-7 piece endgames)
-  // Returns true if position was found, sets score (adjusted for ply)
-  bool probe_wdl(const Board& board, int ply, int& score);
+  // Returns NOT_FOUND if no data, SCORE_READY if score is set (wins/losses/shallow draws),
+  // or DRAW_REDUCE if caller should reduce depth by 3 and continue searching (deep draws)
+  WDLProbeResult probe_wdl(const Board& board, int ply, int depth,
+                            int alpha, int beta, int& score);
 
   // Order moves for better pruning
   void order_moves(MoveList& moves, const Board& board, const Move& tt_move);

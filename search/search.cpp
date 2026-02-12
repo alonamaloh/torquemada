@@ -1,6 +1,7 @@
 #include "search.hpp"
 #include <algorithm>
 #include <bit>
+#include <cstdio>
 #include <cstring>
 #include <iostream>
 
@@ -157,29 +158,45 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   return true;
 }
 
-bool Searcher::probe_wdl(const Board& board, int ply, int& score) {
-  if (!wdl_probe_func_) return false;
+Searcher::WDLProbeResult Searcher::probe_wdl(const Board& board, int ply, int depth,
+                                              int alpha, int beta, int& score) {
+  if (!wdl_probe_func_) return WDLProbeResult::NOT_FOUND;
 
   int piece_count = std::popcount(board.allPieces());
-  if (piece_count > wdl_piece_limit_) return false;
+  if (piece_count > wdl_piece_limit_) return WDLProbeResult::NOT_FOUND;
 
   // Don't probe if DTM covers this piece count (DTM is more precise)
-  if (piece_count <= tb_piece_limit_ && (dtm_manager_ || dtm_probe_func_)) return false;
+  if (piece_count <= tb_piece_limit_ && (dtm_manager_ || dtm_probe_func_)) return WDLProbeResult::NOT_FOUND;
 
   auto result = wdl_probe_func_(board);
-  if (!result.has_value()) return false;
+  if (!result.has_value()) return WDLProbeResult::NOT_FOUND;
 
   int wdl = *result;
 
   if (wdl == 0) {
-    // DRAW: always trust
+    // DRAW: proven draw — handle with score range
     stats_.tb_hits++;
-    score = 0;
-    return true;
+
+    // Window cutoff: if the search needs something better than any draw,
+    // or any draw causes a cutoff, return immediately
+    if (alpha > SCORE_DRAW || beta < -SCORE_DRAW) {
+      score = 0;
+      return WDLProbeResult::SCORE_READY;
+    }
+
+    // Shallow depth: use NN eval clamped to draw range
+    if (depth <= 3) {
+      score = eval_(board, ply);
+      score = std::max(-SCORE_DRAW, std::min(SCORE_DRAW, score));
+      return WDLProbeResult::SCORE_READY;
+    }
+
+    // Deep: reduce depth and continue searching
+    return WDLProbeResult::DRAW_REDUCE;
   }
 
   // WIN/LOSS: only trust when n_reversible == 0
-  if (board.n_reversible != 0) return false;
+  if (board.n_reversible != 0) return WDLProbeResult::NOT_FOUND;
 
   stats_.tb_hits++;
   if (wdl > 0) {
@@ -187,7 +204,7 @@ bool Searcher::probe_wdl(const Board& board, int ply, int& score) {
   } else {
     score = -SCORE_TB_WIN + ply;
   }
-  return true;
+  return WDLProbeResult::SCORE_READY;
 }
 
 int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int ply) {
@@ -220,8 +237,10 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   if (probe_tb(board, ply, tb_score)) {
     return tb_score;
   }
-  if (probe_wdl(board, ply, tb_score)) {
-    return tb_score;
+  {
+    auto wdl = probe_wdl(board, ply, depth, alpha, beta, tb_score);
+    if (wdl == WDLProbeResult::SCORE_READY) return tb_score;
+    if (wdl == WDLProbeResult::DRAW_REDUCE) depth -= 3;
   }
 
   // Probe transposition table (using position hash without n_reversible)
@@ -283,7 +302,7 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
       int scale = std::max(256 - static_cast<int>(board.n_reversible) * 4, 56);  // Min 56/256 ~= 22%
       score = score * scale / 256;
     }
-    return score;
+    return to_undecided(score);
   }
 
   // Move ordering: TT move first, then killers
@@ -721,7 +740,7 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
 
     // No tablebase - use eval of resulting position as rough score estimate
     Board child = makeMove(board, root_moves[0]);
-    result.score = -eval_(child, 1);
+    result.score = to_undecided(-eval_(child, 1));
     return result;
   }
 
@@ -739,8 +758,25 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
     }
 
     if (verbose_) {
-      std::cout << ". depth " << depth << " score " << result.score
-                << " nodes " << result.nodes;
+      int display_score = result.score;
+      std::string score_label;
+      if (is_proven_draw(result.score)) {
+        score_label = "draw(";
+        double val = result.score / 100.0;
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%+.2f", val);
+        score_label += buf;
+        score_label += ")";
+      } else if (!is_special_score(result.score)) {
+        display_score = undecided_to_display(result.score);
+      }
+      std::cout << ". depth " << depth;
+      if (!score_label.empty()) {
+        std::cout << " score " << score_label;
+      } else {
+        std::cout << " score " << display_score;
+      }
+      std::cout << " nodes " << result.nodes;
       if (result.tb_hits > 0) {
         std::cout << " tbhits " << result.tb_hits;
       }
@@ -769,11 +805,12 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
       break;
     }
 
-    // WDL score detected — switch to secondary search immediately
+    // WDL win/loss score detected — switch to secondary search immediately
+    // (proven draws are handled by depth reduction in probe_wdl, no secondary search needed)
     if (wdl_probe_func_) {
-      bool is_wdl_score = (result.score <= -SCORE_SPECIAL) ||
-                          (result.score >= SCORE_SPECIAL && result.score <= SCORE_TB_WIN);
-      if (is_wdl_score) {
+      bool is_wdl_winloss = (result.score <= -SCORE_SPECIAL) ||
+                             (result.score >= SCORE_SPECIAL && result.score <= SCORE_TB_WIN);
+      if (is_wdl_winloss) {
         result = secondary_search(board, root_moves, result, max_depth);
         break;
       }

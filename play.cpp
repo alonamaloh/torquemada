@@ -177,7 +177,8 @@ void engine_move(GameState& state, search::Searcher& searcher, bool white_to_mov
   }
 
   std::string move_str = move_to_string(state.board, result.best_move, white_to_move);
-  std::cout << "Engine plays: " << move_str << " (score: " << result.score << ")\n";
+  int display_score = search::undecided_to_display(result.score);
+  std::cout << "Engine plays: " << move_str << " (score: " << display_score << ")\n";
 
   state.history.push_back(state.board);
   state.board = makeMove(state.board, result.best_move);
