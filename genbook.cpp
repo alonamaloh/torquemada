@@ -147,18 +147,36 @@ std::string move_notation(const Board& board, const Move& move, bool black_persp
 
 // PUCT move selection: returns index of the selected move
 //
-// Visit share cap: if a move has accumulated more than max_visit_share of
-// total visits AND there is at least one alternative within q_threshold of
-// its Q value, skip it.  This prevents PUCT from converging on a single
-// line while still allowing dominance when one move is clearly superior.
+// Visit share cap: competitive moves share visits equally.  A move is
+// competitive if (a) it has the best Q, or (b) its Q is within
+// q_threshold of the best AND its Q >= q_floor.  With N competitive
+// moves, each is capped at total_visits/N.  Any competitive move over
+// its cap is skipped, spreading visits across competitive alternatives.
 int select_puct(const BookEntry& entry, double c_puct,
-                double max_visit_share, double q_threshold) {
+                double q_threshold, double q_floor) {
   int total_visits = 0;
-  for (const auto& mi : entry.moves) {
+  double best_q = -1e18;
+  int best_q_idx = 0;
+  for (size_t i = 0; i < entry.moves.size(); ++i) {
+    const auto& mi = entry.moves[i];
     total_visits += mi.visits;
+    double q = mi.value_sum / mi.visits;
+    if (q > best_q) {
+      best_q = q;
+      best_q_idx = static_cast<int>(i);
+    }
   }
   double sqrt_total = std::sqrt(static_cast<double>(total_visits));
-  int visit_cap = std::max(1, static_cast<int>(total_visits * max_visit_share));
+
+  // Count competitive moves and compute per-move visit cap
+  int n_competitive = 0;
+  for (size_t i = 0; i < entry.moves.size(); ++i) {
+    double q = entry.moves[i].value_sum / entry.moves[i].visits;
+    bool competitive = (static_cast<int>(i) == best_q_idx) ||
+                       (best_q - q <= q_threshold && q >= q_floor);
+    if (competitive) n_competitive++;
+  }
+  int visit_cap = std::max(1, total_visits / std::max(1, n_competitive));
 
   int best_idx = 0;
   double best_score = -1e18;
@@ -167,18 +185,11 @@ int select_puct(const BookEntry& entry, double c_puct,
     double q = mi.value_sum / mi.visits;
     double u = c_puct * mi.prior * sqrt_total / (1 + mi.visits);
 
-    // Visit share cap: skip if over cap and a competitive alternative exists
-    if (mi.visits > visit_cap) {
-      bool has_competitive = false;
-      for (size_t j = 0; j < entry.moves.size(); ++j) {
-        if (j == i) continue;
-        double q_j = entry.moves[j].value_sum / entry.moves[j].visits;
-        if (q - q_j <= q_threshold) {
-          has_competitive = true;
-          break;
-        }
-      }
-      if (has_competitive) continue;
+    // Skip competitive moves that exceeded their fair share of visits
+    if (n_competitive >= 2 && mi.visits > visit_cap) {
+      bool competitive = (static_cast<int>(i) == best_q_idx) ||
+                         (best_q - q <= q_threshold && q >= q_floor);
+      if (competitive) continue;
     }
 
     double score = q + u;
@@ -207,8 +218,8 @@ int main(int argc, char** argv) {
   int save_interval = 10;
   int tb_limit = 7;
   int num_threads = 1;
-  double max_visit_share = 0.7;
   double q_threshold = 500.0;
+  double q_floor = -500.0;
   double max_leaf_value = 10000.0;
   for (int i = 1; i < argc; ++i) {
     std::string arg = argv[i];
@@ -235,10 +246,10 @@ int main(int argc, char** argv) {
       book_file = argv[++i];
     } else if (arg == "--threads" && i + 1 < argc) {
       num_threads = std::stoi(argv[++i]);
-    } else if (arg == "--max-visit-share" && i + 1 < argc) {
-      max_visit_share = std::stod(argv[++i]);
     } else if (arg == "--q-threshold" && i + 1 < argc) {
       q_threshold = std::stod(argv[++i]);
+    } else if (arg == "--q-floor" && i + 1 < argc) {
+      q_floor = std::stod(argv[++i]);
     } else if (arg == "--max-leaf-value" && i + 1 < argc) {
       max_leaf_value = std::stod(argv[++i]);
     } else if (arg == "-h" || arg == "--help") {
@@ -256,9 +267,8 @@ int main(int argc, char** argv) {
                 << "  --save-interval N  Save every N iterations (default: 10)\n"
                 << "  --book FILE        Book file to load/save (default: opening.book)\n"
                 << "  --threads N        Number of worker threads (default: 1)\n"
-                << "  --max-visit-share F  Cap move visits at F*total when alternatives\n"
-                << "                       are within Q threshold (default: 0.7)\n"
-                << "  --q-threshold T    Q difference to consider a move competitive (default: 500)\n"
+                << "  --q-threshold T    Q difference from best to be competitive (default: 500)\n"
+                << "  --q-floor V        Minimum absolute Q to be competitive (default: -500)\n"
                 << "  --max-leaf-value V Cap leaf search scores to +/-V (default: 10000)\n";
       return 0;
     } else {
@@ -276,8 +286,8 @@ int main(int argc, char** argv) {
   std::cout << "C_PUCT: " << c_puct << "\n";
   std::cout << "Prior temperature: " << prior_temp << "\n";
   std::cout << "Max ply: " << max_ply << "\n";
-  std::cout << "Max visit share: " << max_visit_share << "\n";
   std::cout << "Q threshold: " << q_threshold << "\n";
+  std::cout << "Q floor: " << q_floor << "\n";
   std::cout << "Max leaf value: " << max_leaf_value << "\n";
   std::cout << "Save interval: " << save_interval << "\n";
   std::cout << "Book file: " << book_file << "\n";
@@ -361,7 +371,7 @@ int main(int argc, char** argv) {
 
           if (it != book.end()) {
             // Position is in book — select move by PUCT, apply virtual loss
-            int idx = select_puct(it->second, c_puct, max_visit_share, q_threshold);
+            int idx = select_puct(it->second, c_puct, q_threshold, q_floor);
             auto& mi = it->second.moves[idx];
             bool wtm = (ply % 2 == 0);
             std::string notation = move_notation(current_board, mi.move, !wtm);
