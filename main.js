@@ -455,7 +455,7 @@ function hideNewGameDialog() {
  */
 async function startNewGame(playAs) {
     hideNewGameDialog();
-    exitAnalysisMode();
+    await exitAnalysisMode();
 
     clearSearchInfo();
     await gameController.newGame();
@@ -548,22 +548,22 @@ function setupEventHandlers() {
     const btnTwoPlayer = document.getElementById('btn-two-player');
 
     if (btnEngineWhite) {
-        btnEngineWhite.addEventListener('click', () => {
-            exitAnalysisMode();
+        btnEngineWhite.addEventListener('click', async () => {
+            await exitAnalysisMode();
             gameController.setHumanColor('black'); // human plays black = engine plays white
             updateModeButtons();
         });
     }
     if (btnEngineBlack) {
-        btnEngineBlack.addEventListener('click', () => {
-            exitAnalysisMode();
+        btnEngineBlack.addEventListener('click', async () => {
+            await exitAnalysisMode();
             gameController.setHumanColor('white'); // human plays white = engine plays black
             updateModeButtons();
         });
     }
     if (btnTwoPlayer) {
-        btnTwoPlayer.addEventListener('click', () => {
-            exitAnalysisMode();
+        btnTwoPlayer.addEventListener('click', async () => {
+            await exitAnalysisMode();
             gameController.setHumanColor('both');
             updateModeButtons();
         });
@@ -1037,7 +1037,7 @@ function updateEvalBar(score) {
  */
 async function loadGameForAnalysis(game) {
     // Exit any current mode
-    exitAnalysisMode();
+    await exitAnalysisMode();
     clearSearchInfo();
 
     // Disable auto-play during load
@@ -1092,8 +1092,9 @@ async function enterAnalysisMode() {
     }
 }
 
-function exitAnalysisMode() {
+async function exitAnalysisMode() {
     if (!gameController.analysisMode) return;
+    await gameController.abortSearch();
     gameController.analysisMode = false;
 
     // Restore opening book setting
@@ -1125,7 +1126,7 @@ function getLegacyStats() {
 
 async function startMatchPlay() {
     hideNewGameDialog();
-    exitAnalysisMode();
+    await exitAnalysisMode();
     matchStats = computeStats();
     matchPlayActive = true;
     document.body.classList.add('match-play');
