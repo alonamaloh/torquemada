@@ -625,11 +625,12 @@ val createMoveObject(const Move& m, const std::vector<int>& path, bool white_to_
 
 // Forward declaration
 val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time,
-                         double hard_time, val progress_callback, bool analyze_mode);
+                         double hard_time, val progress_callback, bool analyze_mode,
+                         bool ponder_mode);
 
 // Perform search without callback - wrapper for backwards compatibility
 val doSearch(const JSBoard& jsboard, int max_depth, double soft_time, double hard_time) {
-    return doSearchWithCallback(jsboard, max_depth, soft_time, hard_time, val::null(), false);
+    return doSearchWithCallback(jsboard, max_depth, soft_time, hard_time, val::null(), false, false);
 }
 
 // Helper to build a result val from SearchResult and board
@@ -713,7 +714,8 @@ void setUseBook(bool use_book) {
 }
 
 val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time,
-                         double hard_time, val progress_callback, bool analyze_mode = false) {
+                         double hard_time, val progress_callback, bool analyze_mode = false,
+                         bool ponder_mode = false) {
     val result = val::object();
     int piece_count = jsboard.pieceCount();
 
@@ -751,8 +753,8 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
         }
     }
 
-    // Check opening book
-    if (g_use_book && g_book_loaded) {
+    // Check opening book (skip in analysis/ponder — we want a real search)
+    if (g_use_book && g_book_loaded && !analyze_mode && !ponder_mode) {
         uint64_t pos_hash = jsboard.board.position_hash();
         auto it = g_opening_book.find(pos_hash);
         if (it != g_opening_book.end() && !it->second.empty()) {
@@ -803,6 +805,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     }
     g_searcher->set_eval(eval_func);
     g_searcher->set_analyze_mode(analyze_mode);
+    g_searcher->set_ponder_mode(ponder_mode);
 
     // Reset and set stop flag for this search
     g_stop_flag.store(false, std::memory_order_relaxed);
