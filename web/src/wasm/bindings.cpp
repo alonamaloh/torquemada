@@ -347,6 +347,9 @@ namespace {
     // Neural network model
     std::unique_ptr<nn::MLP> g_nn_model;
 
+    // Persistent searcher (keeps transposition table across searches)
+    std::unique_ptr<search::Searcher> g_searcher;
+
     // Opening book
     struct BookMove {
         Move move;
@@ -794,17 +797,20 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
         }
     };
 
-    search::Searcher searcher("", 0);
-    searcher.set_eval(eval_func);
-    searcher.set_analyze_mode(analyze_mode);
+    // Lazily create persistent searcher (keeps TT across searches)
+    if (!g_searcher) {
+        g_searcher = std::make_unique<search::Searcher>("", 0);
+    }
+    g_searcher->set_eval(eval_func);
+    g_searcher->set_analyze_mode(analyze_mode);
 
     // Reset and set stop flag for this search
     g_stop_flag.store(false, std::memory_order_relaxed);
-    searcher.set_stop_flag(&g_stop_flag);
+    g_searcher->set_stop_flag(&g_stop_flag);
 
     // Set up DTM probe function if tablebases are available
     if (tb_available) {
-        searcher.set_dtm_probe([](const Board& b) {
+        g_searcher->set_dtm_probe([](const Board& b) {
             return g_tb_manager.lookup_dtm(b);
         }, 5);  // 5-piece tablebases
     }
@@ -813,7 +819,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     {
         val cwdlAvail = val::global("cwdlAvailable");
         if (!cwdlAvail.isUndefined() && cwdlAvail().as<bool>()) {
-            searcher.set_wdl_probe([](const Board& b) -> std::optional<int> {
+            g_searcher->set_wdl_probe([](const Board& b) -> std::optional<int> {
                 return g_cwdl_manager.lookup_wdl(b);
             }, 7);  // 7-piece WDL tablebases
         }
@@ -822,7 +828,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     // Set progress callback if provided
     bool has_callback = !progress_callback.isNull() && !progress_callback.isUndefined();
     if (has_callback) {
-        searcher.set_progress_callback([&](const search::SearchResult& sr) {
+        g_searcher->set_progress_callback([&](const search::SearchResult& sr) {
             val update = buildSearchResultVal(sr, jsboard.board, jsboard.white_to_move);
             progress_callback.call<void>("call", val::null(), update);
         });
@@ -830,7 +836,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
 
     search::SearchResult sr;
     try {
-        sr = searcher.search(jsboard.board, max_depth,
+        sr = g_searcher->search(jsboard.board, max_depth,
                              search::TimeControl::with_time(soft_time, hard_time));
     } catch (const search::SearchInterrupted&) {
         // Search was interrupted - return minimal result
