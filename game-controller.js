@@ -45,6 +45,9 @@ export class GameController {
         this.onTimeUpdate = null;    // (secondsLeft) => void - called when time bank changes
         this.onDrawOffer = null;     // async () => boolean - called when engine offers a draw
 
+        // Current principal variation from search
+        this.currentPV = [];
+
         // Flexible move input state
         this._selectedMask = 0;      // 32-bit mask of selected squares
         this.partialPath = [];       // kept for _makeMove animation compatibility
@@ -99,6 +102,7 @@ export class GameController {
         this.currentIndex = -1;
         this.gameOver = false;
         this.winner = null;
+        this.currentPV = [];
         this.positionCounts = new Map();
         this.secondsLeft = 0;
         this._notifyTime();
@@ -446,8 +450,9 @@ export class GameController {
      * @param {boolean} triggerAutoPlay - whether to auto-play engine's response
      */
     async _makeMove(move, triggerAutoPlay = true, animate = false) {
-        // Clear redo stack since we're making a new move
+        // Clear redo stack and PV since we're making a new move
         this.redoStack = [];
+        this.currentPV = [];
 
         // Store current position in history
         const prevBoard = await this.engine.getBoard();
@@ -657,6 +662,8 @@ export class GameController {
      * Report search info (used for both progress updates and final result)
      */
     _reportSearchInfo(result) {
+        this.currentPV = result.pv || [];
+
         // Format score for display
         let scoreStr = '?';
         if (result.score !== undefined) {
@@ -702,6 +709,7 @@ export class GameController {
     async undo() {
         if (this.history.length === 0) return;
         await this.abortSearch();
+        this.currentPV = [];
 
         // Decrement position count for current position before undoing
         const currentBoard = await this.engine.getBoard();
@@ -767,6 +775,8 @@ export class GameController {
             }
         }
 
+        this.currentPV = [];
+
         // Pop move from redo stack
         const entry = this.redoStack.pop();
 
@@ -814,6 +824,7 @@ export class GameController {
         this.currentIndex = -1;
         this.gameOver = false;
         this.winner = null;
+        this.currentPV = [];
         this.positionCounts = new Map();
         this._clearInputState();
         this.boardUI.setSelected(null);
@@ -858,6 +869,16 @@ export class GameController {
         // Now make the engine move with auto-play enabled
         // Since we've assigned engine to current side, it will continue playing that side
         await this._engineMove(true);
+    }
+
+    /**
+     * Play the top PV move in analysis mode
+     */
+    async playAnalysisMove() {
+        if (!this.analysisMode || this.currentPV.length === 0) return false;
+        const notation = this.currentPV[0];
+        await this.abortSearch();
+        return await this.inputMove(notation);
     }
 
     /**
@@ -1000,6 +1021,7 @@ export class GameController {
         this.currentIndex = -1;
         this.gameOver = false;
         this.winner = null;
+        this.currentPV = [];
         this.positionCounts = new Map();
         this.secondsLeft = 0;
         this._notifyTime();

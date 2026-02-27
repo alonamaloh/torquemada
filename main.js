@@ -84,28 +84,32 @@ async function init() {
         gameController.onMove = (move, board) => {
             updateMoveHistory();
             updateUndoRedoButtons();
+            updatePlayButton();
         };
 
         gameController.onGameOver = (winner, reason) => {
             showGameOver(winner, reason);
+            updatePlayButton();
         };
 
         gameController.onThinkingStart = () => {
-            setThinkingIndicator(true);
+            updatePlayButton();
             updateUndoRedoButtons();
         };
 
         gameController.onThinkingEnd = () => {
-            setThinkingIndicator(false);
+            updatePlayButton();
             updateUndoRedoButtons();
         };
 
         gameController.onSearchInfo = (info) => {
             updateSearchInfo(info);
+            updatePlayButton();
         };
 
         gameController.onModeChange = () => {
             updateModeButtons();
+            updatePlayButton();
         };
 
         gameController.onTimeUpdate = (secondsLeft) => {
@@ -126,6 +130,7 @@ async function init() {
         setupEventHandlers();
         updateModeButtons();
         updateUndoRedoButtons();
+        updatePlayButton();
 
         // Resize board to fit
         // Board sizing is handled by CSS (width: 100%, max-width: 480px)
@@ -237,6 +242,7 @@ async function enterEditMode() {
     gameController.boardUI.onClick = handleEditClick;
     gameController.boardUI.setLegalMoves([]);  // Clear move highlights
     gameController.boardUI.setSelected(null);
+    updatePlayButton();
 }
 
 /**
@@ -274,6 +280,7 @@ async function exitEditMode() {
     updateMoveHistory();
     updateUndoRedoButtons();
     updateModeButtons();
+    updatePlayButton();
 }
 
 /**
@@ -476,6 +483,7 @@ async function startNewGame(playAs) {
     updateModeButtons();
     updateUndoRedoButtons();
     updateMoveHistory();
+    updatePlayButton();
 }
 
 /**
@@ -614,11 +622,17 @@ function setupEventHandlers() {
         });
     }
 
-    // Stop button
-    const stopBtn = document.getElementById('btn-stop');
-    if (stopBtn) {
-        stopBtn.addEventListener('click', () => {
-            gameController.stopSearch();
+    // Play button (context-aware: stop search / engine move now / play analysis PV)
+    const playBtn = document.getElementById('btn-play');
+    if (playBtn) {
+        playBtn.addEventListener('click', async () => {
+            if (gameController.analysisMode) {
+                await gameController.playAnalysisMove();
+            } else if (gameController.isThinking) {
+                gameController.stopSearch();
+            } else {
+                await gameController.engineMoveNow();
+            }
         });
     }
 
@@ -896,20 +910,44 @@ function showGameOver(winner, reason) {
 }
 
 /**
- * Set thinking indicator
+ * Update the play button enabled/disabled state based on current game state.
+ * Enabled when: engine thinking, human's turn (not game over), or analysis with PV.
+ * Disabled when: game over, edit mode, no legal moves, analysis with no PV yet.
  */
-function setThinkingIndicator(thinking) {
-    // Show/hide search info panel
+function updatePlayButton() {
+    const playBtn = document.getElementById('btn-play');
+    if (!playBtn) return;
+
+    // Show/hide search info panel (keep visible after search)
     const searchInfo = document.getElementById('search-info');
-    if (searchInfo) {
-        searchInfo.style.display = thinking ? 'block' : 'block';  // Keep visible after search
+    if (searchInfo && gameController.isThinking) {
+        searchInfo.style.display = 'block';
     }
 
-    // Enable/disable stop button
-    const stopBtn = document.getElementById('btn-stop');
-    if (stopBtn) {
-        stopBtn.disabled = !thinking;
+    if (editMode || gameController.gameOver || gameController.legalMoves.length === 0) {
+        playBtn.disabled = true;
+        return;
     }
+
+    if (gameController.isThinking) {
+        // Always enabled while thinking (to stop search)
+        playBtn.disabled = false;
+        return;
+    }
+
+    if (gameController.analysisMode) {
+        // In analysis mode (not thinking): enabled only if we have a PV
+        playBtn.disabled = gameController.currentPV.length === 0;
+        return;
+    }
+
+    // Normal play, not thinking: enabled if it's human's turn
+    // (so human can hand control to engine)
+    const board = gameController.boardUI;
+    const isHumanTurn = gameController.humanColor === 'both' ||
+        (gameController.humanColor === 'white' && board.whiteToMove) ||
+        (gameController.humanColor === 'black' && !board.whiteToMove);
+    playBtn.disabled = !isHumanTurn;
 }
 
 /**
@@ -1086,6 +1124,8 @@ async function enterAnalysisMode() {
     const evalBar = document.getElementById('eval-bar');
     if (evalBar) evalBar.style.display = '';
 
+    updatePlayButton();
+
     // Start analyzing current position
     if (!gameController.gameOver) {
         gameController._analyzePosition();
@@ -1109,6 +1149,7 @@ async function exitAnalysisMode() {
     if (evalBar) evalBar.style.display = 'none';
 
     clearSearchInfo();
+    updatePlayButton();
 }
 
 // --- Match Play ---
