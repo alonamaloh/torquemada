@@ -237,10 +237,14 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   if (probe_tb(board, ply, tb_score)) {
     return tb_score;
   }
+  bool draw_reduce = false;
   {
     auto wdl = probe_wdl(board, ply, depth, alpha, beta, tb_score);
     if (wdl == WDLProbeResult::SCORE_READY) return tb_score;
-    if (wdl == WDLProbeResult::DRAW_REDUCE) depth -= 3;
+    if (wdl == WDLProbeResult::DRAW_REDUCE) {
+      depth -= (depth >= 4);
+      draw_reduce = true;
+    }
   }
 
   // Save original alpha for correct TT flag computation
@@ -406,6 +410,13 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
       }
     }
     is_first = false;
+  }
+
+  // Proven draw: clamp score to the draw range so undecided-range scores
+  // from leaf evaluations (to_undecided) or miscalibrated NNUE evals
+  // don't leak out of WDL-proven draw positions.
+  if (draw_reduce) {
+    best_score = std::max(-SCORE_DRAW, std::min(SCORE_DRAW, best_score));
   }
 
   // Compute TT flag from original alpha (before TT probe may have raised it)
