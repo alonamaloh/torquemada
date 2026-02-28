@@ -525,7 +525,8 @@ SearchResult Searcher::search_root(const Board& board, MoveList& moves, int dept
 }
 
 int Searcher::search_root_all(const Board& board, MoveList& root_moves, int depth,
-                              int threshold, std::vector<int>& scores) {
+                              int threshold, std::vector<int>& scores,
+                              bool full_window) {
   pos_hash_history_[0] = board.position_hash();
   scores.resize(root_moves.size());
 
@@ -540,7 +541,7 @@ int Searcher::search_root_all(const Board& board, MoveList& root_moves, int dept
     // Threshold-based window: exact scores for moves within threshold of best,
     // fail-low bounds for clearly worse moves.
     int cutoff;
-    if (best_score <= -SCORE_INFINITE + threshold + 1) {
+    if (full_window || best_score <= -SCORE_INFINITE + threshold + 1) {
       cutoff = -SCORE_INFINITE;
     } else {
       cutoff = best_score - threshold - 1;
@@ -764,7 +765,7 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
     try {
       if (ponder_mode_) {
         std::vector<int> scores;
-        search_root_all(board, root_moves, depth, SCORE_INFINITE, scores);
+        search_root_all(board, root_moves, depth, SCORE_INFINITE, scores, true);
         result.best_move = root_moves[0];
         result.score = scores[0];
         result.nodes = stats_.nodes;

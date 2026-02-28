@@ -284,7 +284,8 @@ private:
   // exact scores for moves within threshold of best, fail-low bounds for others.
   // Returns the best score. Reorders root_moves/scores with best first.
   int search_root_all(const Board& board, MoveList& root_moves, int depth,
-                      int threshold, std::vector<int>& scores);
+                      int threshold, std::vector<int>& scores,
+                      bool full_window = false);
 
   // Negamax alpha-beta search
   // Returns score from the perspective of the side to move (white, since board is always flipped)
