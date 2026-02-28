@@ -355,8 +355,8 @@ export class GameController {
 
         if (this.state === 'thinking') return;
 
-        const board = await this.engine.getBoard();
-        if (!this._isHumanTurn(board.whiteToMove)) return;
+        // Use cached whiteToMove from boardUI (engine worker may be busy pondering)
+        if (!this._isHumanTurn(this.boardUI.whiteToMove)) return;
 
         const bit = (1 << (square - 1)) >>> 0;
 
