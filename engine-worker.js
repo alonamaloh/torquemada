@@ -323,7 +323,7 @@ function search(softTime, hardTime, requestId, analyzeMode) {
         let result;
         if (engine.searchWithCallback) {
             result = engine.searchWithCallback(
-                board, 100, softTime || 3, hardTime || 10, progressCallback, !!analyzeMode
+                board, 100, softTime || 3, hardTime || 10, progressCallback, !!analyzeMode, false
             );
         } else {
             result = engine.search(board, 100, softTime || 3, hardTime || 10);
