@@ -28,6 +28,11 @@ let matchStats = { wins: 0, draws: 0, losses: 0 };
 const MATCH_STATS_KEY = 'torquemada-match-stats';
 let drawOfferResolve = null;
 
+// Saved options for restoring after match play
+let savedPonder = false;
+let savedShowAnalysis = false;
+let savedUseBook = true;
+
 /**
  * Initialize the application
  */
@@ -469,8 +474,6 @@ function hideNewGameDialog() {
  */
 async function startNewGame(playAs) {
     hideNewGameDialog();
-    await togglePondering(false);
-
     clearSearchInfo();
     await gameController.newGame();
 
@@ -598,7 +601,6 @@ function setupEventHandlers() {
     if (chkUseBook) {
         chkUseBook.addEventListener('change', () => {
             gameController.setUseBook(chkUseBook.checked);
-            updateOptionsButtons();
         });
     }
 
@@ -1132,17 +1134,11 @@ function toggleShowAnalysis(enabled) {
 
 // --- Pondering ---
 
-let savedUseBook = true;  // Book setting before enabling pondering
-
 async function togglePondering(enabled) {
     if (enabled) {
         if (gameController.ponderEnabled) return;
 
         gameController.ponderEnabled = true;
-
-        // Disable book during ponder (want real eval)
-        savedUseBook = gameController.useBook;
-        gameController.setUseBook(false);
 
         updateOptionsButtons();
         updatePlayButton();
@@ -1158,9 +1154,6 @@ async function togglePondering(enabled) {
             await gameController.abortSearch();
         }
         gameController.ponderEnabled = false;
-
-        // Restore book setting
-        gameController.setUseBook(savedUseBook);
 
         clearSearchInfo();
         updateOptionsButtons();
@@ -1183,7 +1176,15 @@ function getLegacyStats() {
 
 async function startMatchPlay() {
     hideNewGameDialog();
-    await togglePondering(false);
+
+    // Save current option state before overriding
+    savedPonder = gameController.ponderEnabled;
+    savedShowAnalysis = showAnalysis;
+    savedUseBook = gameController.useBook;
+
+    // Force analysis off immediately (before game setup)
+    toggleShowAnalysis(false);
+
     matchStats = computeStats();
     matchPlayActive = true;
     document.body.classList.add('match-play');
@@ -1209,6 +1210,9 @@ async function startMatchPlay() {
     await gameController.newGame();
     gameController.setHumanColor(color);
     gameController.boardUI.setFlipped(color === 'black');
+
+    // Enable pondering last, after game is fully set up
+    await togglePondering(true);
 }
 
 let resignResolve = null;
@@ -1368,12 +1372,18 @@ function setupHistoryDialogHandlers() {
     });
 }
 
-function exitMatchPlay() {
+async function exitMatchPlay() {
     matchPlayActive = false;
     document.body.classList.remove('match-play');
     document.getElementById('match-toolbar').style.display = 'none';
     document.getElementById('game-controls').style.display = 'flex';
     document.getElementById('match-result-dialog').style.display = 'none';
+
+    // Restore pre-match option values
+    await togglePondering(savedPonder);
+    toggleShowAnalysis(savedShowAnalysis);
+    gameController.setUseBook(savedUseBook);
+    updateOptionsButtons();
 
     // Refresh UI state
     updateModeButtons();

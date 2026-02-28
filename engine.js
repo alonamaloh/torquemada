@@ -6229,7 +6229,7 @@ var CheckersEngine = (() => {
                 "R": _fd_write,
                 "b": _getTempRet0,
                 "v": invoke_diii,
-                "O": invoke_fiii,
+                "P": invoke_fiii,
                 "n": invoke_i,
                 "d": invoke_ii,
                 "g": invoke_iii,
@@ -6237,7 +6237,7 @@ var CheckersEngine = (() => {
                 "m": invoke_iiiii,
                 "J": invoke_iiiiii,
                 "y": invoke_iiiiiii,
-                "P": invoke_iiiiiiii,
+                "O": invoke_iiiiiiii,
                 "H": invoke_iiiiiiiiiiii,
                 "aa": invoke_iiiiij,
                 "ea": invoke_iij,
@@ -6504,6 +6504,17 @@ var CheckersEngine = (() => {
                 }
             }
 
+            function invoke_iiiiiiii(index, a1, a2, a3, a4, a5, a6, a7) {
+                var sp = stackSave();
+                try {
+                    return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7)
+                } catch (e) {
+                    stackRestore(sp);
+                    if (e !== e + 0 && e !== "longjmp") throw e;
+                    _setThrew(1, 0)
+                }
+            }
+
             function invoke_diii(index, a1, a2, a3) {
                 var sp = stackSave();
                 try {
@@ -6530,17 +6541,6 @@ var CheckersEngine = (() => {
                 var sp = stackSave();
                 try {
                     getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7, a8)
-                } catch (e) {
-                    stackRestore(sp);
-                    if (e !== e + 0 && e !== "longjmp") throw e;
-                    _setThrew(1, 0)
-                }
-            }
-
-            function invoke_iiiiiiii(index, a1, a2, a3, a4, a5, a6, a7) {
-                var sp = stackSave();
-                try {
-                    return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7)
                 } catch (e) {
                     stackRestore(sp);
                     if (e !== e + 0 && e !== "longjmp") throw e;

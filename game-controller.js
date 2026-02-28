@@ -643,13 +643,19 @@ export class GameController {
         this.state = 'pondering';
         if (this.onThinkingStart) this.onThinkingStart();
 
+        // Suppress book during ponder (want real eval), restore after
+        const bookWasOn = this.useBook;
+        if (bookWasOn) this.setUseBook(false);
+
         try {
             const onProgress = (result) => {
                 this._reportSearchInfo(result);
             };
 
-            // analyzeMode=true (search even w/ 1 move), ponderMode=true (full window all roots)
-            const result = await this.engine.search(999999, 999999, onProgress, true, true);
+            // analyzeMode=true (search even w/ 1 move)
+            // ponderMode: full window for all root moves only when engine is playing (not 2-player)
+            const ponderMode = this.humanColor !== 'both';
+            const result = await this.engine.search(999999, 999999, onProgress, true, ponderMode);
 
             // Abort if search was cancelled
             if (this._aborting) return;
@@ -662,6 +668,7 @@ export class GameController {
                 console.error('Ponder error:', err);
             }
         } finally {
+            if (bookWasOn) this.setUseBook(true);
             this.state = 'idle';
             if (this.onThinkingEnd) this.onThinkingEnd();
         }
