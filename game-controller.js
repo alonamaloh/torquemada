@@ -353,10 +353,15 @@ export class GameController {
     async _handleSquareClick(square) {
         if (this.gameOver) return;
 
+        // Stop pondering so the worker is free for getBoard/makeMove calls
+        if (this.state === 'pondering') {
+            await this.abortSearch();
+        }
+
         if (this.state === 'thinking') return;
 
-        // Use cached whiteToMove from boardUI (engine worker may be busy pondering)
-        if (!this._isHumanTurn(this.boardUI.whiteToMove)) return;
+        const board = await this.engine.getBoard();
+        if (!this._isHumanTurn(board.whiteToMove)) return;
 
         const bit = (1 << (square - 1)) >>> 0;
 
