@@ -1122,10 +1122,10 @@ function toggleShowAnalysis(enabled) {
     const searchInfo = document.getElementById('search-info');
 
     if (enabled) {
-        if (evalBar) evalBar.style.display = '';
+        if (evalBar) evalBar.style.visibility = '';
         // search-info will appear when engine sends info
     } else {
-        if (evalBar) evalBar.style.display = 'none';
+        if (evalBar) evalBar.style.visibility = 'hidden';
         if (searchInfo) searchInfo.style.display = 'none';
     }
 

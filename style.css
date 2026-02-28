@@ -109,7 +109,7 @@ body {
     border-radius: 8px;
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     width: 100%;
-    max-width: calc(480px + 1rem);
+    max-width: calc(480px + 1rem + 2 * 1.2rem + 2 * 0.4rem);
     box-sizing: border-box;
     display: flex;
     align-items: stretch;
@@ -151,6 +151,11 @@ body {
     right: 0;
     background: #eee;
     transition: height 0.3s ease;
+}
+
+.eval-bar-spacer {
+    width: 1.2rem;
+    flex-shrink: 0;
 }
 
 
