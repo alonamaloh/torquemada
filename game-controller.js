@@ -24,13 +24,13 @@ export class GameController {
         this.secondsLeft = 0;        // Time bank (accumulates/drains)
         this.useBook = true;         // Use opening book
         this.autoPlay = true;        // Engine plays automatically
-        this.analysisMode = false;   // Analysis mode: engine analyzes, human plays both sides
+        this.ponderEnabled = false;  // Pondering: engine thinks during opponent's turn
 
         // Position tracking for threefold repetition
         this.positionCounts = new Map();  // key: "white,black,kings" → count
 
         // State flags
-        this.isThinking = false;
+        this.state = 'idle';         // 'idle' | 'thinking' | 'pondering'
         this.gameOver = false;
         this.winner = null;          // 'white', 'black', or 'draw'
 
@@ -58,6 +58,14 @@ export class GameController {
     }
 
     /**
+     * Whether the engine is busy (thinking or pondering).
+     * Used by UI for button state checks.
+     */
+    get isThinking() {
+        return this.state !== 'idle';
+    }
+
+    /**
      * Initialize game controller
      */
     async init() {
@@ -75,10 +83,10 @@ export class GameController {
      * The interrupted search result is discarded.
      */
     async abortSearch() {
-        if (!this.isThinking) return;
+        if (this.state === 'idle') return;
         this._aborting = true;
         this.engine.stopSearch();
-        while (this.isThinking) {
+        while (this.state !== 'idle') {
             await this._sleep(50);
         }
         this._aborting = false;
@@ -345,12 +353,7 @@ export class GameController {
     async _handleSquareClick(square) {
         if (this.gameOver) return;
 
-        // In analysis mode, stop the running analysis to accept the move
-        if (this.analysisMode && this.isThinking) {
-            await this.abortSearch();
-        }
-
-        if (this.isThinking) return;
+        if (this.state === 'thinking') return;
 
         const board = await this.engine.getBoard();
         if (!this._isHumanTurn(board.whiteToMove)) return;
@@ -439,7 +442,6 @@ export class GameController {
      * Check if it's human's turn
      */
     _isHumanTurn(whiteToMove) {
-        if (this.analysisMode) return true;  // Human plays both sides in analysis mode
         if (this.humanColor === 'both') return true;
         if (this.humanColor === 'white') return whiteToMove;
         return !whiteToMove;
@@ -450,6 +452,11 @@ export class GameController {
      * @param {boolean} triggerAutoPlay - whether to auto-play engine's response
      */
     async _makeMove(move, triggerAutoPlay = true, animate = false) {
+        // Stop pondering if active (human just moved)
+        if (this.state === 'pondering') {
+            await this.abortSearch();
+        }
+
         // Clear redo stack and PV since we're making a new move
         this.redoStack = [];
         this.currentPV = [];
@@ -505,15 +512,12 @@ export class GameController {
             this._updateStatus(`Mueven ${side}`);
         }
 
-        // If analysis mode, start analyzing the new position
-        if (this.analysisMode && !this.gameOver) {
-            await this._analyzePosition();
-            return;
-        }
-
         // If game not over and it's engine's turn, make engine move
         if (triggerAutoPlay && !this.gameOver && this.autoPlay && !this._isHumanTurn(newBoard.whiteToMove)) {
             await this._engineMove();
+        } else if (this.ponderEnabled && !this.gameOver) {
+            // Start pondering if enabled and game isn't over
+            await this._startPondering();
         }
     }
 
@@ -529,9 +533,9 @@ export class GameController {
      * @param {boolean} triggerAutoPlay - whether to auto-play after this move
      */
     async _engineMove(triggerAutoPlay = true) {
-        if (this.gameOver || this.isThinking) return;
+        if (this.gameOver || this.state !== 'idle') return;
 
-        this.isThinking = true;
+        this.state = 'thinking';
         this._triggerAutoPlay = triggerAutoPlay;  // Store for use after search completes
         if (this.onThinkingStart) this.onThinkingStart();
         this._updateStatus('Motor pensando...');
@@ -595,7 +599,7 @@ export class GameController {
                 if (board.pieceCount <= 4) {
                     const accepted = await this.onDrawOffer();
                     if (accepted) {
-                        this.isThinking = false;
+                        this.state = 'idle';
                         if (this.onThinkingEnd) this.onThinkingEnd();
                         this._setGameOver('draw', 'tablas aceptadas');
                         return;
@@ -607,7 +611,7 @@ export class GameController {
             if (result.bestMove && result.bestMove.from_xor_to && result.bestMove.from_xor_to !== 0) {
                 console.log('Making move:', result.bestMove);
                 // Reset thinking state BEFORE making move, so recursive engine moves can proceed
-                this.isThinking = false;
+                this.state = 'idle';
                 if (this.onThinkingEnd) this.onThinkingEnd();
                 await this._makeMove(result.bestMove, this._triggerAutoPlay, true);  // animate=true for engine moves
                 return;  // _makeMove handles the next engine move if needed
@@ -619,27 +623,28 @@ export class GameController {
             console.error('Search exception:', err);
             this._updateStatus('Error de búsqueda: ' + err.message);
         } finally {
-            this.isThinking = false;
+            this.state = 'idle';
             if (this.onThinkingEnd) this.onThinkingEnd();
         }
     }
 
     /**
-     * Start background analysis of current position.
+     * Start pondering (background search of current position).
      * Runs an open-ended search that reports progress but never plays a move.
      */
-    async _analyzePosition() {
-        if (this.gameOver || this.isThinking) return;
+    async _startPondering() {
+        if (this.gameOver || this.state !== 'idle') return;
 
-        this.isThinking = true;
+        this.state = 'pondering';
         if (this.onThinkingStart) this.onThinkingStart();
 
         try {
-            const onProgress = (progressResult) => {
-                this._reportSearchInfo(progressResult);
+            const onProgress = (result) => {
+                this._reportSearchInfo(result);
             };
 
-            const result = await this.engine.search(999999, 999999, onProgress, true);
+            // analyzeMode=true (search even w/ 1 move), ponderMode=true (full window all roots)
+            const result = await this.engine.search(999999, 999999, onProgress, true, true);
 
             // Abort if search was cancelled
             if (this._aborting) return;
@@ -648,12 +653,11 @@ export class GameController {
                 this._reportSearchInfo(result);
             }
         } catch (err) {
-            // Search was likely stopped — that's normal in analysis mode
             if (!this._aborting) {
-                console.error('Analysis error:', err);
+                console.error('Ponder error:', err);
             }
         } finally {
-            this.isThinking = false;
+            this.state = 'idle';
             if (this.onThinkingEnd) this.onThinkingEnd();
         }
     }
@@ -748,17 +752,17 @@ export class GameController {
         this.winner = null;
 
         // Switch mode so human can play the side that's now to move
-        // (unless in 2-player or analysis mode)
-        if (this.humanColor !== 'both' && !this.analysisMode) {
+        // (unless in 2-player or pondering mode)
+        if (this.humanColor !== 'both' && !this.ponderEnabled) {
             this.humanColor = board.whiteToMove ? 'white' : 'black';
             if (this.onModeChange) this.onModeChange(this.humanColor);
         }
 
         this._updateStatus('Jugada deshecha');
 
-        // In analysis mode, start analyzing the restored position
-        if (this.analysisMode && !this.gameOver) {
-            await this._analyzePosition();
+        // If pondering is enabled, start pondering the restored position
+        if (this.ponderEnabled && !this.gameOver) {
+            await this._startPondering();
         }
     }
 
@@ -767,12 +771,10 @@ export class GameController {
      */
     async redo() {
         if (this.redoStack.length === 0) return;
-        if (this.isThinking) {
-            if (this.analysisMode) {
-                await this.abortSearch();
-            } else {
-                return;
-            }
+        if (this.state === 'pondering') {
+            await this.abortSearch();
+        } else if (this.state === 'thinking') {
+            return;
         }
 
         this.currentPV = [];
@@ -797,17 +799,17 @@ export class GameController {
         this.boardUI.setLastMove(entry.move.from, entry.move.to);
 
         // Switch mode so human can play the side that's now to move
-        // (unless in 2-player or analysis mode)
-        if (this.humanColor !== 'both' && !this.analysisMode) {
+        // (unless in 2-player or pondering mode)
+        if (this.humanColor !== 'both' && !this.ponderEnabled) {
             this.humanColor = newBoard.whiteToMove ? 'white' : 'black';
             if (this.onModeChange) this.onModeChange(this.humanColor);
         }
 
         this._updateStatus('Jugada rehecha');
 
-        // In analysis mode, start analyzing the restored position
-        if (this.analysisMode && !this.gameOver) {
-            await this._analyzePosition();
+        // If pondering is enabled, start pondering the restored position
+        if (this.ponderEnabled && !this.gameOver) {
+            await this._startPondering();
         }
     }
 
@@ -872,10 +874,10 @@ export class GameController {
     }
 
     /**
-     * Play the top PV move in analysis mode
+     * Play the top PV move while pondering
      */
-    async playAnalysisMove() {
-        if (!this.analysisMode || this.currentPV.length === 0) return false;
+    async playPonderMove() {
+        if (this.state !== 'pondering' || this.currentPV.length === 0) return false;
         const notation = this.currentPV[0];
         await this.abortSearch();
         return await this.inputMove(notation);
@@ -913,11 +915,18 @@ export class GameController {
         this.secondsLeft = 0;
         this._notifyTime();
 
+        // Stop pondering if active (mode change may require engine to think)
+        if (this.state === 'pondering') {
+            await this.abortSearch();
+        }
+
         // If it's now the engine's turn (human gave up their turn), make engine move
-        if (!this.gameOver && !this.isThinking && this.autoPlay) {
+        if (!this.gameOver && this.state === 'idle' && this.autoPlay) {
             const board = await this.engine.getBoard();
             if (!this._isHumanTurn(board.whiteToMove)) {
                 await this._engineMove();
+            } else if (this.ponderEnabled) {
+                await this._startPondering();
             }
         }
     }
@@ -961,8 +970,8 @@ export class GameController {
      */
     getUndoRedoState() {
         return {
-            canUndo: this.history.length > 0 && (!this.isThinking || this.analysisMode),
-            canRedo: this.redoStack.length > 0 && (!this.isThinking || this.analysisMode)
+            canUndo: this.history.length > 0 && (this.state !== 'thinking'),
+            canRedo: this.redoStack.length > 0 && (this.state !== 'thinking')
         };
     }
 

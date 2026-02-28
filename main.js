@@ -165,20 +165,14 @@ function updateModeButtons() {
     const btnEngineWhite = document.getElementById('btn-engine-white');
     const btnEngineBlack = document.getElementById('btn-engine-black');
     const btnTwoPlayer = document.getElementById('btn-two-player');
-    const btnAnalysis = document.getElementById('btn-analysis');
+    const btnPonder = document.getElementById('btn-ponder');
 
     if (!btnEngineWhite || !btnEngineBlack || !btnTwoPlayer) return;
 
-    // Remove active from all
+    // Remove active from mode buttons
     btnEngineWhite.classList.remove('active');
     btnEngineBlack.classList.remove('active');
     btnTwoPlayer.classList.remove('active');
-    if (btnAnalysis) btnAnalysis.classList.remove('active');
-
-    if (gameController.analysisMode) {
-        if (btnAnalysis) btnAnalysis.classList.add('active');
-        return;
-    }
 
     // Set active based on humanColor
     // humanColor='black' means engine plays white
@@ -195,6 +189,9 @@ function updateModeButtons() {
             btnTwoPlayer.classList.add('active');
             break;
     }
+
+    // Pondering toggle (independent of mode)
+    if (btnPonder) btnPonder.classList.toggle('active', gameController.ponderEnabled);
 }
 
 /**
@@ -462,7 +459,7 @@ function hideNewGameDialog() {
  */
 async function startNewGame(playAs) {
     hideNewGameDialog();
-    await exitAnalysisMode();
+    await togglePondering(false);
 
     clearSearchInfo();
     await gameController.newGame();
@@ -557,30 +554,27 @@ function setupEventHandlers() {
 
     if (btnEngineWhite) {
         btnEngineWhite.addEventListener('click', async () => {
-            await exitAnalysisMode();
             gameController.setHumanColor('black'); // human plays black = engine plays white
             updateModeButtons();
         });
     }
     if (btnEngineBlack) {
         btnEngineBlack.addEventListener('click', async () => {
-            await exitAnalysisMode();
             gameController.setHumanColor('white'); // human plays white = engine plays black
             updateModeButtons();
         });
     }
     if (btnTwoPlayer) {
         btnTwoPlayer.addEventListener('click', async () => {
-            await exitAnalysisMode();
             gameController.setHumanColor('both');
             updateModeButtons();
         });
     }
 
-    // Analysis mode button
-    const btnAnalysis = document.getElementById('btn-analysis');
-    if (btnAnalysis) {
-        btnAnalysis.addEventListener('click', () => enterAnalysisMode());
+    // Pondering toggle button
+    const btnPonder = document.getElementById('btn-ponder');
+    if (btnPonder) {
+        btnPonder.addEventListener('click', () => togglePondering(!gameController.ponderEnabled));
     }
 
     // Time per move - click to open dialog
@@ -626,9 +620,9 @@ function setupEventHandlers() {
     const playBtn = document.getElementById('btn-play');
     if (playBtn) {
         playBtn.addEventListener('click', async () => {
-            if (gameController.analysisMode) {
-                await gameController.playAnalysisMove();
-            } else if (gameController.isThinking) {
+            if (gameController.state === 'pondering') {
+                await gameController.playPonderMove();
+            } else if (gameController.state === 'thinking') {
                 gameController.stopSearch();
             } else {
                 await gameController.engineMoveNow();
@@ -929,20 +923,19 @@ function updatePlayButton() {
         return;
     }
 
-    if (gameController.isThinking) {
+    if (gameController.state === 'pondering') {
+        // During pondering: enabled if we have a PV to play
+        playBtn.disabled = gameController.currentPV.length === 0;
+        return;
+    }
+
+    if (gameController.state === 'thinking') {
         // Always enabled while thinking (to stop search)
         playBtn.disabled = false;
         return;
     }
 
-    if (gameController.analysisMode) {
-        // In analysis mode (not thinking): enabled only if we have a PV
-        playBtn.disabled = gameController.currentPV.length === 0;
-        return;
-    }
-
-    // Normal play, not thinking: enabled if it's human's turn
-    // (so human can hand control to engine)
+    // Idle: enabled if it's human's turn (so human can hand control to engine)
     const board = gameController.boardUI;
     const isHumanTurn = gameController.humanColor === 'both' ||
         (gameController.humanColor === 'white' && board.whiteToMove) ||
@@ -985,7 +978,7 @@ function clearSearchInfo() {
  * Update search info display
  */
 function updateSearchInfo(info) {
-    if (matchPlayActive && !gameController.analysisMode) return;
+    if (matchPlayActive && !gameController.ponderEnabled) return;
     const searchInfo = document.getElementById('search-info');
     if (!searchInfo) return;
 
@@ -1016,8 +1009,8 @@ function updateSearchInfo(info) {
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
 
-    // Update eval bar in analysis mode
-    if (gameController.analysisMode && info.score !== undefined) {
+    // Update eval bar when pondering
+    if (gameController.ponderEnabled && info.score !== undefined) {
         updateEvalBar(info.score);
     }
 }
@@ -1075,7 +1068,7 @@ function updateEvalBar(score) {
  */
 async function loadGameForAnalysis(game) {
     // Exit any current mode
-    await exitAnalysisMode();
+    await togglePondering(false);
     clearSearchInfo();
 
     // Disable auto-play during load
@@ -1091,65 +1084,58 @@ async function loadGameForAnalysis(game) {
     // Orient board from player's perspective
     gameController.boardUI.setFlipped(game.playerColor === 'black');
 
-    // Enter analysis mode
-    await enterAnalysisMode();
+    // Set two-player mode + pondering (replaces old analysis mode)
+    gameController.humanColor = 'both';
+    await togglePondering(true);
 
     // Update UI
     updateMoveHistory();
     updateUndoRedoButtons();
-}
-
-// --- Analysis Mode ---
-
-let savedUseBook = true;  // Book setting before entering analysis mode
-
-async function enterAnalysisMode() {
-    if (gameController.analysisMode) return;
-
-    // Stop any running search
-    await gameController.abortSearch();
-
-    gameController.analysisMode = true;
     updateModeButtons();
-
-    // Disable opening book (we want real engine evaluation)
-    savedUseBook = gameController.useBook;
-    gameController.setUseBook(false);
-
-    // Hide time/book controls (not relevant in analysis)
-    const engineTimeGroup = document.querySelector('.input-group');
-    if (engineTimeGroup) engineTimeGroup.style.display = 'none';
-
-    // Show eval bar
-    const evalBar = document.getElementById('eval-bar');
-    if (evalBar) evalBar.style.display = '';
-
-    updatePlayButton();
-
-    // Start analyzing current position
-    if (!gameController.gameOver) {
-        gameController._analyzePosition();
-    }
 }
 
-async function exitAnalysisMode() {
-    if (!gameController.analysisMode) return;
-    await gameController.abortSearch();
-    gameController.analysisMode = false;
+// --- Pondering ---
 
-    // Restore opening book setting
-    gameController.setUseBook(savedUseBook);
+let savedUseBook = true;  // Book setting before enabling pondering
 
-    // Show time/book controls again
-    const engineTimeGroup = document.querySelector('.input-group');
-    if (engineTimeGroup) engineTimeGroup.style.display = 'flex';
+async function togglePondering(enabled) {
+    if (enabled) {
+        if (gameController.ponderEnabled) return;
 
-    // Hide eval bar
-    const evalBar = document.getElementById('eval-bar');
-    if (evalBar) evalBar.style.display = 'none';
+        gameController.ponderEnabled = true;
 
-    clearSearchInfo();
-    updatePlayButton();
+        // Disable book during ponder (want real eval)
+        savedUseBook = gameController.useBook;
+        gameController.setUseBook(false);
+
+        // Show eval bar
+        document.getElementById('eval-bar').style.display = '';
+
+        updateModeButtons();
+        updatePlayButton();
+
+        // Start pondering if idle and game not over
+        if (gameController.state === 'idle' && !gameController.gameOver) {
+            gameController._startPondering();
+        }
+    } else {
+        if (!gameController.ponderEnabled) return;
+
+        if (gameController.state === 'pondering') {
+            await gameController.abortSearch();
+        }
+        gameController.ponderEnabled = false;
+
+        // Restore book setting
+        gameController.setUseBook(savedUseBook);
+
+        // Hide eval bar
+        document.getElementById('eval-bar').style.display = 'none';
+
+        clearSearchInfo();
+        updateModeButtons();
+        updatePlayButton();
+    }
 }
 
 // --- Match Play ---
@@ -1167,7 +1153,7 @@ function getLegacyStats() {
 
 async function startMatchPlay() {
     hideNewGameDialog();
-    await exitAnalysisMode();
+    await togglePondering(false);
     matchStats = computeStats();
     matchPlayActive = true;
     document.body.classList.add('match-play');

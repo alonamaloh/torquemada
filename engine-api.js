@@ -183,14 +183,14 @@ export class EngineAPI {
      * @param {boolean} analyzeMode - If true, search even with only one legal move
      * @returns {Promise<Object>} Search result with bestMove, score, depth, nodes
      */
-    async search(softTime = 3, hardTime = 10, onProgress = null, analyzeMode = false) {
+    async search(softTime = 3, hardTime = 10, onProgress = null, analyzeMode = false, ponderMode = false) {
         // Reset stop flag before starting search
         if (this.wasmMemory && this.wasmStopFlagAddress) {
             this.wasmMemory[this.wasmStopFlagAddress] = 0;
         } else if (this.stopFlagView) {
             Atomics.store(this.stopFlagView, 0, 0);
         }
-        const response = await this.requestWithProgress('search', { softTime, hardTime, analyzeMode }, onProgress);
+        const response = await this.requestWithProgress('search', { softTime, hardTime, analyzeMode, ponderMode }, onProgress);
         return response.result;
     }
 
