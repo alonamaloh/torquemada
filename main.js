@@ -19,6 +19,9 @@ let editPieceType = 'empty';  // 'empty', 'white-man', 'white-king', 'black-man'
 let editWhiteToMove = true;
 let editBoard = { white: 0, black: 0, kings: 0 };  // Bitboards for editing
 
+// Analysis display state
+let showAnalysis = false;
+
 // Match play state
 let matchPlayActive = false;
 let matchStats = { wins: 0, draws: 0, losses: 0 };
@@ -129,6 +132,7 @@ async function init() {
         // Set up UI event handlers
         setupEventHandlers();
         updateModeButtons();
+        updateOptionsButtons();
         updateUndoRedoButtons();
         updatePlayButton();
 
@@ -165,7 +169,6 @@ function updateModeButtons() {
     const btnEngineWhite = document.getElementById('btn-engine-white');
     const btnEngineBlack = document.getElementById('btn-engine-black');
     const btnTwoPlayer = document.getElementById('btn-two-player');
-    const btnPonder = document.getElementById('btn-ponder');
 
     if (!btnEngineWhite || !btnEngineBlack || !btnTwoPlayer) return;
 
@@ -189,9 +192,16 @@ function updateModeButtons() {
             btnTwoPlayer.classList.add('active');
             break;
     }
+}
 
-    // Pondering toggle (independent of mode)
+function updateOptionsButtons() {
+    const btnPonder = document.getElementById('btn-ponder');
+    const btnUseBook = document.getElementById('btn-use-book');
+    const btnShowAnalysis = document.getElementById('btn-show-analysis');
+
     if (btnPonder) btnPonder.classList.toggle('active', gameController.ponderEnabled);
+    if (btnUseBook) btnUseBook.classList.toggle('active', gameController.useBook);
+    if (btnShowAnalysis) btnShowAnalysis.classList.toggle('active', showAnalysis);
 }
 
 /**
@@ -588,8 +598,14 @@ function setupEventHandlers() {
     if (useBookBtn) {
         useBookBtn.addEventListener('click', () => {
             gameController.setUseBook(!gameController.useBook);
-            useBookBtn.textContent = gameController.useBook ? 'Libro: Sí' : 'Libro: No';
+            updateOptionsButtons();
         });
+    }
+
+    // Analysis display toggle
+    const btnShowAnalysis = document.getElementById('btn-show-analysis');
+    if (btnShowAnalysis) {
+        btnShowAnalysis.addEventListener('click', () => toggleShowAnalysis(!showAnalysis));
     }
 
     // Time dialog
@@ -914,7 +930,7 @@ function updatePlayButton() {
 
     // Show/hide search info panel (keep visible after search)
     const searchInfo = document.getElementById('search-info');
-    if (searchInfo && gameController.isThinking) {
+    if (searchInfo && showAnalysis && gameController.isThinking) {
         searchInfo.style.display = 'block';
     }
 
@@ -978,7 +994,7 @@ function clearSearchInfo() {
  * Update search info display
  */
 function updateSearchInfo(info) {
-    if (matchPlayActive && !gameController.ponderEnabled) return;
+    if (!showAnalysis) return;
     const searchInfo = document.getElementById('search-info');
     if (!searchInfo) return;
 
@@ -1009,8 +1025,8 @@ function updateSearchInfo(info) {
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
 
-    // Update eval bar when pondering
-    if (gameController.ponderEnabled && info.score !== undefined) {
+    // Update eval bar
+    if (info.score !== undefined) {
         updateEvalBar(info.score);
     }
 }
@@ -1084,14 +1100,34 @@ async function loadGameForAnalysis(game) {
     // Orient board from player's perspective
     gameController.boardUI.setFlipped(game.playerColor === 'black');
 
-    // Set two-player mode + pondering (replaces old analysis mode)
+    // Set two-player mode + pondering + analysis display
     gameController.humanColor = 'both';
+    toggleShowAnalysis(true);
     await togglePondering(true);
 
     // Update UI
     updateMoveHistory();
     updateUndoRedoButtons();
     updateModeButtons();
+}
+
+// --- Analysis display ---
+
+function toggleShowAnalysis(enabled) {
+    showAnalysis = enabled;
+
+    const evalBar = document.getElementById('eval-bar');
+    const searchInfo = document.getElementById('search-info');
+
+    if (enabled) {
+        if (evalBar) evalBar.style.display = '';
+        // search-info will appear when engine sends info
+    } else {
+        if (evalBar) evalBar.style.display = 'none';
+        if (searchInfo) searchInfo.style.display = 'none';
+    }
+
+    updateOptionsButtons();
 }
 
 // --- Pondering ---
@@ -1108,10 +1144,7 @@ async function togglePondering(enabled) {
         savedUseBook = gameController.useBook;
         gameController.setUseBook(false);
 
-        // Show eval bar
-        document.getElementById('eval-bar').style.display = '';
-
-        updateModeButtons();
+        updateOptionsButtons();
         updatePlayButton();
 
         // Start pondering if idle and game not over
@@ -1129,11 +1162,8 @@ async function togglePondering(enabled) {
         // Restore book setting
         gameController.setUseBook(savedUseBook);
 
-        // Hide eval bar
-        document.getElementById('eval-bar').style.display = 'none';
-
         clearSearchInfo();
-        updateModeButtons();
+        updateOptionsButtons();
         updatePlayButton();
     }
 }
