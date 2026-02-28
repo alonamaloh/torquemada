@@ -243,6 +243,9 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     if (wdl == WDLProbeResult::DRAW_REDUCE) depth -= 3;
   }
 
+  // Save original alpha for correct TT flag computation
+  const int original_alpha = alpha;
+
   // Probe transposition table (using position hash without n_reversible)
   std::uint64_t key = pos_hash;
   TTEntry tt_entry;
@@ -347,7 +350,6 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
 
   int best_score = -SCORE_INFINITE;
   Move best_move;
-  TTFlag flag = TTFlag::UPPER_BOUND;
   Move first_move = moves[0];
   bool is_first = true;
 
@@ -375,10 +377,8 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
 
       if (score > alpha) {
         alpha = score;
-        flag = TTFlag::EXACT;
 
         if (alpha >= beta) {
-          flag = TTFlag::LOWER_BOUND;
           // Store killer move (only for quiet moves)
           if (!move.isCapture() && ply < MAX_PLY) {
             if (killers_[ply][0].from_xor_to != move.from_xor_to) {
@@ -407,6 +407,11 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     }
     is_first = false;
   }
+
+  // Compute TT flag from original alpha (before TT probe may have raised it)
+  TTFlag flag = best_score <= original_alpha ? TTFlag::UPPER_BOUND
+              : best_score >= beta           ? TTFlag::LOWER_BOUND
+                                             : TTFlag::EXACT;
 
   // Store in transposition table
   // When n_reversible > 0, store with a trivial bound (>= -INF) so the best move
@@ -746,7 +751,22 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
 
   for (int depth = 1; depth <= max_depth; ++depth) {
     try {
-      result = search_root(board, root_moves, depth);
+      if (ponder_mode_) {
+        std::vector<int> scores;
+        search_root_all(board, root_moves, depth, SCORE_INFINITE, scores);
+        result.best_move = root_moves[0];
+        result.score = scores[0];
+        result.nodes = stats_.nodes;
+        result.tb_hits = stats_.tb_hits;
+        result.pv.clear();
+        result.pv.push_back(result.best_move);
+        Board child = makeMove(board, result.best_move);
+        std::vector<Move> continuation;
+        extract_pv(child, continuation, depth - 1);
+        result.pv.insert(result.pv.end(), continuation.begin(), continuation.end());
+      } else {
+        result = search_root(board, root_moves, depth);
+      }
       result.depth = depth;
     } catch (const SearchInterrupted&) {
       break;  // Return best result from previous depth

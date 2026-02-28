@@ -77,6 +77,10 @@ dirs:
 # Link final WASM module
 $(WASM_OUT): $(OBJS)
 	$(EMCXX) $(WASM_CXXFLAGS) $(WASM_LDFLAGS) -o $@ $^
+	@if command -v js-beautify >/dev/null 2>&1; then \
+		echo "Formatting $(WASM_OUT)..."; \
+		js-beautify -r $(WASM_OUT); \
+	fi
 	@echo "Built: $(WASM_OUT)"
 	@ls -lh $(DISTDIR)/engine.*
 

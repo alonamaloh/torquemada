@@ -242,6 +242,9 @@ public:
   // Set analysis mode: search even when there's only one legal move
   void set_analyze_mode(bool v) { analyze_mode_ = v; }
 
+  // Set ponder mode: search each root move with full window to populate TT for all lines
+  void set_ponder_mode(bool v) { ponder_mode_ = v; }
+
   // Check if search should stop and throw if so
   void check_stop() {
     if (stop_flag_ && stop_flag_->load(std::memory_order_relaxed)) throw SearchInterrupted{};
@@ -337,6 +340,9 @@ private:
 
   // Analysis mode: search even with only one legal move
   bool analyze_mode_ = false;
+
+  // Ponder mode: search each root move with full window
+  bool ponder_mode_ = false;
 
   // External stop flag (for SIGINT handling)
   std::atomic<bool>* stop_flag_ = nullptr;
