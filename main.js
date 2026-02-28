@@ -195,13 +195,13 @@ function updateModeButtons() {
 }
 
 function updateOptionsButtons() {
-    const btnPonder = document.getElementById('btn-ponder');
-    const btnUseBook = document.getElementById('btn-use-book');
-    const btnShowAnalysis = document.getElementById('btn-show-analysis');
+    const chkPonder = document.getElementById('chk-ponder');
+    const chkUseBook = document.getElementById('chk-use-book');
+    const chkShowAnalysis = document.getElementById('chk-show-analysis');
 
-    if (btnPonder) btnPonder.classList.toggle('active', gameController.ponderEnabled);
-    if (btnUseBook) btnUseBook.classList.toggle('active', gameController.useBook);
-    if (btnShowAnalysis) btnShowAnalysis.classList.toggle('active', showAnalysis);
+    if (chkPonder) chkPonder.checked = gameController.ponderEnabled;
+    if (chkUseBook) chkUseBook.checked = gameController.useBook;
+    if (chkShowAnalysis) chkShowAnalysis.checked = showAnalysis;
 }
 
 /**
@@ -581,10 +581,10 @@ function setupEventHandlers() {
         });
     }
 
-    // Pondering toggle button
-    const btnPonder = document.getElementById('btn-ponder');
-    if (btnPonder) {
-        btnPonder.addEventListener('click', () => togglePondering(!gameController.ponderEnabled));
+    // Pondering checkbox
+    const chkPonder = document.getElementById('chk-ponder');
+    if (chkPonder) {
+        chkPonder.addEventListener('change', () => togglePondering(chkPonder.checked));
     }
 
     // Time per move - click to open dialog
@@ -593,19 +593,19 @@ function setupEventHandlers() {
         timePerMoveBtn.addEventListener('click', showTimeDialog);
     }
 
-    // Book toggle
-    const useBookBtn = document.getElementById('btn-use-book');
-    if (useBookBtn) {
-        useBookBtn.addEventListener('click', () => {
-            gameController.setUseBook(!gameController.useBook);
+    // Book checkbox
+    const chkUseBook = document.getElementById('chk-use-book');
+    if (chkUseBook) {
+        chkUseBook.addEventListener('change', () => {
+            gameController.setUseBook(chkUseBook.checked);
             updateOptionsButtons();
         });
     }
 
-    // Analysis display toggle
-    const btnShowAnalysis = document.getElementById('btn-show-analysis');
-    if (btnShowAnalysis) {
-        btnShowAnalysis.addEventListener('click', () => toggleShowAnalysis(!showAnalysis));
+    // Analysis display checkbox
+    const chkShowAnalysis = document.getElementById('chk-show-analysis');
+    if (chkShowAnalysis) {
+        chkShowAnalysis.addEventListener('change', () => toggleShowAnalysis(chkShowAnalysis.checked));
     }
 
     // Time dialog

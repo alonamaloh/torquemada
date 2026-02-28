@@ -465,6 +465,29 @@ body {
     border-left-color: #1a5276;
 }
 
+/* Options checkboxes */
+.options-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+}
+
+.option-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    cursor: pointer;
+}
+
+.option-label input[type="checkbox"] {
+    accent-color: #1a5276;
+    width: 1rem;
+    height: 1rem;
+    cursor: pointer;
+}
+
 /* Edit mode */
 .piece-selector {
     display: flex;
