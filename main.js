@@ -502,6 +502,7 @@ async function exitEditMode() {
     const savedAutoPlay = turnController.autoPlay;
     turnController.autoPlay = false;
     searchManager.resetTimeBank();
+    turnController.drawDeclined = false;
     await gameState.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
     turnController.autoPlay = savedAutoPlay;
 
