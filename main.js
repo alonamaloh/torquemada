@@ -103,15 +103,15 @@ async function init() {
         turnController = new TurnController(gameState, searchManager);
         moveInput = new MoveInput();
 
-        // Initialize
-        await gameState.init();
-        turnController.init();
-
-        // Wire events
+        // Wire events BEFORE init so we don't miss the initial legalMovesUpdated
         wireGameStateEvents();
         wireSearchManagerEvents();
         wireTurnControllerEvents();
         wireBoardClicks();
+
+        // Initialize
+        await gameState.init();
+        turnController.init();
 
         // Restore preferences
         await restoreSavedPreferences();
