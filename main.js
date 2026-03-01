@@ -910,7 +910,11 @@ function updateMoveHistory() {
 
     if (history.length > 0) {
         const lastEl = document.getElementById('last-played-move');
-        if (lastEl) lastEl.scrollIntoView({ block: 'nearest' });
+        if (lastEl) {
+            // Scroll within the history container only, not the page
+            const top = lastEl.offsetTop - historyEl.offsetTop;
+            historyEl.scrollTop = top - historyEl.clientHeight / 2;
+        }
     } else {
         historyEl.scrollTop = 0;
     }
