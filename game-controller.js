@@ -604,10 +604,12 @@ export class GameController {
                 await this._sleep(200 - elapsed);
             }
 
-            // Draw offer: proven draw (score in [-10000, +10000]), not book, 4 or fewer pieces
-            if (this.onDrawOffer && !this.drawDeclined && Math.abs(result.score) <= 10000 && !result.book) {
+            // Draw offer: proven draw with few pieces, or likely draw with many reversible moves
+            if (this.onDrawOffer && !this.drawDeclined && !result.book) {
                 const board = await this.engine.getBoard();
-                if (board.pieceCount <= 4) {
+                const provenDraw = Math.abs(result.score) <= 10000 && board.pieceCount <= 4;
+                const likelyDraw = Math.abs(result.score) <= 1000 && board.nReversible >= 10;
+                if (provenDraw || likelyDraw) {
                     const accepted = await this.onDrawOffer();
                     if (accepted) {
                         this.state = 'idle';
