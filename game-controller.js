@@ -643,10 +643,6 @@ export class GameController {
         this.state = 'pondering';
         if (this.onThinkingStart) this.onThinkingStart();
 
-        // Suppress book during ponder (want real eval), restore after
-        const bookWasOn = this.useBook;
-        if (bookWasOn) this.setUseBook(false);
-
         try {
             const onProgress = (result) => {
                 this._reportSearchInfo(result);
@@ -668,7 +664,6 @@ export class GameController {
                 console.error('Ponder error:', err);
             }
         } finally {
-            if (bookWasOn) this.setUseBook(true);
             this.state = 'idle';
             if (this.onThinkingEnd) this.onThinkingEnd();
         }
