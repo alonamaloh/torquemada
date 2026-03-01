@@ -1,26 +1,112 @@
 # Notes for Claude
 
-## Deployment
+## Project Overview
 
-The web interface is hosted on GitHub Pages at https://alonamaloh.github.io/torquemada/
+Torquemada is a Spanish checkers (damas) engine with neural network evaluation, endgame tablebases, and a web interface. The engine improves through self-play reinforcement learning.
 
-GitHub Pages is configured to deploy from the `gh-pages` branch, NOT from GitHub Actions.
+## Directory Layout
 
-### Directory Structure
+- **Main repo** (`/home/alvaro/claude/torquemada`): `master` branch, C++ source
+- **gh-pages worktree** (`/home/alvaro/claude/torquemada-gh-pages`): deployed website (JS, HTML, CSS, WASM)
+- **Tablebases** (`/home/alvaro/claude/damas`): DTM and CWDL tablebase files
 
-- **Main repo** (`/home/alvaro/claude/torquemada`): Contains `master` branch with C++ source code
-- **gh-pages worktree** (`/home/alvaro/claude/torquemada-gh-pages`): Contains `gh-pages` branch with deployed website
+### Source Modules
 
-### Source Code Locations
+| Directory | Purpose |
+|-----------|---------|
+| `core/` | Board representation (32-bit bitboards), move generation, notation |
+| `search/` | Alpha-beta search, iterative deepening, transposition table |
+| `nn/` | MLP neural network inference (128→32→3, WDL output) |
+| `tablebase/` | DTM probing (`tb_probe.hpp`), CWDL compression (`compression.hpp`), material indexing |
+| `web/src/wasm/` | Emscripten bindings (`bindings.cpp`) |
+| `web/dist/` | Built WASM output (`engine.js`, `engine.wasm`, `engine.worker.js`) |
 
-- **C++ engine code**: `master` branch in `search/`, `core/`, `nn/`, `tablebase/`, `web/src/wasm/`
-- **JavaScript web UI**: `gh-pages` branch (in worktree `../torquemada-gh-pages/`)
-- **Built WASM files**: `web/dist/` on master after running `make wasm`
+### Key Conventions
 
-### After changing WASM engine (C++ code)
+- **Board always has white to move.** After each move the board is flipped 180° via `flip()`.
+- **Square indexing:** 0-31 internal (bit positions), 1-32 human notation. Convert: `human_sq - 1 = bit_index`.
+- **Score encoding:** NN eval in [-10000, +10000]. `SCORE_DRAW = 10000` (proven draw range). `SCORE_TB_WIN = 29000`. `SCORE_MATE = 30000`. `to_undecided(nn_score)` shifts by ±10000.
+- **Tablebase coverage:** DTM files exist for ≤6 pieces (867 files, only 116 are 7-piece). CWDL (compressed WDL) covers all material configs up to 7 pieces.
+
+## Build System
 
 ```bash
-# 1. Build WASM (in main repo)
+make all              # Build all native executables (into bin/)
+make wasm             # Build WASM engine (into web/dist/)
+make clean            # Clean native build
+make wasm-clean       # Clean WASM build
+```
+
+Compiler: `g++ -std=c++20 -O3 -march=native -mbmi2 -mavx2`. WASM uses `em++` with `-msimd128 -pthread`.
+
+### Executables
+
+| Target | Purpose |
+|--------|---------|
+| `generate_training` | Self-play data generation (OpenMP, HDF5 output) |
+| `print_games` | Print generated games as human-readable text |
+| `match` | Engine vs engine tournament |
+| `play` | Interactive CLI play |
+| `genbook` | PUCT-based opening book generator |
+| `viewbook` / `condensebook` | View or compress opening books |
+| `test_search` / `perft` / `test_nn` | Testing tools |
+
+### Building individual targets
+
+```bash
+make bin/generate_training    # Needs HDF5 and OpenMP
+make bin/match                # Needs OpenMP
+make bin/play
+```
+
+`print_games` and `test_draw_score` are not in the Makefile; build manually:
+```bash
+g++ -std=c++20 -O3 -march=native -Wall -Wextra -mbmi2 -mavx2 \
+    -c print_games.cpp -o obj/print_games.o
+g++ -O3 -o bin/print_games obj/print_games.o \
+    obj/core/board.o obj/core/movegen.o obj/core/notation.o \
+    obj/search/search.o obj/search/tt.o \
+    obj/tablebase/tablebase.o obj/tablebase/compression.o obj/nn/mlp.o
+```
+
+## Training Pipeline
+
+### Data Generation
+
+```bash
+bin/generate_training \
+    --model ../torquemada-gh-pages/models/model_006.bin \
+    --nodes 10000 --random-plies 10 --threads 16 \
+    --positions 9000000 --output training_data_3.h5 \
+    --tb-path /home/alvaro/claude/damas
+```
+
+- Games are played with random openings, then search with NN eval
+- Adjudicated at ≤7 pieces using compressed WDL tablebases
+- Only quiet positions recorded (no captures available on either side)
+- HDF5 written incrementally; Ctrl+C saves collected data gracefully
+- HDF5 format: `boards` (uint32[N,4]: white, black, kings, n_reversible), `outcomes` (int8[N]: -1/0/+1)
+
+### Model Training
+
+```bash
+python3 train_mlp.py training_data_3.h5 --output model_007.bin
+```
+
+### Evaluation
+
+```bash
+bin/match model_007.bin model_006.bin --pairs 100 --nodes 10000 --threads 16
+```
+
+## Deployment
+
+The web interface is at https://alonamaloh.github.io/torquemada/, deployed from the `gh-pages` branch.
+
+### After changing C++ engine code
+
+```bash
+# 1. Build WASM
 make wasm
 
 # 2. Copy to gh-pages worktree and deploy
@@ -30,43 +116,34 @@ git add engine.js engine.wasm engine.worker.js
 git commit -m "Update engine: <description>"
 git push origin gh-pages
 cd ../torquemada
-
-# 3. Optionally commit source changes to master
-git add <changed-files>
-git commit -m "..."
-git push origin master
 ```
 
 ### After changing JavaScript UI
 
-```bash
-# 1. Edit files directly in the worktree
-cd ../torquemada-gh-pages
-# Make changes to *.js, index.html, style.css, etc.
-git add <files>
-git commit -m "..."
-git push origin gh-pages
-cd ../torquemada
-```
+Edit files directly in `../torquemada-gh-pages/`, commit and push to `gh-pages`.
 
-### Version Tracking
+### Cache Busting
 
-The engine has a version string (`ENGINE_VERSION` in `web/src/wasm/bindings.cpp`) that gets logged to console on init. Update this when making changes to help debug caching issues:
+Automatic: `index.html` loads `main.js?v=${Date.now()}`, and each module propagates the version parameter via `import.meta.url`. Emscripten-generated files (`engine.wasm`, `engine.worker.js`) use `locateFile` in `engine-worker.js`. No manual version bumping needed.
 
-```cpp
-#define ENGINE_VERSION "YYYY-MM-DD-vN"
-```
+### Web Architecture
 
-The site typically updates within 1-2 minutes after pushing to `gh-pages`.
+| File | Role |
+|------|------|
+| `main.js` | Entry point, event wiring, UI updates |
+| `engine-api.js` | Main-thread API for communicating with the engine worker |
+| `engine-worker.js` | Web Worker: loads WASM, dispatches search |
+| `search-manager.js` | Search lifecycle (thinking, pondering, time bank, PV) |
+| `game-state.js` | Game history, undo/redo, position tracking |
+| `board-ui.js` | Canvas board rendering and piece animation |
+| `move-input.js` | Click-to-move interaction |
+| `turn-controller.js` | Game flow: human move → engine search → result |
+| `tablebase-loader.js` | OPFS-based persistent tablebase caching |
+| `game-storage.js` | LocalStorage for saved games |
 
 ### Worktree Management
 
-If the worktree gets deleted or needs recreation:
 ```bash
-git worktree add ../torquemada-gh-pages gh-pages
-```
-
-To list worktrees:
-```bash
-git worktree list
+git worktree list                              # List worktrees
+git worktree add ../torquemada-gh-pages gh-pages  # Recreate if needed
 ```
