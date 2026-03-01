@@ -870,6 +870,7 @@ function updateMoveHistory() {
     }
 
     let html = '';
+    const lastPlayedIndex = history.length - 1;
     for (let i = 0; i < allMoves.length; i++) {
         const moveNum = Math.floor(i / 2) + 1;
         const isRedo = i >= history.length;
@@ -880,13 +881,21 @@ function updateMoveHistory() {
 
         if (isRedo) {
             html += `<span class="redo-move">${allMoves[i]}</span> `;
+        } else if (i === lastPlayedIndex) {
+            html += `<span id="last-played-move">${allMoves[i]}</span> `;
         } else {
             html += `${allMoves[i]} `;
         }
     }
 
     historyEl.innerHTML = html.trim();
-    historyEl.scrollTop = historyEl.scrollHeight;
+
+    if (history.length > 0) {
+        const lastEl = document.getElementById('last-played-move');
+        if (lastEl) lastEl.scrollIntoView({ block: 'nearest' });
+    } else {
+        historyEl.scrollTop = 0;
+    }
 }
 
 // --- Game over ---
