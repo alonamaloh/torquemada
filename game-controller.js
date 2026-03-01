@@ -758,16 +758,15 @@ export class GameController {
         this.gameOver = false;
         this.winner = null;
 
-        // Switch mode so human can play the side that's now to move
-        // (unless in 2-player or pondering mode)
-        if (this.humanColor !== 'both' && !this.ponderEnabled) {
+        // After taking back an engine move, the human "switches seats" and
+        // takes over the side that is now to move.
+        if (this.humanColor !== 'both') {
             this.humanColor = board.whiteToMove ? 'white' : 'black';
             if (this.onModeChange) this.onModeChange(this.humanColor);
         }
 
         this._updateStatus('Jugada deshecha');
 
-        // If pondering is enabled, start pondering the restored position
         if (this.ponderEnabled && !this.gameOver) {
             await this._startPondering();
         }
