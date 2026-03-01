@@ -689,7 +689,12 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
         }
     }
 
-    result.set("score", sr.score);
+    // Don't report score for forced moves (nodes==0, depth==1): the search
+    // was skipped so the score is just a rough NN eval.  Omitting it lets the
+    // eval bar keep whatever value it had from the previous real search.
+    if (sr.nodes > 0 || sr.depth == 0) {
+        result.set("score", sr.score);
+    }
     result.set("depth", sr.depth);
     result.set("nodes", static_cast<double>(sr.nodes));
     result.set("tb_hits", static_cast<double>(sr.tb_hits));
