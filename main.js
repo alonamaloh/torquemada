@@ -712,15 +712,18 @@ function updateTimeDisplay(seconds) {
 
     if (seconds < 0) seconds = 0;
 
+    // Round to tenths first to avoid "00:60.0" when e.g. 59.96 rounds up
+    const tenths = Math.round(seconds * 10) / 10;
+
     let text;
-    if (seconds >= 3600) {
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.floor(seconds % 60);
+    if (tenths >= 3600) {
+        const h = Math.floor(tenths / 3600);
+        const m = Math.floor((tenths % 3600) / 60);
+        const s = Math.floor(tenths % 60);
         text = `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
     } else {
-        const m = Math.floor(seconds / 60);
-        const s = seconds % 60;
+        const m = Math.floor(tenths / 60);
+        const s = tenths % 60;
         text = `${String(m).padStart(2, '0')}:${s < 10 ? '0' : ''}${s.toFixed(1)}`;
     }
     el.textContent = text;
