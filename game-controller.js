@@ -45,6 +45,7 @@ export class GameController {
         this.onModeChange = null;    // (humanColor) => void - called when mode changes
         this.onTimeUpdate = null;    // (secondsLeft) => void - called when time bank changes
         this.onDrawOffer = null;     // async () => boolean - called when engine offers a draw
+        this.drawDeclined = false;   // true after human declines a draw offer
 
         // Current principal variation from search
         this.currentPV = [];
@@ -112,6 +113,7 @@ export class GameController {
         this.gameOver = false;
         this.winner = null;
         this.currentPV = [];
+        this.drawDeclined = false;
         this.positionCounts = new Map();
         this.secondsLeft = 0;
         this._notifyTime();
@@ -603,7 +605,7 @@ export class GameController {
             }
 
             // Draw offer: proven draw (score in [-10000, +10000]), not book, 4 or fewer pieces
-            if (this.onDrawOffer && Math.abs(result.score) <= 10000 && !result.book) {
+            if (this.onDrawOffer && !this.drawDeclined && Math.abs(result.score) <= 10000 && !result.book) {
                 const board = await this.engine.getBoard();
                 if (board.pieceCount <= 4) {
                     const accepted = await this.onDrawOffer();
