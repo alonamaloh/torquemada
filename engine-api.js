@@ -1,5 +1,6 @@
 /**
- * Main thread API for communicating with the engine Web Worker
+ * Main thread API for communicating with the engine Web Worker (stateless)
+ * Every call that needs the board receives it as a parameter.
  */
 
 export class EngineAPI {
@@ -129,68 +130,57 @@ export class EngineAPI {
     }
 
     /**
-     * Get legal moves for the current position
+     * Get the initial board position
+     * @returns {Promise<Object>} Board state {white, black, kings, whiteToMove, pieceCount, nReversible}
+     */
+    async getInitialBoard() {
+        const response = await this.request('getInitialBoard');
+        return response.board;
+    }
+
+    /**
+     * Get legal moves for a given board position
+     * @param {Object} board - Board state {white, black, kings, whiteToMove, nReversible}
      * @returns {Promise<Array>} Array of move objects
      */
-    async getLegalMoves() {
-        const response = await this.request('getLegalMoves');
+    async getLegalMoves(board) {
+        const response = await this.request('getLegalMoves', board);
         return response.moves;
     }
 
     /**
-     * Make a move on the board
+     * Make a move on a given board
+     * @param {Object} board - Board state {white, black, kings, whiteToMove, nReversible}
      * @param {Object} move - Move object with from_xor_to and captures
      * @returns {Promise<Object>} New board state
      */
-    async makeMove(move) {
-        const response = await this.request('makeMove', move);
+    async makeMove(board, move) {
+        const response = await this.request('makeMove', { board, move });
         return response.board;
     }
 
     /**
-     * Set the board position
-     * @param {number} white - White pieces bitboard
-     * @param {number} black - Black pieces bitboard
-     * @param {number} kings - Kings bitboard
-     * @param {boolean} whiteToMove - True if white to move
-     */
-    async setBoard(white, black, kings, whiteToMove, nReversible = 0) {
-        const response = await this.request('setBoard', { white, black, kings, whiteToMove, nReversible });
-        return response.board;
-    }
-
-    /**
-     * Reset to initial position
-     */
-    async resetBoard() {
-        const response = await this.request('resetBoard');
-        return response.board;
-    }
-
-    /**
-     * Get current board state
-     */
-    async getBoard() {
-        const response = await this.request('getBoard');
-        return response.board;
-    }
-
-    /**
-     * Search for the best move
+     * Search for the best move on a given board
+     * @param {Object} board - Board state {white, black, kings, whiteToMove, nReversible}
      * @param {number} softTime - Soft time limit in seconds
      * @param {number} hardTime - Hard time limit in seconds
      * @param {Function} onProgress - Optional callback for progress updates
      * @param {boolean} analyzeMode - If true, search even with only one legal move
+     * @param {boolean} ponderMode - If true, use full window for all root moves
      * @returns {Promise<Object>} Search result with bestMove, score, depth, nodes
      */
-    async search(softTime = 3, hardTime = 10, onProgress = null, analyzeMode = false, ponderMode = false) {
+    async search(board, softTime = 3, hardTime = 10, onProgress = null, analyzeMode = false, ponderMode = false) {
         // Reset stop flag before starting search
         if (this.wasmMemory && this.wasmStopFlagAddress) {
             this.wasmMemory[this.wasmStopFlagAddress] = 0;
         } else if (this.stopFlagView) {
             Atomics.store(this.stopFlagView, 0, 0);
         }
-        const response = await this.requestWithProgress('search', { softTime, hardTime, analyzeMode, ponderMode }, onProgress);
+        const response = await this.requestWithProgress(
+            'search',
+            { board, softTime, hardTime, analyzeMode, ponderMode },
+            onProgress
+        );
         return response.result;
     }
 
@@ -236,21 +226,23 @@ export class EngineAPI {
     }
 
     /**
-     * Probe DTM tablebase for current position
+     * Probe DTM tablebase for a given board position
+     * @param {Object} board - Board state {white, black, kings, whiteToMove, nReversible}
      * @returns {Promise<number|null>} DTM value or null if not available
      */
-    async probeDTM() {
-        const response = await this.request('probeDTM');
+    async probeDTM(board) {
+        const response = await this.request('probeDTM', board);
         return response.dtm;
     }
 
     /**
-     * Parse a move from notation string
+     * Parse a move from notation string for a given board
+     * @param {Object} board - Board state {white, black, kings, whiteToMove, nReversible}
      * @param {string} notation - Move in notation (e.g., "9-13" or "9x14x23")
      * @returns {Promise<Object|null>} Move object or null if invalid
      */
-    async parseMove(notation) {
-        const response = await this.request('parseMove', { notation });
+    async parseMove(board, notation) {
+        const response = await this.request('parseMove', { board, notation });
         return response.move;
     }
 

@@ -1,5 +1,5 @@
 /**
- * Web Worker for the checkers engine
+ * Web Worker for the checkers engine (stateless — board passed to every call)
  * Handles WASM module initialization and search requests
  */
 
@@ -8,7 +8,6 @@ const _workerV = new URL(self.location.href).searchParams.get('v') || '';
 importScripts(_workerV ? `./engine.js?v=${_workerV}` : './engine.js');
 
 let engine = null;
-let board = null;
 let isReady = false;
 
 // SharedArrayBuffer for stop flag (legacy approach)
@@ -168,6 +167,30 @@ globalThis.loadCWDLFile = function(materialKey) {
 };
 
 /**
+ * Reconstruct a JSBoard from board data object
+ */
+function boardFromData(data) {
+    return engine.Board.fromBitboards(
+        data.white, data.black, data.kings,
+        data.whiteToMove, data.nReversible || 0
+    );
+}
+
+/**
+ * Extract plain data from a JSBoard object
+ */
+function boardToData(jsBoard) {
+    return {
+        white: jsBoard.getWhite(),
+        black: jsBoard.getBlack(),
+        kings: jsBoard.getKings(),
+        whiteToMove: jsBoard.isWhiteToMove(),
+        pieceCount: jsBoard.pieceCount(),
+        nReversible: jsBoard.getNReversible()
+    };
+}
+
+/**
  * Initialize the WASM module
  */
 async function init() {
@@ -197,7 +220,6 @@ async function init() {
             });
         }
 
-        board = engine.getInitialBoard();
         isReady = true;
         postMessage({ type: 'ready' });
     } catch (err) {
@@ -222,53 +244,31 @@ function loadOpeningBook(text) {
 }
 
 /**
- * Get legal moves for the current position
+ * Get the initial board position
  */
-function getLegalMoves() {
-    if (!engine || !board) return [];
-    const moves = engine.getLegalMoves(board);
-    return moves;
+function getInitialBoard() {
+    if (!engine) return null;
+    const board = engine.getInitialBoard();
+    return boardToData(board);
 }
 
 /**
- * Make a move on the board
+ * Get legal moves for a given position
  */
-function makeMove(moveData) {
-    if (!engine || !board) return null;
-    board = engine.makeMove(board, moveData);
-    return getBoardState();
+function getLegalMoves(boardData) {
+    if (!engine) return [];
+    const board = boardFromData(boardData);
+    return engine.getLegalMoves(board);
 }
 
 /**
- * Set board position
+ * Make a move on a given board, return the new board state
  */
-function setBoard(white, black, kings, whiteToMove, nReversible) {
-    if (!engine) return;
-    board = engine.Board.fromBitboards(white, black, kings, whiteToMove, nReversible || 0);
-}
-
-/**
- * Reset to initial position
- */
-function resetBoard() {
-    if (!engine) return;
-    board = engine.getInitialBoard();
-    return getBoardState();
-}
-
-/**
- * Get current board state
- */
-function getBoardState() {
-    if (!board) return null;
-    return {
-        white: board.getWhite(),
-        black: board.getBlack(),
-        kings: board.getKings(),
-        whiteToMove: board.isWhiteToMove(),
-        pieceCount: board.pieceCount(),
-        nReversible: board.getNReversible()
-    };
+function makeMove(boardData, moveData) {
+    if (!engine) return null;
+    const board = boardFromData(boardData);
+    const newBoard = engine.makeMove(board, moveData);
+    return boardToData(newBoard);
 }
 
 // Current search request ID for progress updates
@@ -276,16 +276,19 @@ let currentSearchId = null;
 
 /**
  * Perform search with progress updates
+ * @param {Object} boardData - Board state
  * @param {number} softTime - Soft time limit in seconds
  * @param {number} hardTime - Hard time limit in seconds
  * @param {number} requestId - Request ID for progress updates
  * @param {boolean} analyzeMode - If true, search even with only one legal move
+ * @param {boolean} ponderMode - If true, use full window for all root moves
  */
-function search(softTime, hardTime, requestId, analyzeMode, ponderMode) {
-    if (!engine || !board) {
+function search(boardData, softTime, hardTime, requestId, analyzeMode, ponderMode) {
+    if (!engine) {
         return { error: 'Engine not ready' };
     }
 
+    const board = boardFromData(boardData);
     currentSearchId = requestId;
 
     try {
@@ -358,21 +361,21 @@ function search(softTime, hardTime, requestId, analyzeMode, ponderMode) {
 }
 
 /**
- * Probe DTM tablebase for current position
+ * Probe DTM tablebase for a given position
  */
-function probeDTM() {
-    if (!engine || !board) return null;
-    const dtm = engine.probeDTM(board);
-    return dtm;
+function probeDTM(boardData) {
+    if (!engine) return null;
+    const board = boardFromData(boardData);
+    return engine.probeDTM(board);
 }
 
 /**
- * Parse move from notation string
+ * Parse move from notation string for a given position
  */
-function parseMove(notation) {
-    if (!engine || !board) return null;
-    const move = engine.parseMove(board, notation);
-    return move;
+function parseMove(boardData, notation) {
+    if (!engine) return null;
+    const board = boardFromData(boardData);
+    return engine.parseMove(board, notation);
 }
 
 /**
@@ -418,29 +421,20 @@ self.onmessage = function(e) {
                 response.success = true;
                 break;
 
+            case 'getInitialBoard':
+                response.board = getInitialBoard();
+                break;
+
             case 'getLegalMoves':
-                response.moves = getLegalMoves();
+                response.moves = getLegalMoves(data);
                 break;
 
             case 'makeMove':
-                response.board = makeMove(data);
-                break;
-
-            case 'setBoard':
-                setBoard(data.white, data.black, data.kings, data.whiteToMove, data.nReversible);
-                response.board = getBoardState();
-                break;
-
-            case 'resetBoard':
-                response.board = resetBoard();
-                break;
-
-            case 'getBoard':
-                response.board = getBoardState();
+                response.board = makeMove(data.board, data.move);
                 break;
 
             case 'search':
-                response.result = search(data.softTime, data.hardTime, id, data.analyzeMode, data.ponderMode);
+                response.result = search(data.board, data.softTime, data.hardTime, id, data.analyzeMode, data.ponderMode);
                 break;
 
             case 'setUseBook':
@@ -456,11 +450,11 @@ self.onmessage = function(e) {
                 break;
 
             case 'probeDTM':
-                response.dtm = probeDTM();
+                response.dtm = probeDTM(data);
                 break;
 
             case 'parseMove':
-                response.move = parseMove(data.notation);
+                response.move = parseMove(data.board, data.notation);
                 break;
 
             case 'getStatus':

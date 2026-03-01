@@ -1,24 +1,35 @@
 /**
  * Main entry point for the checkers web app
+ * Wires together: GameState, SearchManager, TurnController, MoveInput, BoardUI
  */
 
 const _v = new URL(import.meta.url).searchParams.get('v') || '';
 const _q = _v ? `?v=${_v}` : '';
-const { GameController } = await import(`./game-controller.js${_q}`);
 const { getEngine } = await import(`./engine-api.js${_q}`);
+const { GameState } = await import(`./game-state.js${_q}`);
+const { SearchManager } = await import(`./search-manager.js${_q}`);
+const { TurnController } = await import(`./turn-controller.js${_q}`);
+const { MoveInput } = await import(`./move-input.js${_q}`);
+const { BoardUI } = await import(`./board-ui.js${_q}`);
+const { playMoveSound } = await import(`./sound.js${_q}`);
 const { TablebaseLoader, loadNNModelFile } = await import(`./tablebase-loader.js${_q}`);
 const { saveGame, getGames, deleteGame, clearGames, computeStats } = await import(`./game-storage.js${_q}`);
 const { isSoundEnabled, setSoundEnabled } = await import(`./sound.js${_q}`);
 
-// Global state
-let gameController = null;
+// --- Module instances (set during init) ---
+let engine = null;
+let gameState = null;
+let searchManager = null;
+let turnController = null;
+let moveInput = null;
+let boardUI = null;
 let tablebaseLoader = null;
 
 // Edit mode state
 let editMode = false;
 let editPieceType = 'empty';  // 'empty', 'white-man', 'white-king', 'black-man', 'black-king'
 let editWhiteToMove = true;
-let editBoard = { white: 0, black: 0, kings: 0 };  // Bitboards for editing
+let editBoard = { white: 0, black: 0, kings: 0 };
 
 // Analysis display state
 let showAnalysis = false;
@@ -29,6 +40,9 @@ let matchStats = { wins: 0, draws: 0, losses: 0 };
 const MATCH_STATS_KEY = 'torquemada-match-stats';
 let drawOfferResolve = null;
 
+// Opening book state
+let useBook = true;
+
 // Saved options for restoring after match play
 let savedPonder = false;
 let savedShowAnalysis = false;
@@ -38,23 +52,21 @@ let savedUseBook = true;
  * Initialize the application
  */
 async function init() {
-    // Get DOM elements
     const canvas = document.getElementById('board');
     const statusEl = document.getElementById('status');
     const loadingEl = document.getElementById('loading');
     const gameContainerEl = document.getElementById('game-container');
 
-    // Show loading state
     if (loadingEl) loadingEl.style.display = 'flex';
     if (gameContainerEl) gameContainerEl.style.display = 'none';
 
     try {
         // Initialize engine
         updateLoadingStatus('Iniciando motor...');
-        const engine = getEngine();
+        engine = getEngine();
         await engine.init();
 
-        // Initialize tablebase loader (for downloading only - loading is now lazy in worker)
+        // Initialize tablebase loader
         try {
             tablebaseLoader = new TablebaseLoader();
             await tablebaseLoader.init();
@@ -62,17 +74,16 @@ async function init() {
             console.warn('OPFS not available:', err);
         }
 
-        // Try to load NN models
+        // Load NN model
         updateLoadingStatus('Cargando red neuronal...');
         try {
-            // Try loading from local files first
             const nnData = await loadNNModelFile('./models/model_006.bin');
             await engine.loadNNModel(nnData);
         } catch (err) {
             console.warn('Could not load NN model:', err);
         }
 
-        // Try to load opening book
+        // Load opening book
         try {
             const bookResponse = await fetch('./opening-a822ebc72d1b.cbook');
             if (bookResponse.ok) {
@@ -84,76 +95,42 @@ async function init() {
             console.warn('Could not load opening book:', err);
         }
 
-        // Set up game controller
+        // Create modules
         updateLoadingStatus('Iniciando partida...');
-        gameController = new GameController(canvas, engine, statusEl);
-        await gameController.init();
+        boardUI = new BoardUI(canvas);
+        gameState = new GameState(engine);
+        searchManager = new SearchManager(engine);
+        turnController = new TurnController(gameState, searchManager);
+        moveInput = new MoveInput();
 
-        // Set up callbacks
-        gameController.onMove = (move, board) => {
-            updateMoveHistory();
-            updateUndoRedoButtons();
-            updatePlayButton();
-        };
+        // Initialize
+        await gameState.init();
+        turnController.init();
 
-        gameController.onGameOver = (winner, reason) => {
-            showGameOver(winner, reason);
-            updatePlayButton();
-        };
+        // Wire events
+        wireGameStateEvents();
+        wireSearchManagerEvents();
+        wireTurnControllerEvents();
+        wireBoardClicks();
 
-        gameController.onThinkingStart = () => {
-            updatePlayButton();
-            updateUndoRedoButtons();
-        };
-
-        gameController.onThinkingEnd = () => {
-            updatePlayButton();
-            updateUndoRedoButtons();
-        };
-
-        gameController.onSearchInfo = (info) => {
-            updateSearchInfo(info);
-            updatePlayButton();
-        };
-
-        gameController.onModeChange = () => {
-            updateModeButtons();
-            updatePlayButton();
-        };
-
-        gameController.onTimeUpdate = (secondsLeft) => {
-            updateTimeDisplay(secondsLeft);
-        };
-
-        gameController.onDrawOffer = () => {
-            return new Promise(resolve => {
-                drawOfferResolve = (accepted) => {
-                    if (!accepted) gameController.drawDeclined = true;
-                    resolve(accepted);
-                };
-                document.getElementById('draw-offer-dialog').style.display = 'flex';
-            });
-        };
-
-        // Restore saved preferences from localStorage
+        // Restore preferences
         await restoreSavedPreferences();
 
         // Set up UI event handlers
         setupEventHandlers();
+        updateBoardFromState();
         updateModeButtons();
         updateOptionsButtons();
         updateUndoRedoButtons();
         updatePlayButton();
 
-        // Resize board to fit
-        // Board sizing is handled by CSS (width: 100%, max-width: 480px)
-        // No JavaScript resize needed
+        // Update status
+        statusEl.textContent = 'Nueva partida';
 
         // Hide loading, show game
         if (loadingEl) loadingEl.style.display = 'none';
         if (gameContainerEl) gameContainerEl.style.display = 'flex';
 
-        // Check engine status
         const status = await engine.getStatus();
         console.log('Engine status:', status);
 
@@ -163,17 +140,247 @@ async function init() {
     }
 }
 
+// --- Event wiring ---
+
+function wireGameStateEvents() {
+    gameState.addEventListener('newGame', (e) => {
+        updateBoardFromState();
+        clearInputState();
+        boardUI.setSelected(null);
+        boardUI.clearLastMove();
+        clearSearchInfo();
+        updateMoveHistory();
+        updateUndoRedoButtons();
+        updatePlayButton();
+        searchManager.clearPV();
+        updateStatus('Nueva partida');
+    });
+
+    gameState.addEventListener('move', (e) => {
+        const { move, board, gameOver } = e.detail;
+        updateBoardFromState();
+        clearInputState(false);
+        boardUI.setLastMove(move.from, move.to);
+        updateMoveHistory();
+        updateUndoRedoButtons();
+        updatePlayButton();
+        if (!gameOver) {
+            const side = board.whiteToMove ? 'blancas' : 'negras';
+            updateStatus(`Mueven ${side}`);
+        }
+    });
+
+    gameState.addEventListener('undo', (e) => {
+        const { board, undoneMove } = e.detail;
+        updateBoardFromState();
+        clearInputState();
+        boardUI.setSelected(null);
+        // Restore last move highlight if there's still history
+        if (gameState.history.length > 0) {
+            const prevMove = gameState.history[gameState.history.length - 1].move;
+            boardUI.setLastMove(prevMove.from, prevMove.to);
+        }
+        updateMoveHistory();
+        updateUndoRedoButtons();
+        updatePlayButton();
+        searchManager.clearPV();
+        updateStatus('Jugada deshecha');
+    });
+
+    gameState.addEventListener('redo', (e) => {
+        const { board, move } = e.detail;
+        updateBoardFromState();
+        clearInputState();
+        boardUI.setSelected(null);
+        boardUI.setLastMove(move.from, move.to);
+        updateMoveHistory();
+        updateUndoRedoButtons();
+        updatePlayButton();
+        searchManager.clearPV();
+        updateStatus('Jugada rehecha');
+    });
+
+    gameState.addEventListener('positionChanged', (e) => {
+        updateBoardFromState();
+        clearInputState();
+        boardUI.setSelected(null);
+        boardUI.clearLastMove();
+        updateMoveHistory();
+        updateUndoRedoButtons();
+        updatePlayButton();
+        updateStatus('Posición establecida');
+    });
+
+    gameState.addEventListener('gameLoaded', (e) => {
+        updateBoardFromState();
+        clearInputState();
+        boardUI.setSelected(null);
+        boardUI.clearLastMove();
+        updateMoveHistory();
+        updateUndoRedoButtons();
+        updatePlayButton();
+        updateStatus('Partida cargada');
+    });
+
+    gameState.addEventListener('legalMovesUpdated', (e) => {
+        const { moves } = e.detail;
+        moveInput.setLegalMoves(moves);
+        boardUI.setLegalMoves(moves);
+    });
+
+    gameState.addEventListener('gameOver', (e) => {
+        const { winner, reason } = e.detail;
+        showGameOver(winner, reason);
+        updatePlayButton();
+    });
+}
+
+function wireSearchManagerEvents() {
+    searchManager.addEventListener('searchInfo', (e) => {
+        updateSearchInfo(e.detail);
+        updatePlayButton();
+    });
+
+    searchManager.addEventListener('searchStart', (e) => {
+        if (e.detail.type === 'think') {
+            updateStatus('Motor pensando...');
+        }
+        updatePlayButton();
+        updateUndoRedoButtons();
+    });
+
+    searchManager.addEventListener('searchEnd', () => {
+        updatePlayButton();
+        updateUndoRedoButtons();
+    });
+
+    searchManager.addEventListener('timeUpdate', (e) => {
+        updateTimeDisplay(e.detail.secondsLeft);
+    });
+}
+
+function wireTurnControllerEvents() {
+    turnController.addEventListener('humanColorChanged', () => {
+        updateModeButtons();
+        updatePlayButton();
+    });
+
+    turnController.addEventListener('drawOffer', (e) => {
+        const { resolve } = e.detail;
+        drawOfferResolve = resolve;
+        document.getElementById('draw-offer-dialog').style.display = 'flex';
+    });
+
+    // Engine move: animate + sound + commit, then signal done
+    turnController.addEventListener('engineMove', async (e) => {
+        const { move, resolve } = e.detail;
+        await animateAndMakeMove(move, true);  // always animate engine moves
+        resolve();
+    });
+}
+
+function wireBoardClicks() {
+    boardUI.onClick = async (square) => {
+        if (editMode) {
+            handleEditClick(square);
+            return;
+        }
+
+        if (gameState.gameOver) return;
+        if (searchManager.state === 'thinking') return;
+        if (!turnController.isHumanTurn()) return;
+
+        // Stop pondering so the worker is free
+        if (searchManager.state === 'pondering') {
+            await searchManager.abort();
+        }
+
+        const result = moveInput.handleClick(square);
+
+        if (!result) {
+            // Click didn't match — clear highlights
+            clearInputState();
+            return;
+        }
+
+        if (result.move) {
+            await animateAndMakeMove(result.move, result.animate);
+        } else if (result.highlights) {
+            applyHighlights(result.highlights);
+        }
+    };
+}
+
+// --- Board / UI helpers ---
+
+function updateBoardFromState() {
+    if (!gameState.board) return;
+    const b = gameState.board;
+    boardUI.setPosition(b.white, b.black, b.kings, b.whiteToMove);
+}
+
+function clearInputState(render = true) {
+    moveInput.clear();
+    boardUI.selectedSquare = null;
+    boardUI.partialPath = [];
+    boardUI.outOfOrderClicks = [];
+    boardUI.flexibleHighlights = [];
+    boardUI.lastMove = null;
+    if (render) {
+        boardUI.setLegalMoves(gameState.legalMoves);
+    } else {
+        boardUI.legalMoves = gameState.legalMoves;
+    }
+}
+
+function applyHighlights(highlights) {
+    boardUI.legalMoves = [];  // suppress default green highlights
+    boardUI.outOfOrderClicks = highlights.selected;
+    boardUI.flexibleHighlights = highlights.valid;
+    if (highlights.partialPath.length > 0) {
+        boardUI.selectedSquare = highlights.partialPath[0];
+        boardUI.partialPath = highlights.partialPath;
+    } else {
+        boardUI.selectedSquare = null;
+        boardUI.partialPath = [];
+    }
+    boardUI.render();
+}
+
 /**
- * Update loading status message
+ * Animate multi-jump moves step-by-step, then commit the move.
  */
+async function animateAndMakeMove(move, animate) {
+    if (animate && move.path && move.path.length > 2) {
+        for (let i = 1; i < move.path.length; i++) {
+            const partialPath = move.path.slice(0, i + 1);
+            boardUI.setPartialPath(partialPath);
+            boardUI.render();
+            playMoveSound();
+            await sleep(200);
+        }
+    } else {
+        playMoveSound();
+    }
+    await gameState.makeMove(move);
+}
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function updateStatus(message) {
+    const el = document.getElementById('status');
+    if (el) el.textContent = message;
+}
+
 function updateLoadingStatus(message) {
     const el = document.getElementById('loading-status');
     if (el) el.textContent = message;
 }
 
-/**
- * Update toggle buttons to reflect current mode
- */
+// --- Mode buttons ---
+
 function updateModeButtons() {
     const btnEngineWhite = document.getElementById('btn-engine-white');
     const btnEngineBlack = document.getElementById('btn-engine-black');
@@ -181,16 +388,11 @@ function updateModeButtons() {
 
     if (!btnEngineWhite || !btnEngineBlack || !btnTwoPlayer) return;
 
-    // Remove active from mode buttons
     btnEngineWhite.classList.remove('active');
     btnEngineBlack.classList.remove('active');
     btnTwoPlayer.classList.remove('active');
 
-    // Set active based on humanColor
-    // humanColor='black' means engine plays white
-    // humanColor='white' means engine plays black
-    // humanColor='both' means two-player mode
-    switch (gameController.humanColor) {
+    switch (turnController.humanColor) {
         case 'black':
             btnEngineWhite.classList.add('active');
             break;
@@ -203,13 +405,15 @@ function updateModeButtons() {
     }
 }
 
+// --- Preferences ---
+
 const PREFS_KEY = 'torquemada-preferences';
 
 function savePreferences() {
     const prefs = {
-        ponder: gameController.ponderEnabled,
+        ponder: turnController.ponderEnabled,
         showAnalysis,
-        useBook: gameController.useBook,
+        useBook,
         sound: isSoundEnabled(),
     };
     localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
@@ -230,7 +434,10 @@ async function restoreSavedPreferences() {
 
     if (prefs.ponder) await togglePondering(true);
     if (prefs.showAnalysis) toggleShowAnalysis(true);
-    if (prefs.useBook === false) gameController.setUseBook(false);
+    if (prefs.useBook === false) {
+        useBook = false;
+        engine.setUseBook(false);
+    }
     setSoundEnabled(prefs.sound !== false);
 }
 
@@ -239,93 +446,73 @@ function updateOptionsButtons() {
     const chkUseBook = document.getElementById('chk-use-book');
     const chkShowAnalysis = document.getElementById('chk-show-analysis');
 
-    if (chkPonder) chkPonder.checked = gameController.ponderEnabled;
-    if (chkUseBook) chkUseBook.checked = gameController.useBook;
+    if (chkPonder) chkPonder.checked = turnController.ponderEnabled;
+    if (chkUseBook) chkUseBook.checked = useBook;
     if (chkShowAnalysis) chkShowAnalysis.checked = showAnalysis;
 
     const chkSound = document.getElementById('chk-sound');
     if (chkSound) chkSound.checked = isSoundEnabled();
 }
 
-/**
- * Update undo/redo button states
- */
-function updateUndoRedoButtons() {
-    if (!gameController) return;
+// --- Undo/Redo ---
 
+function updateUndoRedoButtons() {
+    if (!gameState) return;
     const undoBtn = document.getElementById('btn-undo');
     const redoBtn = document.getElementById('btn-redo');
-    const { canUndo, canRedo } = gameController.getUndoRedoState();
+    const { canUndo, canRedo } = gameState.getUndoRedoState();
+    const thinking = searchManager.state === 'thinking';
 
-    if (undoBtn) undoBtn.disabled = !canUndo;
-    if (redoBtn) redoBtn.disabled = !canRedo;
+    if (undoBtn) undoBtn.disabled = !canUndo || thinking;
+    if (redoBtn) redoBtn.disabled = !canRedo || thinking;
 }
 
-/**
- * Enter edit mode
- */
+// --- Edit Mode ---
+
 async function enterEditMode() {
-    await gameController.abortSearch();
+    await searchManager.abort();
     clearSearchInfo();
     editMode = true;
 
-    // Copy current position to edit board
-    const board = await gameController.getBoard();
+    const board = gameState.board;
     editBoard = { white: board.white, black: board.black, kings: board.kings };
     editWhiteToMove = board.whiteToMove;
 
-    // Always reset piece type to 'empty' when entering edit mode
     editPieceType = 'empty';
     updatePieceSelector();
 
-    // Update UI
     document.getElementById('game-controls').style.display = 'none';
     document.getElementById('edit-controls').style.display = 'block';
     document.querySelectorAll('.controls-section .control-group:not(#game-controls):not(#edit-controls)').forEach(el => {
         el.style.display = 'none';
     });
 
-    // Update side to move buttons
     updateSideToMoveButtons();
-
-    // Set up edit click handler
-    gameController.boardUI.onClick = handleEditClick;
-    gameController.boardUI.setLegalMoves([]);  // Clear move highlights
-    gameController.boardUI.setSelected(null);
+    boardUI.setLegalMoves([]);
+    boardUI.setSelected(null);
     updatePlayButton();
 }
 
-/**
- * Exit edit mode and apply position
- */
 async function exitEditMode() {
     editMode = false;
 
-    // Apply the edited position (with autoPlay disabled to prevent immediate engine move)
-    const savedAutoPlay = gameController.autoPlay;
-    gameController.autoPlay = false;
-    gameController.secondsLeft = 0;
-    gameController._notifyTime();
-    await gameController.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
-    gameController.autoPlay = savedAutoPlay;
+    // Temporarily disable auto-play so setPosition doesn't trigger engine
+    const savedAutoPlay = turnController.autoPlay;
+    turnController.autoPlay = false;
+    searchManager.resetTimeBank();
+    await gameState.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
+    turnController.autoPlay = savedAutoPlay;
 
-    // Set player assignments based on mode:
-    // - If in 2-player mode ('both'), stay in 2-player mode
-    // - Otherwise, make engine play the side NOT to move, so user can move or trigger engine
-    if (gameController.humanColor !== 'both') {
-        // Human plays the side to move, engine plays the other side
-        gameController.humanColor = editWhiteToMove ? 'white' : 'black';
+    // Set player assignments
+    if (turnController.humanColor !== 'both') {
+        turnController.setHumanColor(editWhiteToMove ? 'white' : 'black');
     }
 
-    // Update UI
     document.getElementById('game-controls').style.display = 'flex';
     document.getElementById('edit-controls').style.display = 'none';
     document.querySelectorAll('.controls-section .control-group:not(#game-controls):not(#edit-controls)').forEach(el => {
         el.style.display = 'block';
     });
-
-    // Restore normal click handler (bind to gameController context)
-    gameController.boardUI.onClick = (square) => gameController._handleSquareClick.call(gameController, square);
 
     updateMoveHistory();
     updateUndoRedoButtons();
@@ -333,9 +520,6 @@ async function exitEditMode() {
     updatePlayButton();
 }
 
-/**
- * Get the piece type at a given square
- */
 function getPieceAt(square) {
     const bit = 1 << (square - 1);
     const isWhite = (editBoard.white & bit) !== 0;
@@ -349,46 +533,33 @@ function getPieceAt(square) {
     return 'empty';
 }
 
-/**
- * Rotate to the next piece type
- */
 function nextPieceType(current) {
     const order = ['empty', 'white-man', 'white-king', 'black-man', 'black-king'];
     const idx = order.indexOf(current);
     return order[(idx + 1) % order.length];
 }
 
-/**
- * Update the piece selector UI to reflect current selection
- */
 function updatePieceSelector() {
     document.querySelectorAll('.piece-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.piece === editPieceType);
     });
 }
 
-/**
- * Handle board click in edit mode
- */
 function handleEditClick(square) {
     if (!editMode || square < 1 || square > 32) return;
 
     const bit = 1 << (square - 1);
 
-    // Check if square already has the selected piece type
     const currentPiece = getPieceAt(square);
     if (currentPiece === editPieceType) {
-        // Rotate to next piece type
         editPieceType = nextPieceType(editPieceType);
         updatePieceSelector();
     }
 
-    // Remove piece from current position
     editBoard.white &= ~bit;
     editBoard.black &= ~bit;
     editBoard.kings &= ~bit;
 
-    // Add new piece based on selected type
     switch (editPieceType) {
         case 'white-man':
             editBoard.white |= bit;
@@ -404,79 +575,58 @@ function handleEditClick(square) {
             editBoard.black |= bit;
             editBoard.kings |= bit;
             break;
-        // 'empty' - already cleared above
     }
 
-    // Update board display
-    gameController.boardUI.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
+    boardUI.setPosition(editBoard.white, editBoard.black, editBoard.kings, editWhiteToMove);
 }
 
-/**
- * Clear the board in edit mode
- */
 function clearEditBoard() {
     editBoard = { white: 0, black: 0, kings: 0 };
-    gameController.boardUI.setPosition(0, 0, 0, editWhiteToMove);
+    boardUI.setPosition(0, 0, 0, editWhiteToMove);
 }
 
-/**
- * Update side to move toggle buttons
- */
 function updateSideToMoveButtons() {
     const whiteBtn = document.getElementById('btn-white-to-move');
     const blackBtn = document.getElementById('btn-black-to-move');
-
     if (whiteBtn && blackBtn) {
         whiteBtn.classList.toggle('active', editWhiteToMove);
         blackBtn.classList.toggle('active', !editWhiteToMove);
     }
 }
 
-/**
- * Show time per move dialog
- */
+// --- Time dialog ---
+
 function showTimeDialog() {
     const dialog = document.getElementById('time-dialog');
     const input = document.getElementById('time-input');
-    if (dialog && input && gameController) {
-        input.value = gameController.secondsPerMove;
+    if (dialog && input) {
+        input.value = searchManager.secondsPerMove;
         dialog.style.display = 'flex';
         input.select();
     }
 }
 
-/**
- * Hide time per move dialog
- */
 function hideTimeDialog() {
     const dialog = document.getElementById('time-dialog');
     if (dialog) dialog.style.display = 'none';
 }
 
-/**
- * Apply time per move from dialog input
- */
 function applyTimePerMove() {
     const input = document.getElementById('time-input');
-    if (!input || !gameController) return;
+    if (!input) return;
 
     let value = parseFloat(input.value);
     if (isNaN(value) || value < 0.1) value = 0.1;
 
-    gameController.setSecondsPerMove(value);
-    gameController.secondsLeft = 0;
-    gameController._notifyTime();
+    searchManager.setSecondsPerMove(value);
+    searchManager.resetTimeBank();
     updateTimePerMoveLabel(value);
     hideTimeDialog();
 }
 
-/**
- * Update the "+Xs/move" label
- */
 function updateTimePerMoveLabel(seconds) {
     const el = document.getElementById('btn-time-per-move');
     if (!el) return;
-    // Format: remove trailing zeros after decimal, but keep at least one decimal for < 1
     let text;
     if (seconds >= 1 && seconds === Math.floor(seconds)) {
         text = `+${seconds}s/mov`;
@@ -486,46 +636,34 @@ function updateTimePerMoveLabel(seconds) {
     el.textContent = text;
 }
 
-/**
- * Show new game dialog
- */
+// --- New game dialog ---
+
 function showNewGameDialog() {
     const dialog = document.getElementById('new-game-dialog');
-    if (dialog) {
-        dialog.style.display = 'flex';
-    }
+    if (dialog) dialog.style.display = 'flex';
 }
 
-/**
- * Hide new game dialog
- */
 function hideNewGameDialog() {
     const dialog = document.getElementById('new-game-dialog');
-    if (dialog) {
-        dialog.style.display = 'none';
-    }
+    if (dialog) dialog.style.display = 'none';
 }
 
-/**
- * Start a new game with the player as the specified color
- * @param {string} playAs - 'white', 'black', or 'both'
- */
 async function startNewGame(playAs) {
     hideNewGameDialog();
     clearSearchInfo();
-    await gameController.newGame();
 
-    // Set the human color and board orientation after newGame() (which resets it)
+    await searchManager.abort();
+    await gameState.newGame();
+
     if (playAs === 'white') {
-        gameController.boardUI.setFlipped(false);
-        gameController.setHumanColor('white');  // Engine plays black
+        boardUI.setFlipped(false);
+        turnController.setHumanColor('white');
     } else if (playAs === 'black') {
-        gameController.boardUI.setFlipped(true);
-        gameController.setHumanColor('black');  // Engine plays white
+        boardUI.setFlipped(true);
+        turnController.setHumanColor('black');
     } else {
-        // 'both' - 2-player mode, board not flipped
-        gameController.boardUI.setFlipped(false);
-        gameController.setHumanColor('both');
+        boardUI.setFlipped(false);
+        turnController.setHumanColor('both');
     }
 
     updateModeButtons();
@@ -534,484 +672,38 @@ async function startNewGame(playAs) {
     updatePlayButton();
 }
 
-/**
- * Set up UI event handlers
- */
-function setupEventHandlers() {
-    // New game button - show dialog
-    const newGameBtn = document.getElementById('btn-new-game');
-    if (newGameBtn) {
-        newGameBtn.addEventListener('click', showNewGameDialog);
-    }
+// --- Play button ---
 
-    // New game dialog buttons
-    const playWhiteBtn = document.getElementById('btn-play-white');
-    const playBlackBtn = document.getElementById('btn-play-black');
-    const playBothBtn = document.getElementById('btn-play-both');
-
-    if (playWhiteBtn) {
-        playWhiteBtn.addEventListener('click', () => startNewGame('white'));
-    }
-    if (playBlackBtn) {
-        playBlackBtn.addEventListener('click', () => startNewGame('black'));
-    }
-    if (playBothBtn) {
-        playBothBtn.addEventListener('click', () => startNewGame('both'));
-    }
-
-    // Close dialog when clicking outside
-    const newGameDialog = document.getElementById('new-game-dialog');
-    if (newGameDialog) {
-        newGameDialog.addEventListener('click', (e) => {
-            if (e.target === newGameDialog) {
-                hideNewGameDialog();
-            }
-        });
-    }
-
-    // Undo button - stops search if engine is thinking, then undoes
-    const undoBtn = document.getElementById('btn-undo');
-    if (undoBtn) {
-        undoBtn.addEventListener('click', async () => {
-            await gameController.undo();
-            updateMoveHistory();
-            updateUndoRedoButtons();
-        });
-    }
-
-    // Redo button
-    const redoBtn = document.getElementById('btn-redo');
-    if (redoBtn) {
-        redoBtn.addEventListener('click', async () => {
-            await gameController.redo();
-            updateMoveHistory();
-            updateUndoRedoButtons();
-        });
-    }
-
-    // Flip board button
-    const flipBtn = document.getElementById('btn-flip');
-    if (flipBtn) {
-        flipBtn.addEventListener('click', () => {
-            gameController.flipBoard();
-            if (lastEvalScore !== null) updateEvalBar(lastEvalScore);
-        });
-    }
-
-    // Mode toggle buttons
-    const btnEngineWhite = document.getElementById('btn-engine-white');
-    const btnEngineBlack = document.getElementById('btn-engine-black');
-    const btnTwoPlayer = document.getElementById('btn-two-player');
-
-    if (btnEngineWhite) {
-        btnEngineWhite.addEventListener('click', async () => {
-            gameController.setHumanColor('black'); // human plays black = engine plays white
-            updateModeButtons();
-        });
-    }
-    if (btnEngineBlack) {
-        btnEngineBlack.addEventListener('click', async () => {
-            gameController.setHumanColor('white'); // human plays white = engine plays black
-            updateModeButtons();
-        });
-    }
-    if (btnTwoPlayer) {
-        btnTwoPlayer.addEventListener('click', async () => {
-            gameController.setHumanColor('both');
-            updateModeButtons();
-        });
-    }
-
-    // Pondering checkbox
-    const chkPonder = document.getElementById('chk-ponder');
-    if (chkPonder) {
-        chkPonder.addEventListener('change', () => togglePondering(chkPonder.checked));
-    }
-
-    // Time per move - click to open dialog
-    const timePerMoveBtn = document.getElementById('btn-time-per-move');
-    if (timePerMoveBtn) {
-        timePerMoveBtn.addEventListener('click', showTimeDialog);
-    }
-
-    // Book checkbox
-    const chkUseBook = document.getElementById('chk-use-book');
-    if (chkUseBook) {
-        chkUseBook.addEventListener('change', () => {
-            gameController.setUseBook(chkUseBook.checked);
-            savePreferences();
-        });
-    }
-
-    // Analysis display checkbox
-    const chkShowAnalysis = document.getElementById('chk-show-analysis');
-    if (chkShowAnalysis) {
-        chkShowAnalysis.addEventListener('change', () => toggleShowAnalysis(chkShowAnalysis.checked));
-    }
-
-    // Sound checkbox
-    const chkSound = document.getElementById('chk-sound');
-    if (chkSound) {
-        chkSound.addEventListener('change', () => {
-            setSoundEnabled(chkSound.checked);
-            savePreferences();
-        });
-    }
-
-    // Time dialog
-    const timeDialog = document.getElementById('time-dialog');
-    const timeInput = document.getElementById('time-input');
-    const timeOkBtn = document.getElementById('btn-time-ok');
-    const timeCancelBtn = document.getElementById('btn-time-cancel');
-
-    if (timeDialog) {
-        timeDialog.addEventListener('click', (e) => {
-            if (e.target === timeDialog) hideTimeDialog();
-        });
-    }
-    if (timeOkBtn) {
-        timeOkBtn.addEventListener('click', applyTimePerMove);
-    }
-    if (timeCancelBtn) {
-        timeCancelBtn.addEventListener('click', hideTimeDialog);
-    }
-    if (timeInput) {
-        timeInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') applyTimePerMove();
-            if (e.key === 'Escape') hideTimeDialog();
-        });
-    }
-
-    // Play button (context-aware: stop search / engine move now / play analysis PV)
-    const playBtn = document.getElementById('btn-play');
-    if (playBtn) {
-        playBtn.addEventListener('click', async () => {
-            if (gameController.state === 'pondering') {
-                await gameController.playPonderMove();
-            } else if (gameController.state === 'thinking') {
-                gameController.stopSearch();
-            } else {
-                await gameController.engineMoveNow();
-            }
-        });
-    }
-
-    // Download tablebases button
-    const downloadBtn = document.getElementById('btn-download-tb');
-    if (downloadBtn) {
-        downloadBtn.addEventListener('click', () => showDownloadDialog('dtm'));
-    }
-
-    // Download CWDL tablebases button
-    const downloadCwdlBtn = document.getElementById('btn-download-cwdl');
-    if (downloadCwdlBtn) {
-        downloadCwdlBtn.addEventListener('click', () => showDownloadDialog('cwdl'));
-    }
-
-    // Edit mode button
-    const editBtn = document.getElementById('btn-edit');
-    if (editBtn) {
-        editBtn.addEventListener('click', enterEditMode);
-    }
-
-    // Piece selector buttons
-    document.querySelectorAll('.piece-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.querySelectorAll('.piece-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            editPieceType = btn.dataset.piece;
-        });
-    });
-
-    // Clear board button
-    const clearBtn = document.getElementById('btn-clear-board');
-    if (clearBtn) {
-        clearBtn.addEventListener('click', clearEditBoard);
-    }
-
-    // Side to move buttons
-    const whiteToMoveBtn = document.getElementById('btn-white-to-move');
-    const blackToMoveBtn = document.getElementById('btn-black-to-move');
-    if (whiteToMoveBtn) {
-        whiteToMoveBtn.addEventListener('click', () => {
-            editWhiteToMove = true;
-            updateSideToMoveButtons();
-        });
-    }
-    if (blackToMoveBtn) {
-        blackToMoveBtn.addEventListener('click', () => {
-            editWhiteToMove = false;
-            updateSideToMoveButtons();
-        });
-    }
-
-    // Done button
-    const doneBtn = document.getElementById('btn-edit-done');
-    if (doneBtn) {
-        doneBtn.addEventListener('click', exitEditMode);
-    }
-
-    // Draw offer dialog buttons
-    const acceptDrawBtn = document.getElementById('btn-accept-draw');
-    const declineDrawBtn = document.getElementById('btn-decline-draw');
-    if (acceptDrawBtn) {
-        acceptDrawBtn.addEventListener('click', () => {
-            document.getElementById('draw-offer-dialog').style.display = 'none';
-            if (drawOfferResolve) { drawOfferResolve(true); drawOfferResolve = null; }
-        });
-    }
-    if (declineDrawBtn) {
-        declineDrawBtn.addEventListener('click', () => {
-            document.getElementById('draw-offer-dialog').style.display = 'none';
-            if (drawOfferResolve) { drawOfferResolve(false); drawOfferResolve = null; }
-        });
-    }
-
-    // Match Play button in new game dialog
-    const matchPlayBtn = document.getElementById('btn-match-play');
-    if (matchPlayBtn) {
-        matchPlayBtn.addEventListener('click', startMatchPlay);
-    }
-
-    // Stats/history button (in main toolbar)
-    const statsBtn = document.getElementById('btn-stats');
-    if (statsBtn) {
-        statsBtn.addEventListener('click', showHistoryDialog);
-    }
-
-    const matchResignBtn = document.getElementById('btn-match-resign');
-    if (matchResignBtn) {
-        matchResignBtn.addEventListener('click', matchResign);
-    }
-
-    // Resign confirm dialog buttons
-    const resignYesBtn = document.getElementById('btn-resign-yes');
-    const resignNoBtn = document.getElementById('btn-resign-no');
-    const resignDialog = document.getElementById('resign-confirm-dialog');
-    if (resignYesBtn) {
-        resignYesBtn.addEventListener('click', () => {
-            resignDialog.style.display = 'none';
-            if (resignResolve) { resignResolve(true); resignResolve = null; }
-        });
-    }
-    if (resignNoBtn) {
-        resignNoBtn.addEventListener('click', () => {
-            resignDialog.style.display = 'none';
-            if (resignResolve) { resignResolve(false); resignResolve = null; }
-        });
-    }
-    if (resignDialog) {
-        resignDialog.addEventListener('click', (e) => {
-            if (e.target === resignDialog) {
-                resignDialog.style.display = 'none';
-                if (resignResolve) { resignResolve(false); resignResolve = null; }
-            }
-        });
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && resignDialog.style.display !== 'none') {
-                resignDialog.style.display = 'none';
-                if (resignResolve) { resignResolve(false); resignResolve = null; }
-            }
-        });
-    }
-
-    // Match result dialog OK button
-    const matchResultOkBtn = document.getElementById('btn-match-result-ok');
-    if (matchResultOkBtn) {
-        matchResultOkBtn.addEventListener('click', exitMatchPlay);
-    }
-
-    // History dialog
-    setupHistoryDialogHandlers();
-}
-
-// Tablebases are now loaded lazily by the worker - no need to load them here
-
-/**
- * Show tablebase download dialog
- * @param {string} type - 'dtm' for 5-piece DTM, 'cwdl' for 6-7 piece WDL
- */
-async function showDownloadDialog(type = 'dtm') {
-    const dialog = document.getElementById('download-dialog');
-    if (!dialog) {
-        alert('Descarga de finales no disponible');
-        return;
-    }
-
-    if (!tablebaseLoader || !tablebaseLoader.isAvailable()) {
-        alert('El almacenamiento de finales requiere OPFS (Origin Private File System), que necesita HTTPS o localhost.');
-        return;
-    }
-
-    dialog.style.display = 'flex';
-
-    const progressEl = dialog.querySelector('.progress');
-    const statusEl = dialog.querySelector('.status');
-    const titleEl = dialog.querySelector('h2');
-    const cancelBtn = dialog.querySelector('.cancel-btn');
-
-    if (titleEl) {
-        titleEl.textContent = type === 'cwdl'
-            ? 'Descargando finales WDL 6-7 piezas'
-            : 'Descargando finales DTM 5 piezas';
-    }
-
-    let cancelled = false;
-    cancelBtn.onclick = () => {
-        cancelled = true;
-        dialog.style.display = 'none';
-    };
-
-    try {
-        const downloadFn = type === 'cwdl'
-            ? tablebaseLoader.downloadCWDLTablebases.bind(tablebaseLoader)
-            : tablebaseLoader.downloadTablebases.bind(tablebaseLoader);
-
-        await downloadFn((loaded, total, file) => {
-            if (cancelled) return;
-            const pct = Math.round((loaded / total) * 100);
-            if (progressEl) progressEl.style.width = `${pct}%`;
-            if (statusEl) statusEl.textContent = `Descargando: ${file} (${loaded}/${total})`;
-        });
-
-        if (!cancelled) {
-            statusEl.textContent = '¡Listo! Se usarán automáticamente.';
-            setTimeout(() => {
-                dialog.style.display = 'none';
-                // Reload to pick up the new tablebases
-                window.location.reload();
-            }, 1500);
-        }
-    } catch (err) {
-        if (statusEl) statusEl.textContent = `Error: ${err.message}`;
-    }
-}
-
-/**
- * Update move history display
- * Shows played moves in white, undone moves (redo stack) in gray
- */
-function updateMoveHistory() {
-    const historyEl = document.getElementById('move-history');
-    if (!historyEl || !gameController) return;
-
-    const { history, redo } = gameController.getMoveHistoryForDisplay();
-    const allMoves = [...history, ...redo];
-
-    if (allMoves.length === 0) {
-        historyEl.innerHTML = '';
-        return;
-    }
-
-    let html = '';
-    for (let i = 0; i < allMoves.length; i++) {
-        const moveNum = Math.floor(i / 2) + 1;
-        const isRedo = i >= history.length;
-
-        if (i % 2 === 0) {
-            html += `${moveNum}. `;
-        }
-
-        if (isRedo) {
-            html += `<span class="redo-move">${allMoves[i]}</span> `;
-        } else {
-            html += `${allMoves[i]} `;
-        }
-    }
-
-    historyEl.innerHTML = html.trim();
-    historyEl.scrollTop = historyEl.scrollHeight;
-}
-
-/**
- * Show game over message
- */
-function showGameOver(winner, reason) {
-    let message;
-    if (winner === 'draw') {
-        message = reason ? `¡Tablas — ${reason}!` : '¡Tablas!';
-    } else {
-        const name = winner === 'white' ? 'blancas' : 'negras';
-        message = reason ? `¡Ganan ${name} (${reason})!` : `¡Ganan ${name}!`;
-    }
-    console.log(message);
-
-    if (matchPlayActive) {
-        // Record the game
-        saveGame({
-            id: Date.now(),
-            date: new Date().toISOString(),
-            moves: gameController.history.map(h => h.notation),
-            result: winner,
-            resultReason: reason || null,
-            playerColor: gameController.humanColor
-        });
-
-        // Recompute stats from stored games
-        matchStats = computeStats();
-
-        // Determine result message from player's perspective
-        let title, resultMsg;
-        if (winner === 'draw') {
-            title = 'Tablas';
-            resultMsg = message;
-        } else if (winner === gameController.humanColor) {
-            title = '¡Ganaste!';
-            resultMsg = message;
-        } else {
-            title = 'Perdiste';
-            resultMsg = message;
-        }
-        setTimeout(() => showMatchResultDialog(title, resultMsg), 100);
-    } else {
-        // Small delay so the board finishes rendering before the dialog appears
-        setTimeout(() => alert(message), 100);
-    }
-}
-
-/**
- * Update the play button enabled/disabled state based on current game state.
- * Enabled when: engine thinking, human's turn (not game over), or analysis with PV.
- * Disabled when: game over, edit mode, no legal moves, analysis with no PV yet.
- */
 function updatePlayButton() {
     const playBtn = document.getElementById('btn-play');
     if (!playBtn) return;
 
-    // Show/hide search info panel (keep visible after search)
     const searchInfo = document.getElementById('search-info');
-    if (searchInfo && showAnalysis && gameController.isThinking) {
+    if (searchInfo && showAnalysis && searchManager.isSearching) {
         searchInfo.style.display = 'block';
     }
 
-    if (editMode || gameController.gameOver || gameController.legalMoves.length === 0) {
+    if (editMode || gameState.gameOver || gameState.legalMoves.length === 0) {
         playBtn.disabled = true;
         return;
     }
 
-    if (gameController.state === 'pondering') {
-        // During pondering: enabled if we have a PV to play
-        playBtn.disabled = gameController.currentPV.length === 0;
+    if (searchManager.state === 'pondering') {
+        playBtn.disabled = searchManager.currentPV.length === 0;
         return;
     }
 
-    if (gameController.state === 'thinking') {
-        // Always enabled while thinking (to stop search)
+    if (searchManager.state === 'thinking') {
         playBtn.disabled = false;
         return;
     }
 
-    // Idle: enabled if it's human's turn (so human can hand control to engine)
-    const board = gameController.boardUI;
-    const isHumanTurn = gameController.humanColor === 'both' ||
-        (gameController.humanColor === 'white' && board.whiteToMove) ||
-        (gameController.humanColor === 'black' && !board.whiteToMove);
-    playBtn.disabled = !isHumanTurn;
+    // Idle: enabled if it's human's turn
+    playBtn.disabled = !turnController.isHumanTurn();
 }
 
-/**
- * Format and display engine time left
- */
+// --- Time display ---
+
 function updateTimeDisplay(seconds) {
     const el = document.getElementById('engine-time-left');
     if (!el) return;
@@ -1032,17 +724,13 @@ function updateTimeDisplay(seconds) {
     el.textContent = text;
 }
 
-/**
- * Clear search info display
- */
+// --- Search info ---
+
 function clearSearchInfo() {
     const searchInfo = document.getElementById('search-info');
     if (searchInfo) searchInfo.style.display = 'none';
 }
 
-/**
- * Update search info display
- */
 function updateSearchInfo(info) {
     const searchInfo = document.getElementById('search-info');
     if (!searchInfo) return;
@@ -1074,7 +762,7 @@ function updateSearchInfo(info) {
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
 
-    // Root moves display (ponder mode)
+    // Root moves display
     let rootMovesEl = document.getElementById('search-root-moves');
     if (info.rootMoves && info.rootMoves.length > 0) {
         if (!rootMovesEl) {
@@ -1130,44 +818,28 @@ function updateSearchInfo(info) {
     }
 }
 
-/**
- * Update the evaluation bar
- * @param {number} score - Raw centipawn score (from side-to-move's perspective)
- * @param {string} scoreStr - Formatted score string for the label
- */
-/**
- * Normalize a search score to the [-10000, +10000] NN-eval scale:
- *   Proven draws (|score| <= 10000) → 0
- *   Undecided → strip ±10000 offset
- *   Mate/TB (|score| > 28000) → ±10000
- */
+// --- Eval bar ---
+
 function normalizeScore(score) {
-    if (Math.abs(score) <= 10000) return 0;           // proven draw
-    if (Math.abs(score) > 28000) return score > 0 ? 10000 : -10000;  // mate/TB
-    return score > 0 ? score - 10000 : score + 10000; // undecided
+    if (Math.abs(score) <= 10000) return 0;
+    if (Math.abs(score) > 28000) return score > 0 ? 10000 : -10000;
+    return score > 0 ? score - 10000 : score + 10000;
 }
 
-let lastEvalScore = null;  // Track last score for immediate eval bar updates on flip
+let lastEvalScore = null;
 
 function updateEvalBar(score) {
     lastEvalScore = score;
     const bar = document.getElementById('eval-bar-white');
     if (!bar) return;
 
-    const flipped = gameController.boardUI.flipped;
-
-    // Convert score to white's perspective (engine score is side-to-move)
-    const whiteScore = gameController.boardUI.whiteToMove ? score : -score;
-
-    // Collapse to [-10000, +10000]: draws→0, undecided→strip offset, wins/losses→±10000
+    const flipped = boardUI.flipped;
+    const whiteScore = boardUI.whiteToMove ? score : -score;
     const displayScore = normalizeScore(whiteScore);
-
-    // Linearly interpolate to [0%, 100%]
     const clamped = Math.max(-10000, Math.min(10000, displayScore));
     const pct = ((clamped + 10000) / 20000) * 100;
     bar.style.height = `${pct}%`;
 
-    // Anchor white's portion to bottom (normal) or top (flipped)
     if (flipped) {
         bar.style.bottom = '';
         bar.style.top = '0';
@@ -1177,37 +849,89 @@ function updateEvalBar(score) {
     }
 }
 
-/**
- * Load a recorded game for analysis.
- * Replays all moves, rewinds to start, enters analysis mode.
- */
-async function loadGameForAnalysis(game) {
-    // Exit any current mode
-    await togglePondering(false);
-    clearSearchInfo();
+// --- Move history ---
 
-    // Disable auto-play during load
-    const savedAutoPlay = gameController.autoPlay;
-    gameController.autoPlay = false;
+function updateMoveHistory() {
+    const historyEl = document.getElementById('move-history');
+    if (!historyEl || !gameState) return;
 
-    // Load the game (replays moves, rewinds to start)
-    await gameController.loadGame(game.moves);
+    const { history, redo } = gameState.getMoveHistoryForDisplay();
+    const allMoves = [...history, ...redo];
 
-    // Restore auto-play
-    gameController.autoPlay = savedAutoPlay;
+    if (allMoves.length === 0) {
+        historyEl.innerHTML = '';
+        return;
+    }
 
-    // Orient board from player's perspective
-    gameController.boardUI.setFlipped(game.playerColor === 'black');
+    let html = '';
+    for (let i = 0; i < allMoves.length; i++) {
+        const moveNum = Math.floor(i / 2) + 1;
+        const isRedo = i >= history.length;
 
-    // Set two-player mode + pondering + analysis display
-    gameController.humanColor = 'both';
-    toggleShowAnalysis(true);
-    await togglePondering(true);
+        if (i % 2 === 0) {
+            html += `${moveNum}. `;
+        }
 
-    // Update UI
-    updateMoveHistory();
-    updateUndoRedoButtons();
-    updateModeButtons();
+        if (isRedo) {
+            html += `<span class="redo-move">${allMoves[i]}</span> `;
+        } else {
+            html += `${allMoves[i]} `;
+        }
+    }
+
+    historyEl.innerHTML = html.trim();
+    historyEl.scrollTop = historyEl.scrollHeight;
+}
+
+// --- Game over ---
+
+function showGameOver(winner, reason) {
+    let message;
+    if (winner === 'draw') {
+        message = reason ? `¡Tablas — ${reason}!` : '¡Tablas!';
+    } else {
+        const name = winner === 'white' ? 'blancas' : 'negras';
+        message = reason ? `¡Ganan ${name} (${reason})!` : `¡Ganan ${name}!`;
+    }
+
+    // Update status text
+    if (winner === 'draw') {
+        const msg = reason ? `¡Tablas — ${reason}!` : '¡Tablas!';
+        updateStatus(msg);
+    } else {
+        const winnerName = winner === 'white' ? 'blancas' : 'negras';
+        updateStatus(`¡Ganan ${winnerName}!`);
+    }
+
+    console.log(message);
+
+    if (matchPlayActive) {
+        saveGame({
+            id: Date.now(),
+            date: new Date().toISOString(),
+            moves: gameState.history.map(h => h.notation),
+            result: winner,
+            resultReason: reason || null,
+            playerColor: turnController.humanColor
+        });
+
+        matchStats = computeStats();
+
+        let title, resultMsg;
+        if (winner === 'draw') {
+            title = 'Tablas';
+            resultMsg = message;
+        } else if (winner === turnController.humanColor) {
+            title = '¡Ganaste!';
+            resultMsg = message;
+        } else {
+            title = 'Perdiste';
+            resultMsg = message;
+        }
+        setTimeout(() => showMatchResultDialog(title, resultMsg), 100);
+    } else {
+        setTimeout(() => alert(message), 100);
+    }
 }
 
 // --- Analysis display ---
@@ -1220,7 +944,7 @@ function toggleShowAnalysis(enabled) {
 
     if (enabled) {
         if (evalBar) evalBar.style.visibility = '';
-        if (searchInfo && gameController.isThinking) searchInfo.style.display = 'block';
+        if (searchInfo && searchManager.isSearching) searchInfo.style.display = 'block';
     } else {
         if (evalBar) evalBar.style.visibility = 'hidden';
         if (searchInfo) searchInfo.style.display = 'none';
@@ -1234,25 +958,13 @@ function toggleShowAnalysis(enabled) {
 
 async function togglePondering(enabled) {
     if (enabled) {
-        if (gameController.ponderEnabled) return;
-
-        gameController.ponderEnabled = true;
-
+        if (turnController.ponderEnabled) return;
+        turnController.setPonderEnabled(true);
         updateOptionsButtons();
         updatePlayButton();
-
-        // Start pondering if idle and game not over
-        if (gameController.state === 'idle' && !gameController.gameOver) {
-            gameController._startPondering();
-        }
     } else {
-        if (!gameController.ponderEnabled) return;
-
-        if (gameController.state === 'pondering') {
-            await gameController.abortSearch();
-        }
-        gameController.ponderEnabled = false;
-
+        if (!turnController.ponderEnabled) return;
+        turnController.setPonderEnabled(false);
         clearSearchInfo();
         updateOptionsButtons();
         updatePlayButton();
@@ -1262,9 +974,6 @@ async function togglePondering(enabled) {
 
 // --- Match Play ---
 
-// Migration: old match stats were stored as a simple counter.
-// Since we now derive stats from the game list, the old key is no longer written.
-// We keep legacy stats for display if no games exist yet.
 function getLegacyStats() {
     try {
         const data = localStorage.getItem(MATCH_STATS_KEY);
@@ -1276,12 +985,10 @@ function getLegacyStats() {
 async function startMatchPlay() {
     hideNewGameDialog();
 
-    // Save current option state before overriding
-    savedPonder = gameController.ponderEnabled;
+    savedPonder = turnController.ponderEnabled;
     savedShowAnalysis = showAnalysis;
-    savedUseBook = gameController.useBook;
+    savedUseBook = useBook;
 
-    // Force analysis off immediately (before game setup)
     toggleShowAnalysis(false);
 
     matchStats = computeStats();
@@ -1291,8 +998,6 @@ async function startMatchPlay() {
     document.getElementById('match-toolbar').style.display = 'flex';
     clearSearchInfo();
 
-    // Compute player color: alternate based on total games played
-    // Include legacy stats for the count if no recorded games exist yet
     let totalGames = matchStats.wins + matchStats.draws + matchStats.losses;
     if (totalGames === 0) {
         const legacy = getLegacyStats();
@@ -1302,15 +1007,15 @@ async function startMatchPlay() {
     }
     const color = (totalGames % 2 === 0) ? 'white' : 'black';
 
-    // Fixed settings for match play
-    gameController.setSecondsPerMove(3);
-    gameController.setUseBook(true);
+    searchManager.setSecondsPerMove(3);
+    useBook = true;
+    engine.setUseBook(true);
 
-    await gameController.newGame();
-    gameController.boardUI.setFlipped(color === 'black');
-    await gameController.setHumanColor(color);
+    await searchManager.abort();
+    await gameState.newGame();
+    boardUI.setFlipped(color === 'black');
+    turnController.setHumanColor(color);
 
-    // Enable pondering last, after game is fully set up
     await togglePondering(true);
 }
 
@@ -1322,17 +1027,16 @@ function matchResign() {
         resignResolve = resolve;
     }).then(async (confirmed) => {
         if (!confirmed) return;
-        await gameController.abortSearch();
+        await searchManager.abort();
 
-        // Determine winner (the side the engine plays)
-        const engineColor = gameController.humanColor === 'white' ? 'black' : 'white';
+        const engineColor = turnController.humanColor === 'white' ? 'black' : 'white';
         saveGame({
             id: Date.now(),
             date: new Date().toISOString(),
-            moves: gameController.history.map(h => h.notation),
+            moves: gameState.history.map(h => h.notation),
             result: engineColor,
             resultReason: 'abandono',
-            playerColor: gameController.humanColor
+            playerColor: turnController.humanColor
         });
         matchStats = computeStats();
         showMatchResultDialog('Abandono', 'Has abandonado la partida.');
@@ -1356,7 +1060,6 @@ function showHistoryDialog() {
     const dialog = document.getElementById('history-dialog');
     if (!dialog) return;
 
-    // Compute stats (include legacy if no games yet)
     const stats = computeStats();
     const legacy = getLegacyStats();
     const displayStats = (stats.wins + stats.draws + stats.losses > 0) ? stats
@@ -1366,7 +1069,6 @@ function showHistoryDialog() {
     document.getElementById('history-stat-d').textContent = displayStats.draws;
     document.getElementById('history-stat-l').textContent = displayStats.losses;
 
-    // Populate game list
     const games = getGames();
     const listEl = document.getElementById('history-list');
     selectedGameId = null;
@@ -1375,7 +1077,6 @@ function showHistoryDialog() {
     if (games.length === 0) {
         listEl.innerHTML = '<div class="history-empty">No hay partidas registradas.</div>';
     } else {
-        // Most recent first
         let html = '';
         for (let i = games.length - 1; i >= 0; i--) {
             const g = games[i];
@@ -1384,7 +1085,6 @@ function showHistoryDialog() {
             const timeStr = d.toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
             const movesPreview = g.moves.slice(0, 6).join(' ') + (g.moves.length > 6 ? ' ...' : '');
 
-            // Result from player perspective
             let resultLabel, resultClass;
             if (g.result === 'draw') {
                 resultLabel = 'T';
@@ -1427,39 +1127,30 @@ function setupHistoryDialogHandlers() {
     const dialog = document.getElementById('history-dialog');
     if (!dialog) return;
 
-    // Click on game list items
     const listEl = document.getElementById('history-list');
     listEl.addEventListener('click', (e) => {
         const item = e.target.closest('.history-item');
         if (!item) return;
 
-        // Deselect previous
         listEl.querySelectorAll('.history-item.selected').forEach(el => el.classList.remove('selected'));
-
-        // Select this one
         item.classList.add('selected');
         selectedGameId = parseInt(item.dataset.id);
         updateHistoryButtons();
     });
 
-    // Close button
     document.getElementById('btn-history-close').addEventListener('click', hideHistoryDialog);
 
-    // Click outside to close
     dialog.addEventListener('click', (e) => {
         if (e.target === dialog) hideHistoryDialog();
     });
 
-    // Delete button
     document.getElementById('btn-history-delete').addEventListener('click', () => {
         if (!selectedGameId) return;
         deleteGame(selectedGameId);
         selectedGameId = null;
-        // Refresh the dialog
         showHistoryDialog();
     });
 
-    // Analyze button (placeholder - will be fully implemented in task 4)
     document.getElementById('btn-history-analyze').addEventListener('click', () => {
         if (!selectedGameId) return;
         const games = getGames();
@@ -1471,6 +1162,26 @@ function setupHistoryDialogHandlers() {
     });
 }
 
+async function loadGameForAnalysis(game) {
+    await togglePondering(false);
+    clearSearchInfo();
+
+    const savedAutoPlay = turnController.autoPlay;
+    turnController.autoPlay = false;
+    await searchManager.abort();
+    await gameState.loadGame(game.moves);
+    turnController.autoPlay = savedAutoPlay;
+
+    boardUI.setFlipped(game.playerColor === 'black');
+    turnController.setHumanColor('both');
+    toggleShowAnalysis(true);
+    await togglePondering(true);
+
+    updateMoveHistory();
+    updateUndoRedoButtons();
+    updateModeButtons();
+}
+
 async function exitMatchPlay() {
     matchPlayActive = false;
     document.body.classList.remove('match-play');
@@ -1478,43 +1189,342 @@ async function exitMatchPlay() {
     document.getElementById('game-controls').style.display = 'flex';
     document.getElementById('match-result-dialog').style.display = 'none';
 
-    // Restore pre-match option values
     await togglePondering(savedPonder);
     toggleShowAnalysis(savedShowAnalysis);
-    gameController.setUseBook(savedUseBook);
+    useBook = savedUseBook;
+    engine.setUseBook(useBook);
     updateOptionsButtons();
 
-    // Refresh UI state
     updateModeButtons();
     updateUndoRedoButtons();
     updateMoveHistory();
 }
 
-/**
- * Resize board to fit container
- */
-function resizeBoard() {
-    // On mobile, let CSS handle scaling (canvas stays at 480x480, CSS scales it down)
-    // This avoids feedback loops where measuring causes shrinking
-    if (window.innerWidth <= 768) {
+// --- Tablebase download ---
+
+async function showDownloadDialog(type = 'dtm') {
+    const dialog = document.getElementById('download-dialog');
+    if (!dialog) {
+        alert('Descarga de finales no disponible');
         return;
     }
+
+    if (!tablebaseLoader || !tablebaseLoader.isAvailable()) {
+        alert('El almacenamiento de finales requiere OPFS (Origin Private File System), que necesita HTTPS o localhost.');
+        return;
+    }
+
+    dialog.style.display = 'flex';
+
+    const progressEl = dialog.querySelector('.progress');
+    const statusEl = dialog.querySelector('.status');
+    const titleEl = dialog.querySelector('h2');
+    const cancelBtn = dialog.querySelector('.cancel-btn');
+
+    if (titleEl) {
+        titleEl.textContent = type === 'cwdl'
+            ? 'Descargando finales WDL 6-7 piezas'
+            : 'Descargando finales DTM 5 piezas';
+    }
+
+    let cancelled = false;
+    cancelBtn.onclick = () => {
+        cancelled = true;
+        dialog.style.display = 'none';
+    };
+
+    try {
+        const downloadFn = type === 'cwdl'
+            ? tablebaseLoader.downloadCWDLTablebases.bind(tablebaseLoader)
+            : tablebaseLoader.downloadTablebases.bind(tablebaseLoader);
+
+        await downloadFn((loaded, total, file) => {
+            if (cancelled) return;
+            const pct = Math.round((loaded / total) * 100);
+            if (progressEl) progressEl.style.width = `${pct}%`;
+            if (statusEl) statusEl.textContent = `Descargando: ${file} (${loaded}/${total})`;
+        });
+
+        if (!cancelled) {
+            statusEl.textContent = '¡Listo! Se usarán automáticamente.';
+            setTimeout(() => {
+                dialog.style.display = 'none';
+                window.location.reload();
+            }, 1500);
+        }
+    } catch (err) {
+        if (statusEl) statusEl.textContent = `Error: ${err.message}`;
+    }
+}
+
+// --- Event handlers setup ---
+
+function setupEventHandlers() {
+    // New game
+    const newGameBtn = document.getElementById('btn-new-game');
+    if (newGameBtn) newGameBtn.addEventListener('click', showNewGameDialog);
+
+    const playWhiteBtn = document.getElementById('btn-play-white');
+    const playBlackBtn = document.getElementById('btn-play-black');
+    const playBothBtn = document.getElementById('btn-play-both');
+    if (playWhiteBtn) playWhiteBtn.addEventListener('click', () => startNewGame('white'));
+    if (playBlackBtn) playBlackBtn.addEventListener('click', () => startNewGame('black'));
+    if (playBothBtn) playBothBtn.addEventListener('click', () => startNewGame('both'));
+
+    const newGameDialog = document.getElementById('new-game-dialog');
+    if (newGameDialog) {
+        newGameDialog.addEventListener('click', (e) => {
+            if (e.target === newGameDialog) hideNewGameDialog();
+        });
+    }
+
+    // Undo/Redo
+    const undoBtn = document.getElementById('btn-undo');
+    if (undoBtn) {
+        undoBtn.addEventListener('click', async () => {
+            await searchManager.abort();
+            await gameState.undo();
+        });
+    }
+
+    const redoBtn = document.getElementById('btn-redo');
+    if (redoBtn) {
+        redoBtn.addEventListener('click', async () => {
+            if (searchManager.state === 'thinking') return;
+            if (searchManager.state === 'pondering') await searchManager.abort();
+            await gameState.redo();
+        });
+    }
+
+    // Flip board
+    const flipBtn = document.getElementById('btn-flip');
+    if (flipBtn) {
+        flipBtn.addEventListener('click', () => {
+            boardUI.setFlipped(!boardUI.flipped);
+            if (lastEvalScore !== null) updateEvalBar(lastEvalScore);
+        });
+    }
+
+    // Mode toggle buttons
+    const btnEngineWhite = document.getElementById('btn-engine-white');
+    const btnEngineBlack = document.getElementById('btn-engine-black');
+    const btnTwoPlayer = document.getElementById('btn-two-player');
+
+    if (btnEngineWhite) {
+        btnEngineWhite.addEventListener('click', async () => {
+            if (searchManager.state === 'pondering') await searchManager.abort();
+            turnController.setHumanColor('black');
+        });
+    }
+    if (btnEngineBlack) {
+        btnEngineBlack.addEventListener('click', async () => {
+            if (searchManager.state === 'pondering') await searchManager.abort();
+            turnController.setHumanColor('white');
+        });
+    }
+    if (btnTwoPlayer) {
+        btnTwoPlayer.addEventListener('click', async () => {
+            if (searchManager.state === 'pondering') await searchManager.abort();
+            turnController.setHumanColor('both');
+        });
+    }
+
+    // Pondering checkbox
+    const chkPonder = document.getElementById('chk-ponder');
+    if (chkPonder) {
+        chkPonder.addEventListener('change', () => togglePondering(chkPonder.checked));
+    }
+
+    // Time per move
+    const timePerMoveBtn = document.getElementById('btn-time-per-move');
+    if (timePerMoveBtn) timePerMoveBtn.addEventListener('click', showTimeDialog);
+
+    // Book checkbox
+    const chkUseBook = document.getElementById('chk-use-book');
+    if (chkUseBook) {
+        chkUseBook.addEventListener('change', () => {
+            useBook = chkUseBook.checked;
+            engine.setUseBook(useBook);
+            savePreferences();
+        });
+    }
+
+    // Analysis display checkbox
+    const chkShowAnalysis = document.getElementById('chk-show-analysis');
+    if (chkShowAnalysis) {
+        chkShowAnalysis.addEventListener('change', () => toggleShowAnalysis(chkShowAnalysis.checked));
+    }
+
+    // Sound checkbox
+    const chkSound = document.getElementById('chk-sound');
+    if (chkSound) {
+        chkSound.addEventListener('change', () => {
+            setSoundEnabled(chkSound.checked);
+            savePreferences();
+        });
+    }
+
+    // Time dialog
+    const timeDialog = document.getElementById('time-dialog');
+    const timeInput = document.getElementById('time-input');
+    const timeOkBtn = document.getElementById('btn-time-ok');
+    const timeCancelBtn = document.getElementById('btn-time-cancel');
+
+    if (timeDialog) {
+        timeDialog.addEventListener('click', (e) => {
+            if (e.target === timeDialog) hideTimeDialog();
+        });
+    }
+    if (timeOkBtn) timeOkBtn.addEventListener('click', applyTimePerMove);
+    if (timeCancelBtn) timeCancelBtn.addEventListener('click', hideTimeDialog);
+    if (timeInput) {
+        timeInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyTimePerMove();
+            if (e.key === 'Escape') hideTimeDialog();
+        });
+    }
+
+    // Play button
+    const playBtn = document.getElementById('btn-play');
+    if (playBtn) {
+        playBtn.addEventListener('click', async () => {
+            if (searchManager.state === 'pondering') {
+                await turnController.playPonderMove();
+            } else if (searchManager.state === 'thinking') {
+                searchManager.stop();
+            } else {
+                await turnController.engineMoveNow();
+            }
+        });
+    }
+
+    // Download tablebases
+    const downloadBtn = document.getElementById('btn-download-tb');
+    if (downloadBtn) downloadBtn.addEventListener('click', () => showDownloadDialog('dtm'));
+
+    const downloadCwdlBtn = document.getElementById('btn-download-cwdl');
+    if (downloadCwdlBtn) downloadCwdlBtn.addEventListener('click', () => showDownloadDialog('cwdl'));
+
+    // Edit mode
+    const editBtn = document.getElementById('btn-edit');
+    if (editBtn) editBtn.addEventListener('click', enterEditMode);
+
+    // Piece selector
+    document.querySelectorAll('.piece-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.piece-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            editPieceType = btn.dataset.piece;
+        });
+    });
+
+    // Clear board
+    const clearBtn = document.getElementById('btn-clear-board');
+    if (clearBtn) clearBtn.addEventListener('click', clearEditBoard);
+
+    // Side to move
+    const whiteToMoveBtn = document.getElementById('btn-white-to-move');
+    const blackToMoveBtn = document.getElementById('btn-black-to-move');
+    if (whiteToMoveBtn) {
+        whiteToMoveBtn.addEventListener('click', () => {
+            editWhiteToMove = true;
+            updateSideToMoveButtons();
+        });
+    }
+    if (blackToMoveBtn) {
+        blackToMoveBtn.addEventListener('click', () => {
+            editWhiteToMove = false;
+            updateSideToMoveButtons();
+        });
+    }
+
+    // Done button
+    const doneBtn = document.getElementById('btn-edit-done');
+    if (doneBtn) doneBtn.addEventListener('click', exitEditMode);
+
+    // Draw offer dialog
+    const acceptDrawBtn = document.getElementById('btn-accept-draw');
+    const declineDrawBtn = document.getElementById('btn-decline-draw');
+    if (acceptDrawBtn) {
+        acceptDrawBtn.addEventListener('click', () => {
+            document.getElementById('draw-offer-dialog').style.display = 'none';
+            if (drawOfferResolve) { drawOfferResolve(true); drawOfferResolve = null; }
+        });
+    }
+    if (declineDrawBtn) {
+        declineDrawBtn.addEventListener('click', () => {
+            document.getElementById('draw-offer-dialog').style.display = 'none';
+            if (drawOfferResolve) { drawOfferResolve(false); drawOfferResolve = null; }
+        });
+    }
+
+    // Match play
+    const matchPlayBtn = document.getElementById('btn-match-play');
+    if (matchPlayBtn) matchPlayBtn.addEventListener('click', startMatchPlay);
+
+    const statsBtn = document.getElementById('btn-stats');
+    if (statsBtn) statsBtn.addEventListener('click', showHistoryDialog);
+
+    const matchResignBtn = document.getElementById('btn-match-resign');
+    if (matchResignBtn) matchResignBtn.addEventListener('click', matchResign);
+
+    // Resign confirm dialog
+    const resignYesBtn = document.getElementById('btn-resign-yes');
+    const resignNoBtn = document.getElementById('btn-resign-no');
+    const resignDialog = document.getElementById('resign-confirm-dialog');
+    if (resignYesBtn) {
+        resignYesBtn.addEventListener('click', () => {
+            resignDialog.style.display = 'none';
+            if (resignResolve) { resignResolve(true); resignResolve = null; }
+        });
+    }
+    if (resignNoBtn) {
+        resignNoBtn.addEventListener('click', () => {
+            resignDialog.style.display = 'none';
+            if (resignResolve) { resignResolve(false); resignResolve = null; }
+        });
+    }
+    if (resignDialog) {
+        resignDialog.addEventListener('click', (e) => {
+            if (e.target === resignDialog) {
+                resignDialog.style.display = 'none';
+                if (resignResolve) { resignResolve(false); resignResolve = null; }
+            }
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && resignDialog.style.display !== 'none') {
+                resignDialog.style.display = 'none';
+                if (resignResolve) { resignResolve(false); resignResolve = null; }
+            }
+        });
+    }
+
+    // Match result dialog
+    const matchResultOkBtn = document.getElementById('btn-match-result-ok');
+    if (matchResultOkBtn) matchResultOkBtn.addEventListener('click', exitMatchPlay);
+
+    // History dialog
+    setupHistoryDialogHandlers();
+}
+
+// --- Board resize ---
+
+function resizeBoard() {
+    if (window.innerWidth <= 768) return;
 
     const section = document.querySelector('.board-section');
     const canvas = document.getElementById('board');
 
-    if (section && canvas && gameController) {
-        // Measure the section width (stable, not affected by canvas size)
+    if (section && canvas && boardUI) {
         const sectionWidth = section.clientWidth;
-        // Account for container padding
         const size = Math.min(sectionWidth - 16, 480);
         if (size > 0) {
-            gameController.resize(size);
+            boardUI.resize(size);
         }
     }
 }
 
-// Start application when DOM is ready
+// Start application
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
@@ -1522,5 +1532,7 @@ if (document.readyState === 'loading') {
 }
 
 // Export for debugging
-window.gameController = () => gameController;
+window.gameState = () => gameState;
+window.searchManager = () => searchManager;
+window.turnController = () => turnController;
 window.engine = getEngine;
