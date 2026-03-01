@@ -681,7 +681,7 @@ function updatePlayButton() {
     if (!playBtn) return;
 
     const searchInfo = document.getElementById('search-info');
-    if (searchInfo && showAnalysis && searchManager.isSearching) {
+    if (searchInfo && showAnalysis) {
         searchInfo.style.display = 'block';
     }
 
@@ -946,7 +946,7 @@ function toggleShowAnalysis(enabled) {
 
     if (enabled) {
         if (evalBar) evalBar.style.visibility = '';
-        if (searchInfo && searchManager.isSearching) searchInfo.style.display = 'block';
+        if (searchInfo) searchInfo.style.display = 'block';
     } else {
         if (evalBar) evalBar.style.visibility = 'hidden';
         if (searchInfo) searchInfo.style.display = 'none';
@@ -967,7 +967,6 @@ async function togglePondering(enabled) {
     } else {
         if (!turnController.ponderEnabled) return;
         turnController.setPonderEnabled(false);
-        clearSearchInfo();
         updateOptionsButtons();
         updatePlayButton();
     }
