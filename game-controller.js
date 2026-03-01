@@ -710,6 +710,8 @@ export class GameController {
                 pvStr: pvStr
             };
             if (result.phase) info.phase = result.phase;
+            if (result.rootMoves) info.rootMoves = result.rootMoves;
+            if (result.bookMoves) info.bookMoves = result.bookMoves;
             this.onSearchInfo(info);
         }
     }

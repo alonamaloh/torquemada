@@ -312,6 +312,8 @@ function search(softTime, hardTime, requestId, analyzeMode, ponderMode) {
                     pv: result.pv || []
                 };
                 if (result.phase) progress.phase = result.phase;
+                if (result.rootMoves) progress.rootMoves = result.rootMoves;
+                if (result.bookMoves) progress.bookMoves = result.bookMoves;
                 postMessage({
                     id: currentSearchId,
                     type: 'searchProgress',
@@ -345,6 +347,8 @@ function search(softTime, hardTime, requestId, analyzeMode, ponderMode) {
         };
         if (result.phase) searchResult.phase = result.phase;
         if (result.book) searchResult.book = true;
+        if (result.rootMoves) searchResult.rootMoves = result.rootMoves;
+        if (result.bookMoves) searchResult.bookMoves = result.bookMoves;
         return searchResult;
     } catch (err) {
         console.error('Worker: search error:', err);

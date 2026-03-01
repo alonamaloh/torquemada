@@ -201,6 +201,22 @@ body {
     overflow: hidden;
 }
 
+.search-root-moves {
+    color: #b0b0b0;
+    word-break: break-all;
+    line-height: 1.4;
+    max-height: 4.2em;
+    overflow: hidden;
+    font-size: 0.8rem;
+}
+
+.search-book-moves {
+    color: #c9a84c;
+    word-break: break-all;
+    line-height: 1.4;
+    font-size: 0.8rem;
+}
+
 /* Controls section */
 .controls-section {
     width: 280px;

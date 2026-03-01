@@ -73,7 +73,7 @@ async function init() {
 
         // Try to load opening book
         try {
-            const bookResponse = await fetch('./opening.cbook');
+            const bookResponse = await fetch('./opening-a822ebc72d1b.cbook');
             if (bookResponse.ok) {
                 const bookText = await bookResponse.text();
                 await engine.loadOpeningBook(bookText);
@@ -1026,6 +1026,56 @@ function updateSearchInfo(info) {
         summaryEl.innerHTML = `${depth}. ${score} <span class="search-label">nodes:</span> ${nodesStr} <span class="search-label">nps:</span> ${npsStr}`;
     }
     if (pvEl) pvEl.textContent = info.pvStr || '-';
+
+    // Root moves display (ponder mode)
+    let rootMovesEl = document.getElementById('search-root-moves');
+    if (info.rootMoves && info.rootMoves.length > 0) {
+        if (!rootMovesEl) {
+            rootMovesEl = document.createElement('div');
+            rootMovesEl.id = 'search-root-moves';
+            rootMovesEl.className = 'search-info-row search-root-moves';
+            searchInfo.appendChild(rootMovesEl);
+        }
+        const parts = info.rootMoves.map(m => {
+            let s;
+            if (Math.abs(m.score) > 29000) {
+                const mateIn = Math.ceil((30000 - Math.abs(m.score)) / 2);
+                s = m.score > 0 ? `M${mateIn}` : `-M${mateIn}`;
+            } else if (Math.abs(m.score) <= 10000) {
+                const val = (m.score / 100).toFixed(2);
+                s = (m.score >= 0 ? '+' : '') + val + '=';
+            } else {
+                const raw = m.score > 0 ? m.score - 10000 : m.score + 10000;
+                const val = (raw / 100).toFixed(2);
+                s = raw > 0 ? `+${val}` : val;
+            }
+            return `${m.notation}: ${s}`;
+        });
+        rootMovesEl.textContent = parts.join('  ');
+        rootMovesEl.style.display = '';
+    } else if (rootMovesEl) {
+        rootMovesEl.style.display = 'none';
+    }
+
+    // Book moves display
+    let bookMovesEl = document.getElementById('search-book-moves');
+    if (info.bookMoves && info.bookMoves.length > 0) {
+        if (!bookMovesEl) {
+            bookMovesEl = document.createElement('div');
+            bookMovesEl.id = 'search-book-moves';
+            bookMovesEl.className = 'search-info-row search-book-moves';
+            searchInfo.appendChild(bookMovesEl);
+        }
+        const parts = info.bookMoves.map(m => {
+            const pct = (m.probability * 100).toFixed(0);
+            const q = (m.q / 100).toFixed(1);
+            return `${m.notation}: ${pct}% (${q})`;
+        });
+        bookMovesEl.innerHTML = `<span class="search-label">libro:</span> ${parts.join('  ')}`;
+        bookMovesEl.style.display = '';
+    } else if (bookMovesEl) {
+        bookMovesEl.style.display = 'none';
+    }
 
     // Update eval bar
     if (info.score !== undefined) {
