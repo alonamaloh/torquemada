@@ -891,6 +891,12 @@ export class GameController {
         if (this.state !== 'pondering' || this.currentPV.length === 0) return false;
         const notation = this.currentPV[0];
         await this.abortSearch();
+
+        // Switch human to the other side (engine takes over the current side)
+        const board = await this.engine.getBoard();
+        this.humanColor = board.whiteToMove ? 'black' : 'white';
+        if (this.onModeChange) this.onModeChange(this.humanColor);
+
         return await this.inputMove(notation);
     }
 
