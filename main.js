@@ -474,6 +474,8 @@ function updateUndoRedoButtons() {
 async function enterEditMode() {
     await searchManager.abort();
     clearSearchInfo();
+    const evalBar = document.getElementById('eval-bar');
+    if (evalBar) evalBar.style.visibility = 'hidden';
     editMode = true;
 
     const board = gameState.board;
@@ -517,6 +519,11 @@ async function exitEditMode() {
         el.style.display = 'block';
     });
 
+    if (showAnalysis) {
+        const evalBar = document.getElementById('eval-bar');
+        if (evalBar) evalBar.style.visibility = '';
+    }
+
     updateMoveHistory();
     updateUndoRedoButtons();
     updateModeButtons();
@@ -548,14 +555,25 @@ function updatePieceSelector() {
     });
 }
 
+function isInvalidPlacement(pieceType, square) {
+    // White men can't be placed on rank 8 (squares 29-32) — they would promote
+    if (pieceType === 'white-man' && square >= 29) return true;
+    // Black men can't be placed on rank 1 (squares 1-4) — they would promote
+    if (pieceType === 'black-man' && square <= 4) return true;
+    return false;
+}
+
 function handleEditClick(square) {
     if (!editMode || square < 1 || square > 32) return;
 
     const bit = 1 << (square - 1);
 
     const currentPiece = getPieceAt(square);
-    if (currentPiece === editPieceType) {
+    if (currentPiece === editPieceType || isInvalidPlacement(editPieceType, square)) {
         editPieceType = nextPieceType(editPieceType);
+        if (isInvalidPlacement(editPieceType, square)) {
+            editPieceType = nextPieceType(editPieceType);
+        }
         updatePieceSelector();
     }
 
@@ -682,7 +700,7 @@ function updatePlayButton() {
     if (!playBtn) return;
 
     const searchInfo = document.getElementById('search-info');
-    if (searchInfo && showAnalysis) {
+    if (searchInfo && showAnalysis && !editMode) {
         searchInfo.style.display = 'block';
     }
 
@@ -741,7 +759,7 @@ function updateSearchInfo(info) {
     const searchInfo = document.getElementById('search-info');
     if (!searchInfo) return;
 
-    if (showAnalysis) searchInfo.style.display = 'block';
+    if (showAnalysis && !editMode) searchInfo.style.display = 'block';
 
     const summaryEl = document.getElementById('search-summary');
     const pvEl = document.getElementById('search-pv');
@@ -1012,14 +1030,9 @@ async function startMatchPlay() {
     document.getElementById('match-toolbar').style.display = 'flex';
     clearSearchInfo();
 
-    let totalGames = matchStats.wins + matchStats.draws + matchStats.losses;
-    if (totalGames === 0) {
-        const legacy = getLegacyStats();
-        if (legacy) {
-            totalGames = (legacy.wins || 0) + (legacy.draws || 0) + (legacy.losses || 0);
-        }
-    }
-    const color = (totalGames % 2 === 0) ? 'white' : 'black';
+    const games = getGames();
+    const lastGame = games.length > 0 ? games[games.length - 1] : null;
+    const color = lastGame ? (lastGame.playerColor === 'white' ? 'black' : 'white') : 'white';
 
     searchManager.setSecondsPerMove(3);
     useBook = true;
@@ -1160,6 +1173,7 @@ function setupHistoryDialogHandlers() {
 
     document.getElementById('btn-history-delete').addEventListener('click', () => {
         if (!selectedGameId) return;
+        if (!confirm('¿Borrar esta partida del historial?')) return;
         deleteGame(selectedGameId);
         selectedGameId = null;
         showHistoryDialog();
