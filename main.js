@@ -1208,7 +1208,7 @@ async function startMatchPlay() {
     gameController.setUseBook(true);
 
     await gameController.newGame();
-    gameController.setHumanColor(color);
+    await gameController.setHumanColor(color);
     gameController.boardUI.setFlipped(color === 'black');
 
     // Enable pondering last, after game is fully set up
