@@ -463,7 +463,9 @@ function updateUndoRedoButtons() {
     const { canUndo, canRedo } = gameState.getUndoRedoState();
     const thinking = searchManager.state === 'thinking';
 
-    if (undoBtn) undoBtn.disabled = !canUndo || thinking;
+    // Undo is allowed during thinking (aborts search first)
+    if (undoBtn) undoBtn.disabled = !canUndo;
+    // Redo is blocked during thinking (engine is about to play)
     if (redoBtn) redoBtn.disabled = !canRedo || thinking;
 }
 
