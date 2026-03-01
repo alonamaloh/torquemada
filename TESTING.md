@@ -39,8 +39,12 @@
 
 ## Edit Mode
 - [ ] Click "Editar" — controls switch, piece selector appears
+- [ ] Eval bar and search info hidden during edit mode
+- [ ] Exiting edit mode restores eval bar and search info (if analysis enabled)
 - [ ] Click squares to place/remove pieces
 - [ ] Cycle through piece types by clicking same square type
+- [ ] White men cannot be placed on rank 8 (top row) — skips to next piece type
+- [ ] Black men cannot be placed on rank 1 (bottom row) — skips to next piece type
 - [ ] "Limpiar" clears the board
 - [ ] Side-to-move toggle (B/N) works
 - [ ] "Hecho" — exits edit, position applied, you play the side to move
@@ -62,7 +66,7 @@
 ## Match Play
 - [ ] "Partida" in new game dialog starts match mode
 - [ ] Toolbar changes (resign button visible, normal controls hidden)
-- [ ] Colors alternate between games
+- [ ] Colors alternate based on last game's color (not total count parity)
 - [ ] Game over shows W/D/L stats dialog
 - [ ] "OK" exits match mode, restores previous settings
 - [ ] Resign button asks confirmation, records loss
@@ -79,7 +83,7 @@
 - [ ] Saved games listed with date, moves preview, result
 - [ ] Select a game, click "Analizar" — loads game, rewinds to start
 - [ ] Redo through the loaded game move by move
-- [ ] Delete a game from history
+- [ ] Delete a game from history — confirmation dialog appears first
 
 ## Board
 - [ ] Flip button rotates board 180°
