@@ -76,6 +76,14 @@ export class TurnController extends EventTarget {
         const notation = this.searchManager.currentPV[0];
         await this.searchManager.abort();
 
+        // Resolve the notation to a legal move object
+        const parsed = await this.gameState.engine.parseMove(this.gameState.board, notation);
+        if (!parsed) return false;
+        const legalMove = this.gameState.legalMoves.find(m =>
+            m.from_xor_to === parsed.from_xor_to && m.captures === parsed.captures
+        );
+        if (!legalMove) return false;
+
         // Switch human to other side
         const board = this.gameState.board;
         this.humanColor = board.whiteToMove ? 'black' : 'white';
@@ -83,7 +91,13 @@ export class TurnController extends EventTarget {
             detail: { humanColor: this.humanColor }
         }));
 
-        return await this.gameState.parseAndMakeMove(notation);
+        // Dispatch engineMove so main.js handles animation + sound
+        await new Promise(resolve => {
+            this.dispatchEvent(new CustomEvent('engineMove', {
+                detail: { move: legalMove, resolve }
+            }));
+        });
+        return true;
     }
 
     /**
