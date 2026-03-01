@@ -8,6 +8,7 @@ const { GameController } = await import(`./game-controller.js${_q}`);
 const { getEngine } = await import(`./engine-api.js${_q}`);
 const { TablebaseLoader, loadNNModelFile } = await import(`./tablebase-loader.js${_q}`);
 const { saveGame, getGames, deleteGame, clearGames, computeStats } = await import(`./game-storage.js${_q}`);
+const { isSoundEnabled, setSoundEnabled } = await import(`./sound.js${_q}`);
 
 // Global state
 let gameController = null;
@@ -134,6 +135,9 @@ async function init() {
             });
         };
 
+        // Restore saved preferences from localStorage
+        await restoreSavedPreferences();
+
         // Set up UI event handlers
         setupEventHandlers();
         updateModeButtons();
@@ -199,6 +203,37 @@ function updateModeButtons() {
     }
 }
 
+const PREFS_KEY = 'torquemada-preferences';
+
+function savePreferences() {
+    const prefs = {
+        ponder: gameController.ponderEnabled,
+        showAnalysis,
+        useBook: gameController.useBook,
+        sound: isSoundEnabled(),
+    };
+    localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+}
+
+function loadPreferences() {
+    try {
+        const data = localStorage.getItem(PREFS_KEY);
+        return data ? JSON.parse(data) : null;
+    } catch {
+        return null;
+    }
+}
+
+async function restoreSavedPreferences() {
+    const prefs = loadPreferences();
+    if (!prefs) return;
+
+    if (prefs.ponder) await togglePondering(true);
+    if (prefs.showAnalysis) toggleShowAnalysis(true);
+    if (prefs.useBook === false) gameController.setUseBook(false);
+    setSoundEnabled(prefs.sound !== false);
+}
+
 function updateOptionsButtons() {
     const chkPonder = document.getElementById('chk-ponder');
     const chkUseBook = document.getElementById('chk-use-book');
@@ -207,6 +242,9 @@ function updateOptionsButtons() {
     if (chkPonder) chkPonder.checked = gameController.ponderEnabled;
     if (chkUseBook) chkUseBook.checked = gameController.useBook;
     if (chkShowAnalysis) chkShowAnalysis.checked = showAnalysis;
+
+    const chkSound = document.getElementById('chk-sound');
+    if (chkSound) chkSound.checked = isSoundEnabled();
 }
 
 /**
@@ -601,6 +639,7 @@ function setupEventHandlers() {
     if (chkUseBook) {
         chkUseBook.addEventListener('change', () => {
             gameController.setUseBook(chkUseBook.checked);
+            savePreferences();
         });
     }
 
@@ -608,6 +647,15 @@ function setupEventHandlers() {
     const chkShowAnalysis = document.getElementById('chk-show-analysis');
     if (chkShowAnalysis) {
         chkShowAnalysis.addEventListener('change', () => toggleShowAnalysis(chkShowAnalysis.checked));
+    }
+
+    // Sound checkbox
+    const chkSound = document.getElementById('chk-sound');
+    if (chkSound) {
+        chkSound.addEventListener('change', () => {
+            setSoundEnabled(chkSound.checked);
+            savePreferences();
+        });
     }
 
     // Time dialog
@@ -996,11 +1044,10 @@ function clearSearchInfo() {
  * Update search info display
  */
 function updateSearchInfo(info) {
-    if (!showAnalysis) return;
     const searchInfo = document.getElementById('search-info');
     if (!searchInfo) return;
 
-    searchInfo.style.display = 'block';
+    if (showAnalysis) searchInfo.style.display = 'block';
 
     const summaryEl = document.getElementById('search-summary');
     const pvEl = document.getElementById('search-pv');
@@ -1173,13 +1220,14 @@ function toggleShowAnalysis(enabled) {
 
     if (enabled) {
         if (evalBar) evalBar.style.visibility = '';
-        // search-info will appear when engine sends info
+        if (searchInfo && gameController.isThinking) searchInfo.style.display = 'block';
     } else {
         if (evalBar) evalBar.style.visibility = 'hidden';
         if (searchInfo) searchInfo.style.display = 'none';
     }
 
     updateOptionsButtons();
+    savePreferences();
 }
 
 // --- Pondering ---
@@ -1209,6 +1257,7 @@ async function togglePondering(enabled) {
         updateOptionsButtons();
         updatePlayButton();
     }
+    savePreferences();
 }
 
 // --- Match Play ---
@@ -1258,8 +1307,8 @@ async function startMatchPlay() {
     gameController.setUseBook(true);
 
     await gameController.newGame();
-    await gameController.setHumanColor(color);
     gameController.boardUI.setFlipped(color === 'black');
+    await gameController.setHumanColor(color);
 
     // Enable pondering last, after game is fully set up
     await togglePondering(true);

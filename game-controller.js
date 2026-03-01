@@ -5,6 +5,7 @@
 const _v = new URL(import.meta.url).searchParams.get('v') || '';
 const _q = _v ? `?v=${_v}` : '';
 const { BoardUI } = await import(`./board-ui.js${_q}`);
+const { playMoveSound } = await import(`./sound.js${_q}`);
 
 export class GameController {
     constructor(canvas, engine, statusElement = null) {
@@ -482,9 +483,12 @@ export class GameController {
                 const partialPath = move.path.slice(0, i + 1);
                 this.boardUI.setPartialPath(partialPath);
                 this.boardUI.render();
+                playMoveSound();
                 await this._sleep(200);
             }
             // Keep partial path set until board is updated to avoid flash
+        } else {
+            playMoveSound();
         }
 
         // Make the move
@@ -807,8 +811,7 @@ export class GameController {
         this.boardUI.setLastMove(entry.move.from, entry.move.to);
 
         // Switch mode so human can play the side that's now to move
-        // (unless in 2-player or pondering mode)
-        if (this.humanColor !== 'both' && !this.ponderEnabled) {
+        if (this.humanColor !== 'both') {
             this.humanColor = newBoard.whiteToMove ? 'white' : 'black';
             if (this.onModeChange) this.onModeChange(this.humanColor);
         }
