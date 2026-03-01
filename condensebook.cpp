@@ -104,6 +104,7 @@ std::unordered_map<uint64_t, int> compute_ply_map(const Book& book) {
 struct CondensedMove {
   Move move;
   double probability;
+  double q;  // average evaluation (Q = value_sum / visits)
 };
 
 // Filter and normalize a book entry into play probabilities
@@ -123,7 +124,8 @@ std::vector<CondensedMove> condense_entry(const BookEntry& entry,
   int filtered_total = 0;
   for (const auto& mi : entry.moves) {
     if (mi.visits >= threshold) {
-      result.push_back({mi.move, static_cast<double>(mi.visits)});
+      double q = mi.value_sum / mi.visits;
+      result.push_back({mi.move, static_cast<double>(mi.visits), q});
       filtered_total += mi.visits;
     }
   }
@@ -208,7 +210,7 @@ int main(int argc, char** argv) {
 
   out << "# Condensed opening book\n";
   out << "# P <white_hex> <black_hex> <kings_hex>\n";
-  out << "# M <from_xor_to_hex> <captures_hex> <probability>\n";
+  out << "# M <from_xor_to_hex> <captures_hex> <probability> <Q>\n";
   out << std::fixed << std::setprecision(3);
 
   int white_positions = 0;
@@ -233,7 +235,8 @@ int main(int argc, char** argv) {
     for (const auto& cm : moves) {
       out << "M " << std::hex
           << cm.move.from_xor_to << " " << cm.move.captures
-          << std::dec << " " << cm.probability << "\n";
+          << std::dec << " " << cm.probability
+          << " " << std::setprecision(1) << cm.q << std::setprecision(3) << "\n";
     }
 
     written.insert(hash);
@@ -259,7 +262,8 @@ int main(int argc, char** argv) {
     for (const auto& cm : moves) {
       out << "M " << std::hex
           << cm.move.from_xor_to << " " << cm.move.captures
-          << std::dec << " " << cm.probability << "\n";
+          << std::dec << " " << cm.probability
+          << " " << std::setprecision(1) << cm.q << std::setprecision(3) << "\n";
     }
 
     written.insert(hash);

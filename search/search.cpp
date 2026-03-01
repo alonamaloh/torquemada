@@ -776,6 +776,13 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
         std::vector<Move> continuation;
         extract_pv(child, continuation, depth - 1);
         result.pv.insert(result.pv.end(), continuation.begin(), continuation.end());
+        // Populate root_scores for all moves, sorted best to worst
+        result.root_scores.clear();
+        for (size_t i = 0; i < root_moves.size(); ++i) {
+          result.root_scores.emplace_back(root_moves[i], scores[i]);
+        }
+        std::sort(result.root_scores.begin(), result.root_scores.end(),
+                  [](const auto& a, const auto& b) { return a.second > b.second; });
       } else {
         result = search_root(board, root_moves, depth);
       }

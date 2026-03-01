@@ -6163,11 +6163,11 @@ var CheckersEngine = (() => {
                 return u8array
             }
             var asmLibraryArg = {
-                "o": ___cxa_allocate_exception,
+                "p": ___cxa_allocate_exception,
                 "q": ___cxa_begin_catch,
                 "x": ___cxa_end_catch,
                 "c": ___cxa_find_matching_catch_2,
-                "i": ___cxa_find_matching_catch_3,
+                "j": ___cxa_find_matching_catch_3,
                 "Fa": ___cxa_find_matching_catch_5,
                 "r": ___cxa_free_exception,
                 "_": ___cxa_rethrow,
@@ -6205,7 +6205,7 @@ var CheckersEngine = (() => {
                 "Oa": __emval_get_property,
                 "Ja": __emval_incref,
                 "W": __emval_new_array,
-                "z": __emval_new_cstring,
+                "y": __emval_new_cstring,
                 "N": __emval_new_object,
                 "La": __emval_run_destructors,
                 "Ga": __emval_set_property,
@@ -6231,24 +6231,24 @@ var CheckersEngine = (() => {
                 "v": invoke_diii,
                 "P": invoke_fiii,
                 "n": invoke_i,
-                "d": invoke_ii,
+                "e": invoke_ii,
                 "g": invoke_iii,
-                "l": invoke_iiii,
+                "k": invoke_iiii,
                 "m": invoke_iiiii,
                 "J": invoke_iiiiii,
-                "y": invoke_iiiiiii,
+                "z": invoke_iiiiiii,
                 "O": invoke_iiiiiiii,
                 "H": invoke_iiiiiiiiiiii,
                 "aa": invoke_iiiiij,
                 "ea": invoke_iij,
                 "ba": invoke_j,
                 "$": invoke_jiiii,
-                "k": invoke_v,
-                "e": invoke_vi,
+                "l": invoke_v,
+                "d": invoke_vi,
                 "h": invoke_vii,
-                "j": invoke_viii,
+                "i": invoke_viii,
                 "V": invoke_viiiddiii,
-                "p": invoke_viiii,
+                "o": invoke_viiii,
                 "B": invoke_viiiii,
                 "Z": invoke_viiiiii,
                 "w": invoke_viiiiiii,
@@ -6359,7 +6359,7 @@ var CheckersEngine = (() => {
             var dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = function() {
                 return (dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = Module["asm"]["ub"]).apply(null, arguments)
             };
-            var __emscripten_allow_main_runtime_queued_calls = Module["__emscripten_allow_main_runtime_queued_calls"] = 25708;
+            var __emscripten_allow_main_runtime_queued_calls = Module["__emscripten_allow_main_runtime_queued_calls"] = 25740;
 
             function invoke_iii(index, a1, a2) {
                 var sp = stackSave();

@@ -87,6 +87,7 @@ struct SearchResult {
   std::uint64_t nodes;
   std::uint64_t tb_hits;
   std::vector<Move> pv;  // Principal variation
+  std::vector<std::pair<Move, int>> root_scores;  // All root move scores (ponder mode)
   SearchPhase phase = SearchPhase::PRIMARY;
 
   SearchResult() : score(0), depth(0), nodes(0), tb_hits(0) {}

@@ -354,7 +354,12 @@ namespace {
     struct BookMove {
         Move move;
         double probability;
+        double q;  // average evaluation (Q = value_sum / visits)
     };
+
+    // Q-based filtering threshold: exclude moves with Q more than this
+    // below the best move's Q value.
+    constexpr double BOOK_Q_THRESHOLD = 200.0;
     std::unordered_map<uint64_t, std::vector<BookMove>> g_opening_book;
     bool g_book_loaded = false;
 }
@@ -427,9 +432,10 @@ void loadOpeningBook(const std::string& text) {
             }
         } else if (line[0] == 'M' && have_position) {
             Bb fxt, cap;
-            double prob;
-            if (sscanf(line.c_str(), "M %x %x %lf", &fxt, &cap, &prob) == 3) {
-                g_opening_book[current_hash].push_back({Move(fxt, cap), prob});
+            double prob, q = 0.0;
+            int parsed = sscanf(line.c_str(), "M %x %x %lf %lf", &fxt, &cap, &prob, &q);
+            if (parsed >= 3) {
+                g_opening_book[current_hash].push_back({Move(fxt, cap), prob, q});
             }
         }
     }
@@ -439,6 +445,38 @@ void loadOpeningBook(const std::string& text) {
 
 bool hasOpeningBook() {
     return g_book_loaded;
+}
+
+// Filter book moves by Q value: keep only moves within BOOK_Q_THRESHOLD
+// of the best Q, then renormalize probabilities.
+// Returns filtered list (may be empty if input is empty).
+std::vector<BookMove> filterBookMoves(const std::vector<BookMove>& moves) {
+    if (moves.empty()) return {};
+
+    // Find best Q
+    double best_q = moves[0].q;
+    for (const auto& bm : moves) {
+        if (bm.q > best_q) best_q = bm.q;
+    }
+
+    // Filter to moves within threshold of best
+    std::vector<BookMove> filtered;
+    double total_prob = 0.0;
+    for (const auto& bm : moves) {
+        if (best_q - bm.q <= BOOK_Q_THRESHOLD) {
+            filtered.push_back(bm);
+            total_prob += bm.probability;
+        }
+    }
+
+    // Renormalize probabilities
+    if (total_prob > 0) {
+        for (auto& bm : filtered) {
+            bm.probability /= total_prob;
+        }
+    }
+
+    return filtered;
 }
 
 // Board wrapper for JS
@@ -703,6 +741,29 @@ val buildSearchResultVal(const search::SearchResult& sr, const Board& board, boo
     }
     result.set("pv", pv);
 
+    // Root move scores (populated in ponder mode)
+    if (!sr.root_scores.empty()) {
+        std::vector<FullMove> all_full_moves;
+        generateFullMoves(board, all_full_moves);
+
+        val root_moves_arr = val::array();
+        for (const auto& [move, score] : sr.root_scores) {
+            std::string notation;
+            for (const auto& fm : all_full_moves) {
+                if (fm.move.from_xor_to == move.from_xor_to &&
+                    fm.move.captures == move.captures) {
+                    notation = buildNotation(fm.path, move.isCapture(), white_to_move);
+                    break;
+                }
+            }
+            val entry = val::object();
+            entry.set("notation", notation);
+            entry.set("score", score);
+            root_moves_arr.call<void>("push", entry);
+        }
+        result.set("rootMoves", root_moves_arr);
+    }
+
     return result;
 }
 
@@ -758,31 +819,61 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
         uint64_t pos_hash = jsboard.board.position_hash();
         auto it = g_opening_book.find(pos_hash);
         if (it != g_opening_book.end() && !it->second.empty()) {
-            // Sample from probability distribution
-            double r = g_rng.next_double();
-            double cumulative = 0.0;
-            const BookMove* selected = &it->second[0];
-            for (const auto& bm : it->second) {
-                cumulative += bm.probability;
-                if (r < cumulative) { selected = &bm; break; }
-            }
-            // Find full move info (path) for the selected move
-            std::vector<FullMove> full_moves;
-            generateFullMoves(jsboard.board, full_moves);
-            for (const auto& fm : full_moves) {
-                if (fm.move.from_xor_to == selected->move.from_xor_to &&
-                    fm.move.captures == selected->move.captures) {
-                    result.set("best_move", createMoveObject(fm.move, fm.path, jsboard.white_to_move));
-                    result.set("score", 0);
-                    result.set("depth", 0);
-                    result.set("nodes", 0);
-                    result.set("tb_hits", 0);
-                    result.set("pv", val::array());
-                    result.set("book", true);
-                    return result;
+            // Filter by Q value and renormalize
+            auto filtered = filterBookMoves(it->second);
+            if (!filtered.empty()) {
+                // Sample from filtered probability distribution
+                double r = g_rng.next_double();
+                double cumulative = 0.0;
+                const BookMove* selected = &filtered[0];
+                for (const auto& bm : filtered) {
+                    cumulative += bm.probability;
+                    if (r < cumulative) { selected = &bm; break; }
+                }
+                // Find full move info (path) for the selected move
+                std::vector<FullMove> full_moves;
+                generateFullMoves(jsboard.board, full_moves);
+                for (const auto& fm : full_moves) {
+                    if (fm.move.from_xor_to == selected->move.from_xor_to &&
+                        fm.move.captures == selected->move.captures) {
+                        result.set("best_move", createMoveObject(fm.move, fm.path, jsboard.white_to_move));
+                        result.set("score", 0);
+                        result.set("depth", 0);
+                        result.set("nodes", 0);
+                        result.set("tb_hits", 0);
+                        result.set("pv", val::array());
+                        result.set("book", true);
+                        return result;
+                    }
                 }
             }
-            // If move not found among legal moves, fall through to search
+            // If no filtered moves or move not found, fall through to search
+        }
+    }
+
+    // Compute book moves for the current position (for display during analysis)
+    // Uses Q-filtered probabilities to show what the engine would actually play
+    val bookMoves = val::array();
+    if (g_book_loaded) {
+        uint64_t pos_hash = jsboard.board.position_hash();
+        auto book_it = g_opening_book.find(pos_hash);
+        if (book_it != g_opening_book.end() && !book_it->second.empty()) {
+            auto filtered = filterBookMoves(book_it->second);
+            std::vector<FullMove> full_moves;
+            generateFullMoves(jsboard.board, full_moves);
+            for (const auto& bm : filtered) {
+                for (const auto& fm : full_moves) {
+                    if (fm.move.from_xor_to == bm.move.from_xor_to &&
+                        fm.move.captures == bm.move.captures) {
+                        val entry = val::object();
+                        entry.set("notation", buildNotation(fm.path, bm.move.isCapture(), jsboard.white_to_move));
+                        entry.set("probability", bm.probability);
+                        entry.set("q", bm.q);
+                        bookMoves.call<void>("push", entry);
+                        break;
+                    }
+                }
+            }
         }
     }
 
@@ -833,6 +924,9 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     if (has_callback) {
         g_searcher->set_progress_callback([&](const search::SearchResult& sr) {
             val update = buildSearchResultVal(sr, jsboard.board, jsboard.white_to_move);
+            if (bookMoves["length"].as<int>() > 0) {
+                update.set("bookMoves", bookMoves);
+            }
             progress_callback.call<void>("call", val::null(), update);
         });
     }
@@ -855,7 +949,11 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
         result.set("error", "Search threw unknown exception");
         return result;
     }
-    return buildSearchResultVal(sr, jsboard.board, jsboard.white_to_move);
+    val final_result = buildSearchResultVal(sr, jsboard.board, jsboard.white_to_move);
+    if (bookMoves["length"].as<int>() > 0) {
+        final_result.set("bookMoves", bookMoves);
+    }
+    return final_result;
 }
 
 // Probe tablebase for current position (returns DTM or null)
