@@ -778,7 +778,7 @@ export class GameController {
         this._updateStatus('Jugada deshecha');
 
         if (this.ponderEnabled && !this.gameOver) {
-            await this._startPondering();
+            this._startPondering();
         }
     }
 
@@ -824,7 +824,7 @@ export class GameController {
 
         // If pondering is enabled, start pondering the restored position
         if (this.ponderEnabled && !this.gameOver) {
-            await this._startPondering();
+            this._startPondering();
         }
     }
 
