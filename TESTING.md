@@ -25,6 +25,7 @@
 - [ ] When idle on your turn: engine takes your side, plays a move
 - [ ] When engine is thinking: stops search (engine plays best found so far)
 - [ ] When pondering with PV: plays the top PV move, switches sides
+- [ ] In two-player mode: plays the engine's top move, stays in two-player mode
 - [ ] Button disabled when game is over
 
 ## New Game Dialog

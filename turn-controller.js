@@ -49,16 +49,19 @@ export class TurnController extends EventTarget {
 
     /**
      * Force engine to move now: assign engine to current side,
-     * human gets the other side.
+     * human gets the other side.  In two-player mode, stay in
+     * two-player mode after the move.
      */
     async engineMoveNow() {
         if (this.gameState.gameOver || this.searchManager.isSearching) return;
 
-        const board = this.gameState.board;
-        this.humanColor = board.whiteToMove ? 'black' : 'white';
-        this.dispatchEvent(new CustomEvent('humanColorChanged', {
-            detail: { humanColor: this.humanColor }
-        }));
+        if (this.humanColor !== 'both') {
+            const board = this.gameState.board;
+            this.humanColor = board.whiteToMove ? 'black' : 'white';
+            this.dispatchEvent(new CustomEvent('humanColorChanged', {
+                detail: { humanColor: this.humanColor }
+            }));
+        }
 
         await this._startEngineSearch();
     }
@@ -84,12 +87,14 @@ export class TurnController extends EventTarget {
         );
         if (!legalMove) return false;
 
-        // Switch human to other side
-        const board = this.gameState.board;
-        this.humanColor = board.whiteToMove ? 'black' : 'white';
-        this.dispatchEvent(new CustomEvent('humanColorChanged', {
-            detail: { humanColor: this.humanColor }
-        }));
+        // Switch human to other side (but stay in two-player mode if active)
+        if (this.humanColor !== 'both') {
+            const board = this.gameState.board;
+            this.humanColor = board.whiteToMove ? 'black' : 'white';
+            this.dispatchEvent(new CustomEvent('humanColorChanged', {
+                detail: { humanColor: this.humanColor }
+            }));
+        }
 
         // Dispatch engineMove so main.js handles animation + sound
         await new Promise(resolve => {
