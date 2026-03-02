@@ -11,6 +11,7 @@
 #include "tablebase/tablebase.hpp"
 #include "tablebase/compression.hpp"
 #include "tablebase/tb_probe.hpp"
+#include <algorithm>
 #include <H5Cpp.h>
 #include <omp.h>
 #include <atomic>
@@ -32,6 +33,7 @@ struct TrainingPosition {
   Board board;
   int ply;       // When this position occurred (for debugging)
   int outcome;   // Game outcome from side-to-move perspective: -1, 0, +1
+  int score;     // Search score from side-to-move perspective
 };
 
 // Fixed-size buffer for positions within a single game (max ~250 positions per game)
@@ -134,7 +136,7 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
 
     // Record position if quiet and the resulting position is also quiet
     if (is_quiet(board) && is_quiet(next_board)) {
-      game_positions.push_back({board, ply, 0});
+      game_positions.push_back({board, ply, 0, result.score});
     }
 
     board = next_board;
@@ -162,7 +164,7 @@ int play_game(RandomBits& rng, search::Searcher& searcher,
 // HDF5 writer with extensible datasets for incremental writing
 class HDF5Writer {
   H5::H5File file_;
-  H5::DataSet board_ds_, outcome_ds_;
+  H5::DataSet board_ds_, outcome_ds_, score_ds_;
   hsize_t count_ = 0;  // Total rows written so far
 
 public:
@@ -187,6 +189,11 @@ public:
     DSetCreatPropList scalar_props;
     scalar_props.setChunk(1, scalar_chunk);
     outcome_ds_ = file_.createDataSet("outcomes", PredType::NATIVE_INT8, scalar_space, scalar_props);
+
+    DataSpace score_space(1, scalar_dims, scalar_max);
+    DSetCreatPropList score_props;
+    score_props.setChunk(1, scalar_chunk);
+    score_ds_ = file_.createDataSet("scores", PredType::NATIVE_INT16, score_space, score_props);
   }
 
   // Append a batch of positions
@@ -199,6 +206,7 @@ public:
     // Prepare data arrays
     std::vector<std::uint32_t> boards(n * 4);
     std::vector<std::int8_t> outcomes(n);
+    std::vector<std::int16_t> scores(n);
     for (hsize_t i = 0; i < n; ++i) {
       const auto& pos = positions[i];
       boards[i * 4 + 0] = pos.board.white;
@@ -206,6 +214,7 @@ public:
       boards[i * 4 + 2] = pos.board.kings;
       boards[i * 4 + 3] = pos.board.n_reversible;
       outcomes[i] = static_cast<std::int8_t>(pos.outcome);
+      scores[i] = static_cast<std::int16_t>(std::clamp(pos.score, -30000, 30000));
     }
 
     // Extend datasets
@@ -215,6 +224,7 @@ public:
     board_ds_.extend(board_size);
     hsize_t scalar_size[1] = {new_count};
     outcome_ds_.extend(scalar_size);
+    score_ds_.extend(scalar_size);
 
     // Select hyperslab for the new data
     hsize_t board_offset[2] = {count_, 0};
@@ -226,10 +236,14 @@ public:
 
     hsize_t scalar_offset[1] = {count_};
     hsize_t scalar_count[1] = {n};
-    DataSpace scalar_fspace = outcome_ds_.getSpace();
-    scalar_fspace.selectHyperslab(H5S_SELECT_SET, scalar_count, scalar_offset);
+    DataSpace outcome_fspace = outcome_ds_.getSpace();
+    outcome_fspace.selectHyperslab(H5S_SELECT_SET, scalar_count, scalar_offset);
     DataSpace scalar_mspace(1, scalar_count);
-    outcome_ds_.write(outcomes.data(), PredType::NATIVE_INT8, scalar_mspace, scalar_fspace);
+    outcome_ds_.write(outcomes.data(), PredType::NATIVE_INT8, scalar_mspace, outcome_fspace);
+
+    DataSpace score_fspace = score_ds_.getSpace();
+    score_fspace.selectHyperslab(H5S_SELECT_SET, scalar_count, scalar_offset);
+    score_ds_.write(scores.data(), PredType::NATIVE_INT16, scalar_mspace, score_fspace);
 
     count_ = new_count;
     file_.flush(H5F_SCOPE_GLOBAL);

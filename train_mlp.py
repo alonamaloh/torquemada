@@ -71,10 +71,42 @@ def boards_to_features(boards, device):
     return torch.cat([white_men, white_kings, black_men, black_kings], dim=1)
 
 
+def normalize_scores(raw_scores):
+    """Normalize engine search scores to [-1, +1].
+
+    Mirrors score_to_normalized() from the C++ engine:
+      Proven draws (|score| <= 10000) → 0
+      Undecided (|score| in 10001..28000) → strip ±10000 offset → [-10000, +10000]
+      Special (TB win/mate, |score| > 28000) → ±10000
+    Then divide by 10000 to get [-1, +1].
+    """
+    SCORE_DRAW = 10000
+    SCORE_SPECIAL = 28000
+    scores = raw_scores.astype(np.float32)
+
+    result = np.zeros_like(scores)
+
+    # Special scores (TB win/mate) → ±10000
+    result[scores > SCORE_SPECIAL] = SCORE_DRAW
+    result[scores < -SCORE_SPECIAL] = -SCORE_DRAW
+
+    # Undecided: strip ±10000 offset
+    undecided_pos = (scores > SCORE_DRAW) & (scores <= SCORE_SPECIAL)
+    undecided_neg = (scores < -SCORE_DRAW) & (scores >= -SCORE_SPECIAL)
+    result[undecided_pos] = scores[undecided_pos] - SCORE_DRAW
+    result[undecided_neg] = scores[undecided_neg] + SCORE_DRAW
+
+    # Proven draws: already 0 from initialization
+
+    return result / SCORE_DRAW  # Scale to [-1, +1]
+
+
 def load_data_to_gpu(h5_files, device):
     """Load all training data from HDF5 files directly to GPU."""
     all_boards = []
     all_outcomes = []
+    all_scores = []
+    has_scores = False
 
     for path in h5_files:
         with h5py.File(path, 'r') as f:
@@ -90,6 +122,15 @@ def load_data_to_gpu(h5_files, device):
             all_boards.append(boards)
             all_outcomes.append(outcomes)
 
+            if 'scores' in f:
+                scores = f['scores'][:]
+                if 'pre_tactical' in f:
+                    scores = scores[mask]
+                all_scores.append(scores)
+                has_scores = True
+            else:
+                all_scores.append(None)
+
     boards_np = np.concatenate(all_boards, axis=0)
     outcomes_np = np.concatenate(all_outcomes, axis=0)
 
@@ -102,14 +143,35 @@ def load_data_to_gpu(h5_files, device):
     print(f"  Draws:  {np.sum(labels_np == 1):>8} ({100*np.mean(labels_np == 1):.1f}%)")
     print(f"  Losses: {np.sum(labels_np == 0):>8} ({100*np.mean(labels_np == 0):.1f}%)")
 
+    # Process scores if any files had them
+    scores_gpu = None
+    if has_scores:
+        # For files without scores, fill with NaN (will be masked out in loss)
+        score_parts = []
+        offset = 0
+        for i, s in enumerate(all_scores):
+            file_n = len(all_boards[i])
+            if s is not None:
+                score_parts.append(normalize_scores(s))
+            else:
+                score_parts.append(np.full(file_n, np.nan, dtype=np.float32))
+            offset += file_n
+        scores_np = np.concatenate(score_parts, axis=0)
+        valid_count = np.sum(~np.isnan(scores_np))
+        print(f"  Scores: {valid_count} positions have search scores")
+    else:
+        scores_np = None
+
     print("Moving data to GPU...")
     boards_gpu = torch.from_numpy(boards_np.astype(np.int32)).to(device)
     labels_gpu = torch.from_numpy(labels_np).to(device)
+    if scores_np is not None:
+        scores_gpu = torch.from_numpy(scores_np).to(device)
 
-    del boards_np, outcomes_np, labels_np, all_boards, all_outcomes
+    del boards_np, outcomes_np, labels_np, all_boards, all_outcomes, all_scores
     print(f"GPU memory: {torch.cuda.memory_allocated(device) / 1e6:.0f} MB")
 
-    return boards_gpu, labels_gpu
+    return boards_gpu, labels_gpu, scores_gpu
 
 
 class CheckersMLP(nn.Module):
@@ -134,11 +196,29 @@ class CheckersMLP(nn.Module):
         return self.net(x)
 
 
-def train_epoch(model, boards, labels, batch_size, optimizer, criterion, device):
+def score_loss_fn(outputs, target_scores):
+    """MSE between model's expected value and normalized search score.
+
+    outputs: (B, 3) raw logits [loss, draw, win]
+    target_scores: (B,) normalized scores in [-1, +1]
+    Returns: scalar loss (only over positions with valid scores)
+    """
+    valid = ~torch.isnan(target_scores)
+    if not valid.any():
+        return torch.tensor(0.0, device=outputs.device)
+
+    probs = torch.softmax(outputs[valid], dim=1)
+    expected_value = probs[:, 2] - probs[:, 0]  # P(win) - P(loss), in [-1, +1]
+    return torch.nn.functional.mse_loss(expected_value, target_scores[valid])
+
+
+def train_epoch(model, boards, labels, batch_size, optimizer, criterion, device,
+                scores=None, score_weight=0.0):
     model.train()
     n = len(labels)
     perm = torch.randperm(n, device=device)
     total_loss = 0
+    total_score_loss = 0
     correct = 0
 
     for start in range(0, n, batch_size):
@@ -149,6 +229,12 @@ def train_epoch(model, boards, labels, batch_size, optimizer, criterion, device)
         optimizer.zero_grad()
         outputs = model(features)
         loss = criterion(outputs, batch_labels)
+
+        if scores is not None and score_weight > 0:
+            sl = score_loss_fn(outputs, scores[idx])
+            total_score_loss += sl.item() * len(batch_labels)
+            loss = loss + score_weight * sl
+
         loss.backward()
         optimizer.step()
 
@@ -156,13 +242,15 @@ def train_epoch(model, boards, labels, batch_size, optimizer, criterion, device)
         _, predicted = outputs.max(1)
         correct += predicted.eq(batch_labels).sum().item()
 
-    return total_loss / n, correct / n
+    return total_loss / n, correct / n, total_score_loss / n
 
 
-def evaluate(model, boards, labels, batch_size, criterion, device):
+def evaluate(model, boards, labels, batch_size, criterion, device,
+             scores=None, score_weight=0.0):
     model.eval()
     n = len(labels)
     total_loss = 0
+    total_score_loss = 0
     correct = 0
 
     with torch.no_grad():
@@ -173,11 +261,16 @@ def evaluate(model, boards, labels, batch_size, criterion, device):
             outputs = model(features)
             loss = criterion(outputs, batch_labels)
 
+            if scores is not None and score_weight > 0:
+                sl = score_loss_fn(outputs, scores[start:start + batch_size])
+                total_score_loss += sl.item() * len(batch_labels)
+                loss = loss + score_weight * sl
+
             total_loss += loss.item() * len(batch_labels)
             _, predicted = outputs.max(1)
             correct += predicted.eq(batch_labels).sum().item()
 
-    return total_loss / n, correct / n
+    return total_loss / n, correct / n, total_score_loss / n
 
 
 def main():
@@ -189,6 +282,8 @@ def main():
     parser.add_argument('--hidden', type=str, default='256,128,64', help='Hidden layer sizes')
     parser.add_argument('--val-split', type=float, default=0.1, help='Validation split')
     parser.add_argument('--output', type=str, default='model.pt', help='Output model path')
+    parser.add_argument('--score-weight', type=float, default=0.0,
+                        help='Weight for search score distillation loss (0 = disabled)')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     args = parser.parse_args()
 
@@ -203,7 +298,11 @@ def main():
 
     device = torch.device(args.device)
     print(f"Loading from {len(h5_files)} files...")
-    boards_gpu, labels_gpu = load_data_to_gpu(h5_files, device)
+    boards_gpu, labels_gpu, scores_gpu = load_data_to_gpu(h5_files, device)
+
+    if args.score_weight > 0 and scores_gpu is None:
+        print("Warning: --score-weight specified but no files contain scores, ignoring")
+        args.score_weight = 0.0
 
     # Split into train/val
     n = len(labels_gpu)
@@ -221,11 +320,16 @@ def main():
     val_boards = boards_gpu[val_idx]
     val_labels = labels_gpu[val_idx]
 
+    train_scores = scores_gpu[train_idx] if scores_gpu is not None else None
+    val_scores = scores_gpu[val_idx] if scores_gpu is not None else None
+
     # Free the unsplit data
-    del boards_gpu, labels_gpu, train_idx, val_idx
+    del boards_gpu, labels_gpu, scores_gpu, train_idx, val_idx
     torch.cuda.empty_cache()
 
     print(f"Train: {n_train}, Val: {n_val}")
+    if args.score_weight > 0:
+        print(f"Score distillation weight: {args.score_weight}")
 
     # Create model
     model = CheckersMLP(hidden_sizes=hidden_sizes)
@@ -237,21 +341,31 @@ def main():
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=args.lr)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
+    #scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=3, factor=0.5)
 
     best_val_acc = 0
-    print(f"\n{'Epoch':>5} {'Train Loss':>12} {'Train Acc':>10} {'Val Loss':>12} {'Val Acc':>10}")
-    print("-" * 55)
+    sw = args.score_weight
+    if sw > 0:
+        print(f"\n{'Epoch':>5} {'Train Loss':>12} {'Train Acc':>10} {'Score MSE':>10} {'Val Loss':>12} {'Val Acc':>10} {'VScore MSE':>10}")
+        print("-" * 75)
+    else:
+        print(f"\n{'Epoch':>5} {'Train Loss':>12} {'Train Acc':>10} {'Val Loss':>12} {'Val Acc':>10}")
+        print("-" * 55)
 
     for epoch in range(args.epochs):
-        train_loss, train_acc = train_epoch(
-            model, train_boards, train_labels, args.batch_size, optimizer, criterion, device)
-        val_loss, val_acc = evaluate(
-            model, val_boards, val_labels, args.batch_size, criterion, device)
+        train_loss, train_acc, train_sl = train_epoch(
+            model, train_boards, train_labels, args.batch_size, optimizer, criterion, device,
+            scores=train_scores, score_weight=sw)
+        val_loss, val_acc, val_sl = evaluate(
+            model, val_boards, val_labels, args.batch_size, criterion, device,
+            scores=val_scores, score_weight=sw)
 
-        scheduler.step(val_loss)
+        #scheduler.step(val_loss)
 
-        print(f"{epoch+1:>5} {train_loss:>12.4f} {train_acc:>10.2%} {val_loss:>12.4f} {val_acc:>10.2%}")
+        if sw > 0:
+            print(f"{epoch+1:>5} {train_loss:>12.4f} {train_acc:>10.2%} {train_sl:>10.4f} {val_loss:>12.4f} {val_acc:>10.2%} {val_sl:>10.4f}")
+        else:
+            print(f"{epoch+1:>5} {train_loss:>12.4f} {train_acc:>10.2%} {val_loss:>12.4f} {val_acc:>10.2%}")
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc

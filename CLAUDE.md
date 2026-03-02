@@ -85,7 +85,7 @@ bin/generate_training \
 - Adjudicated at ≤7 pieces using compressed WDL tablebases
 - Only quiet positions recorded (no captures available on either side)
 - HDF5 written incrementally; Ctrl+C saves collected data gracefully
-- HDF5 format: `boards` (uint32[N,4]: white, black, kings, n_reversible), `outcomes` (int8[N]: -1/0/+1)
+- HDF5 format: `boards` (uint32[N,4]: white, black, kings, n_reversible), `outcomes` (int8[N]: -1/0/+1), `scores` (int16[N]: raw search score from side-to-move perspective)
 
 ### Model Training
 
