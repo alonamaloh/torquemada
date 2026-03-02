@@ -77,7 +77,7 @@ async function init() {
         // Load NN model
         updateLoadingStatus('Cargando red neuronal...');
         try {
-            const nnData = await loadNNModelFile('./models/model_006.bin');
+            const nnData = await loadNNModelFile('./models/model_007.bin');
             await engine.loadNNModel(nnData);
         } catch (err) {
             console.warn('Could not load NN model:', err);
