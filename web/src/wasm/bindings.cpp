@@ -788,11 +788,12 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     // Check if tablebases are available
     bool tb_available = hasTablebases();
 
-    // Try tablebase lookup first for endgame positions
+    // Try tablebase lookup first for endgame wins/losses (draws fall through to search)
     if (piece_count <= 5 && tb_available) {
         Move best_move;
         tablebase::DTM best_dtm;
-        if (g_tb_manager.find_best_move(jsboard.board, best_move, best_dtm)) {
+        if (g_tb_manager.find_best_move(jsboard.board, best_move, best_dtm)
+            && best_dtm != tablebase::DTM_DRAW) {
             std::vector<FullMove> full_moves;
             generateFullMoves(jsboard.board, full_moves);
 
@@ -805,9 +806,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
             }
 
             int score;
-            if (best_dtm == tablebase::DTM_DRAW) {
-                score = search::draw_eval(jsboard.board);
-            } else if (best_dtm > 0) {
+            if (best_dtm > 0) {
                 score = 30000 - 2 * best_dtm + 1;
             } else {
                 score = -30000 + 2 * (-best_dtm);

@@ -153,12 +153,14 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   }
   if (dtm == tablebase::DTM_UNKNOWN) return false;
 
-  stats_.tb_hits++;
   if (dtm == tablebase::DTM_DRAW) {
-    score = draw_eval(board);
-  } else {
-    score = dtm_to_score(dtm, ply);
+    // Don't short-circuit draws — let the search continue with
+    // draw_reduce (same as WDL draws) for better move selection.
+    return false;
   }
+
+  stats_.tb_hits++;
+  score = dtm_to_score(dtm, ply);
   return true;
 }
 
@@ -169,9 +171,9 @@ Searcher::WDLProbeResult Searcher::probe_wdl(const Board& board, int ply, int de
   int piece_count = std::popcount(board.allPieces());
   if (piece_count > wdl_piece_limit_) return WDLProbeResult::NOT_FOUND;
 
-  // Don't probe if DTM covers this piece count (DTM is more precise)
-  if (piece_count <= tb_piece_limit_ && (dtm_manager_ || dtm_probe_func_)) return WDLProbeResult::NOT_FOUND;
-
+  // DTM wins/losses are already handled by probe_tb (called before probe_wdl).
+  // DTM draws return false from probe_tb so they fall through here for
+  // draw_reduce handling, same as WDL draws.
   auto result = wdl_probe_func_(board);
   if (!result.has_value()) return WDLProbeResult::NOT_FOUND;
 
@@ -718,14 +720,16 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
   SearchResult result;
 
   // Check if we should use DTM optimal play (≤ tb_piece_limit_ pieces)
+  // For wins/losses, DTM gives the optimal move. For draws, fall through
+  // to the normal search so the engine can use heuristics to choose.
   int piece_count = std::popcount(board.allPieces());
   if (dtm_manager_ && piece_count <= tb_piece_limit_) {
     Move best_move;
     tablebase::DTM best_dtm;
-    if (dtm_manager_->find_best_move(board, best_move, best_dtm)) {
+    if (dtm_manager_->find_best_move(board, best_move, best_dtm)
+        && best_dtm != tablebase::DTM_DRAW) {
       result.best_move = best_move;
-      result.score = (best_dtm == tablebase::DTM_DRAW) ? draw_eval(board)
-                                                       : dtm_to_score(best_dtm, 0);
+      result.score = dtm_to_score(best_dtm, 0);
       result.nodes = 1;
       stats_.tb_hits++;
       result.tb_hits = 1;
@@ -752,7 +756,8 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
     if (dtm_manager_ && piece_count <= tb_piece_limit_) {
       tablebase::DTM dtm = dtm_manager_->lookup_dtm(board);
       if (dtm != tablebase::DTM_UNKNOWN) {
-        result.score = dtm_to_score(dtm, 0);
+        result.score = (dtm == tablebase::DTM_DRAW) ? draw_eval(board)
+                                                     : dtm_to_score(dtm, 0);
         stats_.tb_hits++;
         result.tb_hits = 1;
         return result;
