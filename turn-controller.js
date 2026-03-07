@@ -21,6 +21,7 @@ export class TurnController extends EventTarget {
         this.autoPlay = true;
         this.ponderEnabled = false;
         this.drawDeclined = false;
+        this._engineMovePending = false;  // true while processing search result → commit
     }
 
     /**
@@ -53,7 +54,7 @@ export class TurnController extends EventTarget {
      * two-player mode after the move.
      */
     async engineMoveNow() {
-        if (this.gameState.gameOver || this.searchManager.isSearching) return;
+        if (this.gameState.gameOver || this.searchManager.isSearching || this._engineMovePending) return;
 
         if (this.humanColor !== 'both') {
             const board = this.gameState.board;
@@ -75,6 +76,7 @@ export class TurnController extends EventTarget {
         if (this.searchManager.state !== 'pondering' || this.searchManager.currentPV.length === 0) {
             return false;
         }
+        if (this._engineMovePending) return false;
 
         const notation = this.searchManager.currentPV[0];
         await this.searchManager.abort();
@@ -96,12 +98,17 @@ export class TurnController extends EventTarget {
             }));
         }
 
-        // Dispatch engineMove so main.js handles animation + sound
-        await new Promise(resolve => {
-            this.dispatchEvent(new CustomEvent('engineMove', {
-                detail: { move: legalMove, resolve }
-            }));
-        });
+        this._engineMovePending = true;
+        try {
+            // Dispatch engineMove so main.js handles animation + sound
+            await new Promise(resolve => {
+                this.dispatchEvent(new CustomEvent('engineMove', {
+                    detail: { move: legalMove, resolve }
+                }));
+            });
+        } finally {
+            this._engineMovePending = false;
+        }
         return true;
     }
 
@@ -163,7 +170,7 @@ export class TurnController extends EventTarget {
      */
     async _evaluateTurn() {
         if (this.gameState.gameOver) return;
-        if (this.searchManager.isSearching) return;
+        if (this.searchManager.isSearching || this._engineMovePending) return;
 
         if (!this.isHumanTurn() && this.autoPlay) {
             await this._startEngineSearch();
@@ -187,35 +194,41 @@ export class TurnController extends EventTarget {
             return;
         }
 
-        // Ensure minimum 200ms so user can see what happened
-        const elapsed = Date.now() - searchStart;
-        if (elapsed < 200) {
-            await new Promise(r => setTimeout(r, 200 - elapsed));
-        }
+        // Guard against re-entry during the await points below
+        this._engineMovePending = true;
+        try {
+            // Ensure minimum 200ms so user can see what happened
+            const elapsed = Date.now() - searchStart;
+            if (elapsed < 200) {
+                await new Promise(r => setTimeout(r, 200 - elapsed));
+            }
 
-        // Check draw offer conditions
-        if (!this.drawDeclined && !result.book) {
-            if (this._shouldOfferDraw(result, board)) {
-                const accepted = await this._offerDraw();
-                if (accepted) {
-                    this.gameState.setGameOver('draw', 'tablas aceptadas');
-                    return;
+            // Check draw offer conditions
+            if (!this.drawDeclined && !result.book) {
+                if (this._shouldOfferDraw(result, board)) {
+                    const accepted = await this._offerDraw();
+                    if (accepted) {
+                        this.gameState.setGameOver('draw', 'tablas aceptadas');
+                        return;
+                    }
                 }
             }
-        }
 
-        // Dispatch engineMove event — main.js handles animation/sound then commits
-        if (result.bestMove && result.bestMove.from_xor_to && result.bestMove.from_xor_to !== 0) {
-            console.log('Engine move:', result.bestMove);
-            // Use a Promise so we can await main.js finishing the animation+commit
-            await new Promise(resolve => {
-                this.dispatchEvent(new CustomEvent('engineMove', {
-                    detail: { move: result.bestMove, resolve }
-                }));
-            });
-            // _onMove will be called, which calls _evaluateTurn for the next move
-        } else {
-            console.warn('No valid bestMove in result:', result.bestMove);
+            // Dispatch engineMove event — main.js handles animation/sound then commits
+            if (result.bestMove && result.bestMove.from_xor_to && result.bestMove.from_xor_to !== 0) {
+                console.log('Engine move:', result.bestMove);
+                // Use a Promise so we can await main.js finishing the animation+commit
+                await new Promise(resolve => {
+                    this.dispatchEvent(new CustomEvent('engineMove', {
+                        detail: { move: result.bestMove, resolve }
+                    }));
+                });
+                // _onMove will be called, which calls _evaluateTurn for the next move
+            } else {
+                console.warn('No valid bestMove in result:', result.bestMove);
+            }
+        } finally {
+            this._engineMovePending = false;
         }
     }
 
