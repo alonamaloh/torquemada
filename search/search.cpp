@@ -65,6 +65,21 @@ TimeControl TimeControl::with_time(double soft_seconds, double hard_seconds) {
   return tc;
 }
 
+// Simple material eval for proven draws with Beal-effect noise.
+// Deterministic: noise is derived from position hash so TT entries stay consistent.
+int draw_eval(const Board& board) {
+  int wp = std::popcount(board.whitePawns());
+  int wk = std::popcount(board.whiteQueens());
+  int bp = std::popcount(board.blackPawns());
+  int bk = std::popcount(board.blackQueens());
+  int material = (wp - bp) * 100 + (wk - bk) * 320;
+
+  // Hash-based noise in [-10, +10] for the Beal effect
+  int noise = static_cast<int>(board.hash() % 21) - 10;
+
+  return material + noise;
+}
+
 // Random evaluation: reproducible pseudo-random score derived from position hash
 // Returns a score in the range [-10000, +10000] based on the hash
 int random_eval(const Board& board, int /*ply*/) {
@@ -155,13 +170,7 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
 
   stats_.tb_hits++;
   if (dtm == tablebase::DTM_DRAW) {
-    // Simple material eval for draw ordering: avoids NN miscalibration
-    // that can cause sacrifices into DTM territory.
-    int wp = std::popcount(board.whitePawns());
-    int wk = std::popcount(board.whiteQueens());
-    int bp = std::popcount(board.blackPawns());
-    int bk = std::popcount(board.blackQueens());
-    score = (wp - bp) * 100 + (wk - bk) * 320;
+    score = draw_eval(board);
   } else {
     score = dtm_to_score(dtm, ply);
   }
@@ -196,11 +205,7 @@ Searcher::WDLProbeResult Searcher::probe_wdl(const Board& board, int ply, int de
 
     // Shallow depth: use simple material eval for draw ordering
     if (depth <= 3) {
-      int wp = std::popcount(board.whitePawns());
-      int wk = std::popcount(board.whiteQueens());
-      int bp = std::popcount(board.blackPawns());
-      int bk = std::popcount(board.blackQueens());
-      score = (wp - bp) * 100 + (wk - bk) * 320;
+      score = draw_eval(board);
       return WDLProbeResult::SCORE_READY;
     }
 
