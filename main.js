@@ -1255,7 +1255,7 @@ async function showDownloadDialog(type = 'dtm') {
 
     if (titleEl) {
         titleEl.textContent = type === 'cwdl'
-            ? 'Descargando finales WDL 6-7 piezas'
+            ? 'Descargando finales WDL 6-8 piezas'
             : 'Descargando finales DTM 5 piezas';
     }
 

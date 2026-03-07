@@ -98,7 +98,8 @@ const DTM_FILES = [
     'dtm_400001.bin', 'dtm_400100.bin', 'dtm_410000.bin',
 ];
 
-// List of CWDL (compressed WDL) tablebase files (6-7 pieces, conjugate-selected)
+// List of CWDL (compressed WDL) tablebase files (6-8 pieces, conjugate-selected)
+// 8-piece: pawn-only configurations (no queens)
 const CWDL_FILES = [
     'cwdl_000011.bin', 'cwdl_000012.bin', 'cwdl_000013.bin', 'cwdl_000014.bin',
     'cwdl_000015.bin', 'cwdl_000022.bin', 'cwdl_000023.bin', 'cwdl_000033.bin',
@@ -283,6 +284,22 @@ const CWDL_FILES = [
     'cwdl_400300.bin', 'cwdl_401011.bin', 'cwdl_401101.bin', 'cwdl_410002.bin',
     'cwdl_410200.bin', 'cwdl_411000.bin', 'cwdl_411001.bin', 'cwdl_411010.bin',
     'cwdl_412000.bin', 'cwdl_421000.bin',
+    // 8-piece pawn-only (no queens)
+    'cwdl_004400.bin', 'cwdl_005300.bin', 'cwdl_006200.bin', 'cwdl_007100.bin',
+    'cwdl_011600.bin', 'cwdl_015200.bin', 'cwdl_016100.bin', 'cwdl_017000.bin',
+    'cwdl_021500.bin', 'cwdl_024200.bin', 'cwdl_025100.bin', 'cwdl_026000.bin',
+    'cwdl_031400.bin', 'cwdl_041300.bin', 'cwdl_042200.bin', 'cwdl_044000.bin',
+    'cwdl_103400.bin', 'cwdl_104300.bin', 'cwdl_105200.bin', 'cwdl_113300.bin',
+    'cwdl_114200.bin', 'cwdl_115100.bin', 'cwdl_116000.bin', 'cwdl_124100.bin',
+    'cwdl_125000.bin', 'cwdl_143000.bin', 'cwdl_203300.bin', 'cwdl_204200.bin',
+    'cwdl_212300.bin', 'cwdl_213200.bin', 'cwdl_214100.bin', 'cwdl_215000.bin',
+    'cwdl_222200.bin', 'cwdl_223100.bin', 'cwdl_224000.bin', 'cwdl_232100.bin',
+    'cwdl_241100.bin', 'cwdl_242000.bin', 'cwdl_300500.bin', 'cwdl_301400.bin',
+    'cwdl_302300.bin', 'cwdl_303200.bin', 'cwdl_310400.bin', 'cwdl_311300.bin',
+    'cwdl_312200.bin', 'cwdl_313100.bin', 'cwdl_314000.bin', 'cwdl_320300.bin',
+    'cwdl_322100.bin', 'cwdl_323000.bin', 'cwdl_330200.bin', 'cwdl_331100.bin',
+    'cwdl_401300.bin', 'cwdl_411200.bin', 'cwdl_412100.bin', 'cwdl_413000.bin',
+    'cwdl_422000.bin', 'cwdl_430100.bin', 'cwdl_431000.bin', 'cwdl_440000.bin',
 ];
 
 /**
