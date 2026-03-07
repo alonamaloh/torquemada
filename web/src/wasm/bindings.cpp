@@ -920,7 +920,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
         if (!cwdlAvail.isUndefined() && cwdlAvail().as<bool>()) {
             g_searcher->set_wdl_probe([](const Board& b) -> std::optional<int> {
                 return g_cwdl_manager.lookup_wdl(b);
-            }, 7);  // 7-piece WDL tablebases
+            }, 8);  // 6-8 piece WDL tablebases
         }
     }
 
