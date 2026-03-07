@@ -804,10 +804,12 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
                 }
             }
 
-            int score = 0;
-            if (best_dtm > 0) {
+            int score;
+            if (best_dtm == tablebase::DTM_DRAW) {
+                score = search::draw_eval(jsboard.board);
+            } else if (best_dtm > 0) {
                 score = 30000 - 2 * best_dtm + 1;
-            } else if (best_dtm < 0) {
+            } else {
                 score = -30000 + 2 * (-best_dtm);
             }
             result.set("score", score);

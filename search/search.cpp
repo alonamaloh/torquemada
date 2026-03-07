@@ -65,21 +65,6 @@ TimeControl TimeControl::with_time(double soft_seconds, double hard_seconds) {
   return tc;
 }
 
-// Simple material eval for proven draws with Beal-effect noise.
-// Deterministic: noise is derived from position hash so TT entries stay consistent.
-int draw_eval(const Board& board) {
-  int wp = std::popcount(board.whitePawns());
-  int wk = std::popcount(board.whiteQueens());
-  int bp = std::popcount(board.blackPawns());
-  int bk = std::popcount(board.blackQueens());
-  int material = (wp - bp) * 100 + (wk - bk) * 320;
-
-  // Hash-based noise in [-10, +10] for the Beal effect
-  int noise = static_cast<int>(board.hash() % 21) - 10;
-
-  return material + noise;
-}
-
 // Random evaluation: reproducible pseudo-random score derived from position hash
 // Returns a score in the range [-10000, +10000] based on the hash
 int random_eval(const Board& board, int /*ply*/) {
@@ -739,7 +724,8 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
     tablebase::DTM best_dtm;
     if (dtm_manager_->find_best_move(board, best_move, best_dtm)) {
       result.best_move = best_move;
-      result.score = dtm_to_score(best_dtm, 0);
+      result.score = (best_dtm == tablebase::DTM_DRAW) ? draw_eval(board)
+                                                       : dtm_to_score(best_dtm, 0);
       result.nodes = 1;
       stats_.tb_hits++;
       result.tb_hits = 1;

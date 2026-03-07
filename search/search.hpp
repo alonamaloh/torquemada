@@ -6,6 +6,7 @@
 #include "../tablebase/tb_probe.hpp"
 #include "tt.hpp"
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <cstdint>
 #include <functional>
@@ -39,6 +40,18 @@ inline bool is_special_score(int score) {
 // Check if score indicates a forced mate
 inline bool is_mate_score(int score) {
   return score > SCORE_TB_WIN || score < -SCORE_TB_WIN;
+}
+
+// Simple material eval for proven draws with Beal-effect noise.
+// Deterministic: noise is derived from position hash so TT entries stay consistent.
+inline int draw_eval(const Board& board) {
+  int wp = std::popcount(board.whitePawns());
+  int wk = std::popcount(board.whiteQueens());
+  int bp = std::popcount(board.blackPawns());
+  int bk = std::popcount(board.blackQueens());
+  int material = (wp - bp) * 100 + (wk - bk) * 320;
+  int noise = static_cast<int>(board.hash() % 21) - 10;
+  return material + noise;
 }
 
 // Check if score is in the proven-draw range
