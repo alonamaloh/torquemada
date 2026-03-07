@@ -154,7 +154,17 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   if (dtm == tablebase::DTM_UNKNOWN) return false;
 
   stats_.tb_hits++;
-  score = dtm_to_score(dtm, ply);
+  if (dtm == tablebase::DTM_DRAW) {
+    // Simple material eval for draw ordering: avoids NN miscalibration
+    // that can cause sacrifices into DTM territory.
+    int wp = std::popcount(board.whitePawns());
+    int wk = std::popcount(board.whiteQueens());
+    int bp = std::popcount(board.blackPawns());
+    int bk = std::popcount(board.blackQueens());
+    score = (wp - bp) * 100 + (wk - bk) * 320;
+  } else {
+    score = dtm_to_score(dtm, ply);
+  }
   return true;
 }
 
@@ -184,10 +194,13 @@ Searcher::WDLProbeResult Searcher::probe_wdl(const Board& board, int ply, int de
       return WDLProbeResult::SCORE_READY;
     }
 
-    // Shallow depth: use NN eval clamped to draw range
+    // Shallow depth: use simple material eval for draw ordering
     if (depth <= 3) {
-      score = eval_(board, ply);
-      score = std::max(-SCORE_DRAW, std::min(SCORE_DRAW, score));
+      int wp = std::popcount(board.whitePawns());
+      int wk = std::popcount(board.whiteQueens());
+      int bp = std::popcount(board.blackPawns());
+      int bk = std::popcount(board.blackQueens());
+      score = (wp - bp) * 100 + (wk - bk) * 320;
       return WDLProbeResult::SCORE_READY;
     }
 
