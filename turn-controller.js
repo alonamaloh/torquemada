@@ -108,6 +108,7 @@ export class TurnController extends EventTarget {
             });
         } finally {
             this._engineMovePending = false;
+            this._evaluateTurn();
         }
         return true;
     }
@@ -229,6 +230,8 @@ export class TurnController extends EventTarget {
             }
         } finally {
             this._engineMovePending = false;
+            // Re-evaluate now that the guard is cleared — pondering may need to start
+            this._evaluateTurn();
         }
     }
 
