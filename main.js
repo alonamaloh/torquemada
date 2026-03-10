@@ -1437,6 +1437,25 @@ function setupEventHandlers() {
     const downloadCwdlBtn = document.getElementById('btn-download-cwdl');
     if (downloadCwdlBtn) downloadCwdlBtn.addEventListener('click', () => showDownloadDialog('cwdl'));
 
+    const clearTbBtn = document.getElementById('btn-clear-tb');
+    if (clearTbBtn) clearTbBtn.addEventListener('click', async () => {
+        if (!tablebaseLoader || !tablebaseLoader.isAvailable()) {
+            alert('No hay finales almacenados.');
+            return;
+        }
+        if (!confirm('¿Borrar todos los finales descargados?')) return;
+        await tablebaseLoader.clearTablebases();
+        // Also remove legacy "tablebases" directory if it exists
+        try {
+            const opfsRoot = await navigator.storage.getDirectory();
+            await opfsRoot.removeEntry('tablebases', { recursive: true });
+        } catch (e) {
+            // Ignore if it doesn't exist
+        }
+        alert('Finales borrados.');
+        window.location.reload();
+    });
+
     // Edit mode
     const editBtn = document.getElementById('btn-edit');
     if (editBtn) editBtn.addEventListener('click', enterEditMode);

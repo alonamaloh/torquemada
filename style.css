@@ -260,6 +260,20 @@ body {
     }
 }
 
+.btn-danger {
+    color: #e06060;
+    border-color: #e06060;
+    font-size: 0.8rem;
+}
+
+@media (hover: hover) {
+    .btn-danger:hover:not(:disabled) {
+        background: #e06060;
+        color: #fff;
+        border-color: #e06060;
+    }
+}
+
 .btn:focus-visible {
     border-color: var(--accent);
 }
