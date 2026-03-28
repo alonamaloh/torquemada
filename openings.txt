@@ -1,0 +1,34 @@
+000065ff fdf20000 00000000 Partida Anderson
+00006dfb ff928000 00000000 Partida clásica
+000467ee deb38000 00000000 Encrucijada de la partida española
+00046fae deb38000 00000000 Perdente de Canalejas
+000c27ee deb38000 00000000 Gambito de Garcés
+000475ee deb38000 00000000 Permuta de Canalejas
+004067ee deb38000 00000000 Gambiro de Canalejas
+00046f6e deb38000 00000000 Propuesta de gambito de Cecina
+0004e7aa daf30000 00000000 Gran tiro de Canalejas
+000427fe f7d28000 00000000 Partida de Cecina
+000435fe 7f5a8000 00000000 Contraataque italiano
+00042f7e 7fd28000 00000000 Posición de Lanci
+00002dff ffd40000 00000000 Partida cruzada
+00005ecf bee60000 00000000 Ataque Anderson
+00001dff ffe20000 00000000 Partida crítica cerrada
+000047ff ffb40000 00000000 Apertura paralela
+00002dff ff780000 00000000 Apertura heroica
+00000dff f7b40000 00000000 Partida del río
+000094ff 7fb40000 00000000 Bilateral
+000058ff 7fa60000 00000000 Oblicua moderna
+000010ff f7104000 00000000 Defensa andaluza
+00010efe 77e60000 00000000 Lateral derecha
+00010efe 77e41000 00000000 Partida del principiante
+00010efe 76f60000 00000000 Partida ortodoxa
+00010efe 77e42000 00000000 Defensa de Garcés
+00001dfe 77f40000 00000000 Ataque crítico
+00001efe 77e50000 00000000 Contralateral derecha
+00003afe 77e50000 00000000 Variante del centro
+00001fee 77e50000 00000000 Variante marginal
+00004bef 7fb40000 00000000 Oblicua clásica
+000087ef 7fb40000 00000000 Lateral izquierda
+00000ffe 7bf40000 00000000 Defensa toledana
+00000ffe 7fb04000 00000000 Ataque a flecha
+000029ef f7b00000 00000000 Juego de celadas

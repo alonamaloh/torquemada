@@ -43,6 +43,9 @@ let drawOfferResolve = null;
 // Opening book state
 let useBook = true;
 
+// Opening names: maps "white,black,kings" position key to opening name
+const openingNames = new Map();
+
 // Saved options for restoring after match play
 let savedPonder = false;
 let savedShowAnalysis = false;
@@ -93,6 +96,27 @@ async function init() {
             }
         } catch (err) {
             console.warn('Could not load opening book:', err);
+        }
+
+        // Load opening names
+        try {
+            const resp = await fetch('./openings.txt');
+            if (resp.ok) {
+                const text = await resp.text();
+                for (const line of text.split('\n')) {
+                    if (!line.trim()) continue;
+                    const match = line.match(/^([0-9a-f]+)\s+([0-9a-f]+)\s+([0-9a-f]+)\s+(.+)$/);
+                    if (match) {
+                        const w = parseInt(match[1], 16);
+                        const b = parseInt(match[2], 16);
+                        const k = parseInt(match[3], 16);
+                        openingNames.set(`${w},${b},${k}`, match[4]);
+                    }
+                }
+                console.log('Opening names loaded:', openingNames.size);
+            }
+        } catch (err) {
+            console.warn('Could not load opening names:', err);
         }
 
         // Create modules
@@ -153,7 +177,7 @@ function wireGameStateEvents() {
         updateUndoRedoButtons();
         updatePlayButton();
         searchManager.clearPV();
-        updateStatus('Nueva partida');
+        updateStatus('');
     });
 
     gameState.addEventListener('move', (e) => {
@@ -166,7 +190,8 @@ function wireGameStateEvents() {
         updatePlayButton();
         if (!gameOver) {
             const side = board.whiteToMove ? 'blancas' : 'negras';
-            updateStatus(`Mueven ${side}`);
+            const opening = getOpeningName(board);
+            updateStatus(opening ? `${opening} — Mueven ${side}` : `Mueven ${side}`);
         }
     });
 
@@ -184,7 +209,9 @@ function wireGameStateEvents() {
         updateUndoRedoButtons();
         updatePlayButton();
         searchManager.clearPV();
-        updateStatus('Jugada deshecha');
+        const opening = getOpeningName(board);
+        const side = board.whiteToMove ? 'blancas' : 'negras';
+        updateStatus(opening ? `${opening} — Mueven ${side}` : `Mueven ${side}`);
     });
 
     gameState.addEventListener('redo', (e) => {
@@ -197,7 +224,9 @@ function wireGameStateEvents() {
         updateUndoRedoButtons();
         updatePlayButton();
         searchManager.clearPV();
-        updateStatus('Jugada rehecha');
+        const opening = getOpeningName(board);
+        const side = board.whiteToMove ? 'blancas' : 'negras';
+        updateStatus(opening ? `${opening} — Mueven ${side}` : `Mueven ${side}`);
     });
 
     gameState.addEventListener('positionChanged', (e) => {
@@ -208,7 +237,7 @@ function wireGameStateEvents() {
         updateMoveHistory();
         updateUndoRedoButtons();
         updatePlayButton();
-        updateStatus('Posición establecida');
+        updateStatus('');
     });
 
     gameState.addEventListener('gameLoaded', (e) => {
@@ -367,6 +396,12 @@ async function animateAndMakeMove(move, animate) {
 
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getOpeningName(board) {
+    if (!board) return null;
+    const key = `${board.white},${board.black},${board.kings}`;
+    return openingNames.get(key) || null;
 }
 
 function updateStatus(message) {
