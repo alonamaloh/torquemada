@@ -189,9 +189,8 @@ function wireGameStateEvents() {
         updateUndoRedoButtons();
         updatePlayButton();
         if (!gameOver) {
-            const side = board.whiteToMove ? 'blancas' : 'negras';
             const opening = getOpeningName(board);
-            updateStatus(opening ? `${opening} — Mueven ${side}` : `Mueven ${side}`);
+            updateStatus(opening || '');
         }
     });
 
@@ -210,8 +209,7 @@ function wireGameStateEvents() {
         updatePlayButton();
         searchManager.clearPV();
         const opening = getOpeningName(board);
-        const side = board.whiteToMove ? 'blancas' : 'negras';
-        updateStatus(opening ? `${opening} — Mueven ${side}` : `Mueven ${side}`);
+        updateStatus(opening || '');
     });
 
     gameState.addEventListener('redo', (e) => {
@@ -225,8 +223,7 @@ function wireGameStateEvents() {
         updatePlayButton();
         searchManager.clearPV();
         const opening = getOpeningName(board);
-        const side = board.whiteToMove ? 'blancas' : 'negras';
-        updateStatus(opening ? `${opening} — Mueven ${side}` : `Mueven ${side}`);
+        updateStatus(opening || '');
     });
 
     gameState.addEventListener('positionChanged', (e) => {
