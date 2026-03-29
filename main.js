@@ -177,6 +177,7 @@ function wireGameStateEvents() {
         updateUndoRedoButtons();
         updatePlayButton();
         searchManager.clearPV();
+        updateOpeningName(null);
         updateStatus('');
     });
 
@@ -188,9 +189,9 @@ function wireGameStateEvents() {
         updateMoveHistory();
         updateUndoRedoButtons();
         updatePlayButton();
+        updateOpeningName(board);
         if (!gameOver) {
-            const opening = getOpeningName(board);
-            updateStatus(opening || '');
+            updateStatus('');
         }
     });
 
@@ -208,8 +209,8 @@ function wireGameStateEvents() {
         updateUndoRedoButtons();
         updatePlayButton();
         searchManager.clearPV();
-        const opening = getOpeningName(board);
-        updateStatus(opening || '');
+        updateOpeningName(board);
+        updateStatus('');
     });
 
     gameState.addEventListener('redo', (e) => {
@@ -222,8 +223,8 @@ function wireGameStateEvents() {
         updateUndoRedoButtons();
         updatePlayButton();
         searchManager.clearPV();
-        const opening = getOpeningName(board);
-        updateStatus(opening || '');
+        updateOpeningName(board);
+        updateStatus('');
     });
 
     gameState.addEventListener('positionChanged', (e) => {
@@ -234,6 +235,7 @@ function wireGameStateEvents() {
         updateMoveHistory();
         updateUndoRedoButtons();
         updatePlayButton();
+        updateOpeningName(null);
         updateStatus('');
     });
 
@@ -245,6 +247,7 @@ function wireGameStateEvents() {
         updateMoveHistory();
         updateUndoRedoButtons();
         updatePlayButton();
+        updateOpeningName(gameState.board);
         updateStatus('Partida cargada');
     });
 
@@ -404,6 +407,11 @@ function getOpeningName(board) {
 function updateStatus(message) {
     const el = document.getElementById('status');
     if (el) el.textContent = message;
+}
+
+function updateOpeningName(board) {
+    const el = document.getElementById('opening-name');
+    if (el) el.textContent = getOpeningName(board) || '';
 }
 
 function updateLoadingStatus(message) {
