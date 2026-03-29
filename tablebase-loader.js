@@ -97,7 +97,7 @@ const DTM_FILES = [
     'dtm_310010.bin', 'dtm_310100.bin', 'dtm_311000.bin', 'dtm_320000.bin',
     'dtm_400001.bin', 'dtm_400100.bin', 'dtm_410000.bin',
     // Select 7-piece DTM files for long queen endgames
-    'dtm_111112.bin',
+    'dtm_111112.bin', 'dtm_111121.bin',
 ];
 
 // List of CWDL (compressed WDL) tablebase files (6-8 pieces, conjugate-selected)
