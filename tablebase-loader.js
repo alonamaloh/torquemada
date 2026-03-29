@@ -354,16 +354,12 @@ export class TablebaseLoader {
      * Download missing tablebases from server
      * @param {Function} onProgress - Callback(loaded, total, currentFile)
      */
-    async downloadTablebases(onProgress = null, force = false) {
+    async downloadTablebases(onProgress = null) {
         if (!this.isAvailable()) {
             throw new Error('OPFS not available. Tablebase storage requires a browser with Origin Private File System support.');
         }
 
         this.onProgress = onProgress;
-
-        if (force) {
-            await this.clearFiles(DTM_FILES);
-        }
 
         // Check what's already stored
         const stored = await this.checkStoredTablebases();
@@ -488,13 +484,9 @@ export class TablebaseLoader {
      * Download missing CWDL tablebases from server
      * @param {Function} onProgress - Callback(loaded, total, currentFile)
      */
-    async downloadCWDLTablebases(onProgress = null, force = false) {
+    async downloadCWDLTablebases(onProgress = null) {
         if (!this.isAvailable()) {
             throw new Error('OPFS not available.');
-        }
-
-        if (force) {
-            await this.clearFiles(CWDL_FILES);
         }
 
         // Check what's already stored
@@ -543,16 +535,6 @@ export class TablebaseLoader {
     /**
      * Clear all stored tablebases
      */
-    async clearFiles(fileList) {
-        if (!this.isAvailable()) return;
-        const fileSet = new Set(fileList);
-        for await (const entry of this.tbDirectory.values()) {
-            if (entry.kind === 'file' && fileSet.has(entry.name)) {
-                await this.tbDirectory.removeEntry(entry.name);
-            }
-        }
-    }
-
     async clearTablebases() {
         if (!this.isAvailable()) {
             return;
@@ -564,12 +546,6 @@ export class TablebaseLoader {
         }
     }
 
-    async hasStoredTablebases() {
-        if (!this.isAvailable()) return { dtm: false, cwdl: false };
-        const stored = await this.checkStoredTablebases();
-        const storedCwdl = await this.checkStoredCWDLTablebases();
-        return { dtm: stored.length > 0, cwdl: storedCwdl.length > 0 };
-    }
 }
 
 /**
