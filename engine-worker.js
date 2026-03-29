@@ -18,11 +18,9 @@ let stopFlagView = null;
 let wasmStopFlagAddress = 0;
 let wasmMemory = null;
 
-// Tablebase lazy loading support
-const CHUNK_SIZE = 16384;  // 16 KB chunks
+// Tablebase loading support
 let tbSyncHandles = new Map();  // materialKey -> FileSystemSyncAccessHandle
 let tbFileSizes = new Map();    // materialKey -> file size
-let chunkCache = new Map();     // materialKey -> Map<chunkIdx, Int8Array>
 let tablebasesAvailable = false;
 
 // CWDL (compressed WDL) tablebase support
@@ -98,46 +96,6 @@ async function initTablebaseSyncHandles() {
 }
 
 /**
- * Load a specific chunk from a tablebase file
- * Called from WASM via globalThis.loadTablebaseChunk
- */
-globalThis.loadTablebaseChunk = function(materialKey, chunkIdx) {
-    // Check cache first
-    if (!chunkCache.has(materialKey)) {
-        chunkCache.set(materialKey, new Map());
-    }
-    const fileCache = chunkCache.get(materialKey);
-    if (fileCache.has(chunkIdx)) {
-        return fileCache.get(chunkIdx);
-    }
-
-    // Load from OPFS
-    const handle = tbSyncHandles.get(materialKey);
-    if (!handle) {
-        return null;
-    }
-
-    const fileSize = tbFileSizes.get(materialKey);
-    const offset = chunkIdx * CHUNK_SIZE;
-    const readSize = Math.min(CHUNK_SIZE, fileSize - offset);
-
-    if (readSize <= 0) {
-        return null;
-    }
-
-    const buffer = new Uint8Array(readSize);
-    handle.read(buffer, { at: offset });
-
-    // Convert to Int8Array for signed interpretation
-    const signedBuffer = new Int8Array(buffer.buffer);
-
-    // Cache it
-    fileCache.set(chunkIdx, signedBuffer);
-
-    return signedBuffer;
-};
-
-/**
  * Check if tablebases are available (have sync handles open)
  */
 globalThis.tablebasesAvailable = function() {
@@ -149,6 +107,21 @@ globalThis.tablebasesAvailable = function() {
  */
 globalThis.cwdlAvailable = function() {
     return cwdlAvailable;
+};
+
+/**
+ * Load an entire DTM file by material key
+ * Called from WASM to cache DTM data in C++ memory
+ * Returns Uint8Array or null if not found
+ */
+globalThis.loadDTMFile = function(materialKey) {
+    const handle = tbSyncHandles.get(materialKey);
+    if (!handle) return null;
+
+    const size = tbFileSizes.get(materialKey);
+    const buffer = new Uint8Array(size);
+    handle.read(buffer, { at: 0 });
+    return buffer;
 };
 
 /**
