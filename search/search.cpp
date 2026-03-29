@@ -137,10 +137,6 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   // Check if we have any DTM source available
   if (!dtm_manager_ && !dtm_probe_func_) return false;
 
-  // Only probe when n_reversible == 0 (after a capture or pawn move)
-  // This forces the winning side to find moves that make progress
-  if (board.n_reversible != 0) return false;
-
   int piece_count = std::popcount(board.allPieces());
   if (piece_count > tb_piece_limit_) return false;
 
@@ -182,6 +178,12 @@ Searcher::WDLProbeResult Searcher::probe_wdl(const Board& board, int ply, int de
   if (wdl == 0) {
     // DRAW: proven draw — handle with score range
     stats_.tb_hits++;
+
+    // Espada/Broquel mode: draws are decisive
+    if (draw_value_ != 0) {
+      score = (ply % 2 == 0) ? draw_value_ : -draw_value_;
+      return WDLProbeResult::SCORE_READY;
+    }
 
     // Window cutoff: if the search needs something better than any draw,
     // or any draw causes a cutoff, return immediately
@@ -230,8 +232,8 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     int max_back = std::min(static_cast<int>(board.n_reversible), ply);
     for (int back = 4; back <= max_back; back += 2) {
       if (pos_hash_history_[ply - back] == pos_hash) {
-        // Found a repetition - return draw score
-        return 0;
+        // Found a repetition - return draw score (or draw_value_ for Espada/Broquel)
+        return (ply % 2 == 0) ? draw_value_ : -draw_value_;
       }
     }
   }
