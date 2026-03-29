@@ -28,8 +28,6 @@ using namespace emscripten;
 #define ENGINE_VERSION __DATE__ " " __TIME__
 
 namespace {
-    // Constants for chunk-based tablebase loading
-    constexpr int CHUNK_SIZE = 16384;  // 16 KB chunks
     constexpr int HEADER_SIZE = 33;    // DTM file header size
 
     // Global RNG for evaluation noise, seeded with system clock
@@ -59,45 +57,27 @@ namespace {
         return buf;
     }
 
-    // Lazy-loading DTM tablebase manager
-    // Calls into JS to load chunks on demand
+    // DTM tablebase manager — caches entire files in C++ memory
+    // to avoid costly WASM↔JS boundary crossings on every probe.
     class WasmDTMTablebaseManager {
     public:
         tablebase::DTM lookup_dtm(const Board& board) const {
-            // Check if tablebases are available in JS
-            val tablebasesAvailable = val::global("tablebasesAvailable");
-            if (tablebasesAvailable.isUndefined() || !tablebasesAvailable().as<bool>()) {
-                return tablebase::DTM_UNKNOWN;
-            }
+            if (!available_) return tablebase::DTM_UNKNOWN;
 
             Material m = get_material(board);
             std::string key = material_key(m);
+
+            const std::vector<std::int8_t>* file_data = get_file(key);
+            if (!file_data) return tablebase::DTM_UNKNOWN;
+
             std::size_t idx = board_to_index(board, m);
+            std::size_t offset = HEADER_SIZE + idx;
+            if (offset >= file_data->size()) return tablebase::DTM_UNKNOWN;
 
-            // Compute chunk index and offset
-            // File layout: 33-byte header + DTM values (1 byte each)
-            int file_offset = HEADER_SIZE + static_cast<int>(idx);
-            int chunk_idx = file_offset / CHUNK_SIZE;
-            int offset_in_chunk = file_offset % CHUNK_SIZE;
-
-            // Call JS to get the chunk (it handles caching)
-            val loadChunk = val::global("loadTablebaseChunk");
-            val chunk = loadChunk(key, chunk_idx);
-
-            if (chunk.isNull() || chunk.isUndefined()) {
-                return tablebase::DTM_UNKNOWN;
-            }
-
-            // Check if offset is within chunk bounds
-            int chunk_length = chunk["length"].as<int>();
-            if (offset_in_chunk >= chunk_length) {
-                return tablebase::DTM_UNKNOWN;
-            }
-
-            // Get the DTM value (signed byte)
-            int dtm_value = chunk[offset_in_chunk].as<int>();
-            return static_cast<tablebase::DTM>(dtm_value);
+            return static_cast<tablebase::DTM>((*file_data)[offset]);
         }
+
+        void set_available(bool avail) { available_ = avail; }
 
         // Find best move using DTM lookup
         bool find_best_move(const Board& board, Move& best_move, tablebase::DTM& best_dtm) const {
@@ -166,6 +146,39 @@ namespace {
             }
 
             return found;
+        }
+
+    private:
+        bool available_ = false;
+        mutable std::unordered_map<std::string, std::vector<std::int8_t>> cache_;
+        mutable std::unordered_set<std::string> not_found_;
+
+        const std::vector<std::int8_t>* get_file(const std::string& key) const {
+            auto it = cache_.find(key);
+            if (it != cache_.end()) return &it->second;
+            if (not_found_.count(key)) return nullptr;
+
+            // Load from JS
+            val loadFile = val::global("loadDTMFile");
+            if (loadFile.isUndefined()) {
+                not_found_.insert(key);
+                return nullptr;
+            }
+
+            val data = loadFile(key);
+            if (data.isNull() || data.isUndefined()) {
+                not_found_.insert(key);
+                return nullptr;
+            }
+
+            unsigned int length = data["length"].as<unsigned int>();
+            std::vector<std::int8_t> buffer(length);
+            val memoryView = val(typed_memory_view(length,
+                reinterpret_cast<std::uint8_t*>(buffer.data())));
+            memoryView.call<void>("set", data);
+
+            cache_[key] = std::move(buffer);
+            return &cache_[key];
         }
     };
 
@@ -787,6 +800,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
 
     // Check if tablebases are available
     bool tb_available = hasTablebases();
+    g_tb_manager.set_available(tb_available);
 
     // Try tablebase lookup first for endgame wins/losses (draws fall through to search)
     if (piece_count <= 5 && tb_available) {
@@ -964,7 +978,9 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
 
 // Probe tablebase for current position (returns DTM or null)
 val probeDTM(const JSBoard& jsboard) {
-    if (!hasTablebases()) {
+    bool tb_available = hasTablebases();
+    g_tb_manager.set_available(tb_available);
+    if (!tb_available) {
         return val::null();
     }
 
