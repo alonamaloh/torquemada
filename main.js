@@ -1266,7 +1266,7 @@ async function exitMatchPlay() {
 
 // --- Tablebase download ---
 
-async function showDownloadDialog(type = 'dtm') {
+async function showDownloadDialog(type = 'dtm', force = false) {
     const dialog = document.getElementById('download-dialog');
     if (!dialog) {
         alert('Descarga de finales no disponible');
@@ -1307,7 +1307,7 @@ async function showDownloadDialog(type = 'dtm') {
             const pct = Math.round((loaded / total) * 100);
             if (progressEl) progressEl.style.width = `${pct}%`;
             if (statusEl) statusEl.textContent = `Descargando: ${file} (${loaded}/${total})`;
-        });
+        }, force);
 
         if (!cancelled) {
             statusEl.textContent = '¡Listo! Se usarán automáticamente.';
@@ -1468,6 +1468,22 @@ function setupEventHandlers() {
 
     const downloadCwdlBtn = document.getElementById('btn-download-cwdl');
     if (downloadCwdlBtn) downloadCwdlBtn.addEventListener('click', () => showDownloadDialog('cwdl'));
+
+    const reloadTbBtn = document.getElementById('btn-reload-tb');
+    if (reloadTbBtn) reloadTbBtn.addEventListener('click', async () => {
+        if (!tablebaseLoader || !tablebaseLoader.isAvailable()) {
+            alert('No hay finales almacenados.');
+            return;
+        }
+        const { dtm, cwdl } = await tablebaseLoader.hasStoredTablebases();
+        if (!dtm && !cwdl) {
+            alert('No hay finales almacenados. Usa los botones de descarga.');
+            return;
+        }
+        if (!confirm('¿Borrar caché y volver a descargar los finales?')) return;
+        if (dtm) await showDownloadDialog('dtm', true);
+        if (cwdl) await showDownloadDialog('cwdl', true);
+    });
 
     const clearTbBtn = document.getElementById('btn-clear-tb');
     if (clearTbBtn) clearTbBtn.addEventListener('click', async () => {
