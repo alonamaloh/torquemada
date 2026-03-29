@@ -539,10 +539,15 @@ export class TablebaseLoader {
         if (!this.isAvailable()) {
             return;
         }
+        // Collect names first — removing entries during iteration skips entries
+        const names = [];
         for await (const entry of this.tbDirectory.values()) {
             if (entry.kind === 'file') {
-                await this.tbDirectory.removeEntry(entry.name);
+                names.push(entry.name);
             }
+        }
+        for (const name of names) {
+            await this.tbDirectory.removeEntry(name);
         }
     }
 
