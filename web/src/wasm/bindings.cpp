@@ -808,7 +808,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     g_tb_manager.set_available(tb_available);
 
     // Try tablebase lookup first for endgame wins/losses (draws fall through to search)
-    if (piece_count <= 5 && tb_available) {
+    if (piece_count <= 7 && tb_available) {
         Move best_move;
         tablebase::DTM best_dtm;
         if (g_tb_manager.find_best_move(jsboard.board, best_move, best_dtm)
