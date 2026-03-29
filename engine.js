@@ -6359,7 +6359,7 @@ var CheckersEngine = (() => {
             var dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = function() {
                 return (dynCall_iiiiiijj = Module["dynCall_iiiiiijj"] = Module["asm"]["ub"]).apply(null, arguments)
             };
-            var __emscripten_allow_main_runtime_queued_calls = Module["__emscripten_allow_main_runtime_queued_calls"] = 25724;
+            var __emscripten_allow_main_runtime_queued_calls = Module["__emscripten_allow_main_runtime_queued_calls"] = 26044;
 
             function invoke_iii(index, a1, a2) {
                 var sp = stackSave();
