@@ -25,3 +25,14 @@ Thumbs.db
 # Scratch notes
 NOTES
 nohup.out
+
+# Prover output/scratch
+*.jnk
+*.broquel
+test/
+test_fast/
+bug/
+9-13
+10-13
+10-14
+10-14.2

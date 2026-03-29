@@ -287,8 +287,8 @@ def main():
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     args = parser.parse_args()
 
-    # Parse hidden layer sizes
-    hidden_sizes = [int(x) for x in args.hidden.split(',')]
+    # Parse hidden layer sizes (empty string = no hidden layers = linear model)
+    hidden_sizes = [int(x) for x in args.hidden.split(',') if x.strip()]
 
     # Load data
     h5_files = sorted(glob.glob(args.data))

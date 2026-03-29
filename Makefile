@@ -35,7 +35,7 @@ NN_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(NN_SRCS))
 ALL_OBJS = $(CORE_OBJS) $(SEARCH_OBJS) $(TB_OBJS) $(NN_OBJS)
 
 # Targets
-all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play $(BINDIR)/genbook $(BINDIR)/viewbook $(BINDIR)/condensebook
+all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play $(BINDIR)/genbook $(BINDIR)/viewbook $(BINDIR)/condensebook $(BINDIR)/prove
 
 # Python module
 python: dirs dtm_sampler$(PYTHON_EXT)
@@ -100,6 +100,18 @@ $(OBJDIR)/viewbook.o: viewbook.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(OBJDIR)/condensebook.o: condensebook.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BINDIR)/prove: $(ALL_OBJS) $(OBJDIR)/prove.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+$(OBJDIR)/prove.o: prove.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BINDIR)/test_prover: $(ALL_OBJS) $(OBJDIR)/test_prover.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+$(OBJDIR)/test_prover.o: test_prover.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 # Python module: dtm_sampler (needs -fPIC objects)

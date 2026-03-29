@@ -259,6 +259,10 @@ public:
   // Set ponder mode: search each root move with full window to populate TT for all lines
   void set_ponder_mode(bool v) { ponder_mode_ = v; }
 
+  // Set draw value for Espada/Broquel proving
+  // Positive = draws are wins for root side; negative = draws are losses
+  void set_draw_value(int v) { draw_value_ = v; }
+
   // Check if search should stop and throw if so
   void check_stop() {
     if (stop_flag_ && stop_flag_->load(std::memory_order_relaxed)) throw SearchInterrupted{};
@@ -358,6 +362,10 @@ private:
 
   // Ponder mode: search each root move with full window
   bool ponder_mode_ = false;
+
+  // Draw value for Espada/Broquel mode
+  // 0 = normal draws; nonzero = draws are decisive (from root's perspective)
+  int draw_value_ = 0;
 
   // External stop flag (for SIGINT handling)
   std::atomic<bool>* stop_flag_ = nullptr;
