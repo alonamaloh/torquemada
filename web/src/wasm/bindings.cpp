@@ -149,6 +149,7 @@ namespace {
         }
 
     private:
+        static constexpr std::size_t MAX_CACHE_ENTRIES = 50;
         bool available_ = false;
         mutable std::unordered_map<std::string, std::vector<std::int8_t>> cache_;
         mutable std::unordered_set<std::string> not_found_;
@@ -169,6 +170,10 @@ namespace {
             if (data.isNull() || data.isUndefined()) {
                 not_found_.insert(key);
                 return nullptr;
+            }
+
+            if (cache_.size() >= MAX_CACHE_ENTRIES) {
+                cache_.clear();
             }
 
             unsigned int length = data["length"].as<unsigned int>();
