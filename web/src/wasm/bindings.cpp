@@ -931,7 +931,7 @@ val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time
     if (tb_available) {
         g_searcher->set_dtm_probe([](const Board& b) {
             return g_tb_manager.lookup_dtm(b);
-        }, 5);  // 5-piece tablebases
+        }, 7);  // DTM tablebases up to 7 pieces
     }
 
     // Set up WDL probe function if CWDL tablebases are available
