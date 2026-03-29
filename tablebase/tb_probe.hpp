@@ -135,6 +135,13 @@ public:
     // First, get our current DTM to know if we're winning/losing/drawing
     DTM current_dtm = lookup_dtm(board);
 
+    // If our own DTM is unknown, bail out — the move selection logic
+    // below depends on knowing whether we're winning, losing, or drawing.
+    // Let the regular search (with DTM probes on children) handle it.
+    if (current_dtm == DTM_UNKNOWN) {
+      return false;
+    }
+
     DTM best_opp_dtm = DTM_UNKNOWN;
     bool found = false;
 
