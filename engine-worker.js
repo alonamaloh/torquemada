@@ -110,17 +110,19 @@ globalThis.cwdlAvailable = function() {
 };
 
 /**
- * Load an entire DTM file by material key
- * Called from WASM to cache DTM data in C++ memory
- * Returns Uint8Array or null if not found
+ * Load a chunk of a DTM file by material key
+ * Called from WASM; returns Uint8Array or null if not found
  */
-globalThis.loadDTMFile = function(materialKey) {
+globalThis.loadDTMChunk = function(materialKey, offset, length) {
     const handle = tbSyncHandles.get(materialKey);
     if (!handle) return null;
 
-    const size = tbFileSizes.get(materialKey);
-    const buffer = new Uint8Array(size);
-    handle.read(buffer, { at: 0 });
+    const fileSize = tbFileSizes.get(materialKey);
+    if (offset >= fileSize) return null;
+
+    const readLen = Math.min(length, fileSize - offset);
+    const buffer = new Uint8Array(readLen);
+    handle.read(buffer, { at: offset });
     return buffer;
 };
 
