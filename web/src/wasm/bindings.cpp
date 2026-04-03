@@ -57,8 +57,9 @@ namespace {
         return buf;
     }
 
-    // DTM tablebase manager — caches entire files in C++ memory
-    // to avoid costly WASM↔JS boundary crossings on every probe.
+    // DTM tablebase manager — caches fixed-size chunks in C++ memory
+    // to avoid costly WASM↔JS boundary crossings on every probe,
+    // while bounding total memory usage.
     class WasmDTMTablebaseManager {
     public:
         tablebase::DTM lookup_dtm(const Board& board) const {
@@ -67,14 +68,13 @@ namespace {
             Material m = get_material(board);
             std::string key = material_key(m);
 
-            const std::vector<std::int8_t>* file_data = get_file(key);
-            if (!file_data) return tablebase::DTM_UNKNOWN;
-
             std::size_t idx = board_to_index(board, m);
-            std::size_t offset = HEADER_SIZE + idx;
-            if (offset >= file_data->size()) return tablebase::DTM_UNKNOWN;
+            std::size_t file_offset = HEADER_SIZE + idx;
 
-            return static_cast<tablebase::DTM>((*file_data)[offset]);
+            std::int8_t value;
+            if (!read_byte(key, file_offset, value)) return tablebase::DTM_UNKNOWN;
+
+            return static_cast<tablebase::DTM>(value);
         }
 
         void set_available(bool avail) { available_ = avail; }
@@ -89,6 +89,18 @@ namespace {
             }
 
             tablebase::DTM current_dtm = lookup_dtm(board);
+
+            // If our own DTM is unknown, bail out — the move selection logic
+            // below depends on knowing whether we're winning, losing, or drawing.
+            // Let the regular search (with DTM probes on children) handle it.
+            if (current_dtm == tablebase::DTM_UNKNOWN) {
+                printf("[DTM] find_best_move: current DTM unknown, falling through to search\n");
+                return false;
+            }
+
+            printf("[DTM] find_best_move: current_dtm=%d, %zu legal moves\n",
+                   (int)current_dtm, moves.size());
+
             tablebase::DTM best_opp_dtm = tablebase::DTM_UNKNOWN;
             bool found = false;
 
@@ -102,6 +114,9 @@ namespace {
                 } else {
                     opp_dtm = lookup_dtm(child);
                 }
+
+                printf("[DTM]   move fxt=0x%08x cap=0x%08x -> opp_dtm=%d\n",
+                       move.from_xor_to, move.captures, (int)opp_dtm);
 
                 if (opp_dtm == tablebase::DTM_UNKNOWN) {
                     continue;
@@ -149,41 +164,89 @@ namespace {
         }
 
     private:
-        static constexpr std::size_t MAX_CACHE_ENTRIES = 50;
+        static constexpr std::size_t CHUNK_SIZE = 65536;      // 64 KB per chunk
+        static constexpr std::size_t MAX_CHUNKS = 512;         // 32 MB total cache
+
+        struct ChunkKey {
+            std::string material;
+            std::size_t chunk_idx;
+            bool operator==(const ChunkKey& o) const {
+                return chunk_idx == o.chunk_idx && material == o.material;
+            }
+        };
+
+        struct ChunkKeyHash {
+            std::size_t operator()(const ChunkKey& k) const {
+                std::size_t h = std::hash<std::string>{}(k.material);
+                h ^= std::hash<std::size_t>{}(k.chunk_idx) + 0x9e3779b9 + (h << 6) + (h >> 2);
+                return h;
+            }
+        };
+
+        struct CacheEntry {
+            std::vector<std::int8_t> data;
+            std::size_t lru_seq;  // higher = more recently used
+        };
+
         bool available_ = false;
-        mutable std::unordered_map<std::string, std::vector<std::int8_t>> cache_;
+        mutable std::unordered_map<ChunkKey, CacheEntry, ChunkKeyHash> cache_;
         mutable std::unordered_set<std::string> not_found_;
+        mutable std::size_t lru_counter_ = 0;
 
-        const std::vector<std::int8_t>* get_file(const std::string& key) const {
-            auto it = cache_.find(key);
-            if (it != cache_.end()) return &it->second;
-            if (not_found_.count(key)) return nullptr;
+        bool read_byte(const std::string& key, std::size_t file_offset,
+                       std::int8_t& out) const {
+            if (not_found_.count(key)) return false;
 
-            // Load from JS
-            val loadFile = val::global("loadDTMFile");
-            if (loadFile.isUndefined()) {
-                not_found_.insert(key);
-                return nullptr;
+            std::size_t chunk_idx = file_offset / CHUNK_SIZE;
+            std::size_t offset_in_chunk = file_offset % CHUNK_SIZE;
+
+            ChunkKey ck{key, chunk_idx};
+            auto it = cache_.find(ck);
+            if (it != cache_.end()) {
+                if (offset_in_chunk >= it->second.data.size()) return false;
+                it->second.lru_seq = ++lru_counter_;
+                out = it->second.data[offset_in_chunk];
+                return true;
             }
 
-            val data = loadFile(key);
+            // Load chunk from JS
+            val loadChunk = val::global("loadDTMChunk");
+            if (loadChunk.isUndefined()) return false;
+
+            val data = loadChunk(key,
+                                 static_cast<int>(chunk_idx * CHUNK_SIZE),
+                                 static_cast<int>(CHUNK_SIZE));
             if (data.isNull() || data.isUndefined()) {
                 not_found_.insert(key);
-                return nullptr;
-            }
-
-            if (cache_.size() >= MAX_CACHE_ENTRIES) {
-                cache_.clear();
+                return false;
             }
 
             unsigned int length = data["length"].as<unsigned int>();
+            if (length == 0) {
+                not_found_.insert(key);
+                return false;
+            }
+
+            // Evict oldest chunks if at capacity
+            while (cache_.size() >= MAX_CHUNKS) {
+                auto oldest = cache_.begin();
+                for (auto ci = cache_.begin(); ci != cache_.end(); ++ci) {
+                    if (ci->second.lru_seq < oldest->second.lru_seq)
+                        oldest = ci;
+                }
+                cache_.erase(oldest);
+            }
+
             std::vector<std::int8_t> buffer(length);
             val memoryView = val(typed_memory_view(length,
                 reinterpret_cast<std::uint8_t*>(buffer.data())));
             memoryView.call<void>("set", data);
 
-            cache_[key] = std::move(buffer);
-            return &cache_[key];
+            if (offset_in_chunk >= length) return false;
+            out = buffer[offset_in_chunk];
+
+            cache_[ck] = CacheEntry{std::move(buffer), ++lru_counter_};
+            return true;
         }
     };
 
@@ -800,6 +863,11 @@ void setUseBook(bool use_book) {
 val doSearchWithCallback(const JSBoard& jsboard, int max_depth, double soft_time,
                          double hard_time, val progress_callback, bool analyze_mode = false,
                          bool ponder_mode = false) {
+    printf("[ENGINE] searchWithCallback: white=0x%08x black=0x%08x kings=0x%08x n_rev=%u "
+           "white_to_move=%d depth=%d soft=%.2f hard=%.2f analyze=%d ponder=%d\n",
+           jsboard.board.white, jsboard.board.black, jsboard.board.kings,
+           jsboard.board.n_reversible, jsboard.white_to_move,
+           max_depth, soft_time, hard_time, analyze_mode, ponder_mode);
     val result = val::object();
     int piece_count = jsboard.pieceCount();
 
