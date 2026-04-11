@@ -358,9 +358,9 @@ public:
     if (stack_.empty()) {
       auto stm_result = known_.lookup(config_.start_board, config_.start_ply);
       if (stm_result) {
-        // Root is at ply 0, AND node in Espada (OR in Broquel).
         // DB stores stm perspective. Convert to prover perspective.
-        bool root_is_and = (config_.mode == ProverMode::ESPADA);
+        bool even_ply = (config_.start_ply % 2 == 0);
+        bool root_is_and = (config_.mode == ProverMode::ESPADA) ? even_ply : !even_ply;
         NodeResult prover_result = stm_to_prover(static_cast<int>(*stm_result), root_is_and);
         std::cout << "ROOT PROVEN: ";
         if (prover_result == NodeResult::TARGET_WINS) {
@@ -496,9 +496,11 @@ private:
 
       if (frame.is_and_node) {
         // AND node: check if ALL moves are proven as target wins (stm loses)
-        // The worst move (last in sorted order) determines this.
+        // Both best and worst must be special negative to conclude all moves are losses.
+        // (Worst special negative alone is insufficient: best could be a win for stm.)
         int worst_score = result.moves.back().score;
-        if (search::is_special_score(worst_score) && worst_score < 0) {
+        if (search::is_special_score(best_score) && best_score < 0 &&
+            search::is_special_score(worst_score) && worst_score < 0) {
           // All moves are proven losses for stm -> AND node proven, target wins
           NodeResult nr = NodeResult::TARGET_WINS;
           store_proven(frame, nr);

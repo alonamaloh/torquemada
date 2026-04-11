@@ -35,7 +35,7 @@ NN_OBJS = $(patsubst %.cpp,$(OBJDIR)/%.o,$(NN_SRCS))
 ALL_OBJS = $(CORE_OBJS) $(SEARCH_OBJS) $(TB_OBJS) $(NN_OBJS)
 
 # Targets
-all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play $(BINDIR)/genbook $(BINDIR)/viewbook $(BINDIR)/condensebook $(BINDIR)/prove
+all: dirs $(BINDIR)/test_search $(BINDIR)/perft $(BINDIR)/generate_training $(BINDIR)/test_nn $(BINDIR)/match $(BINDIR)/play $(BINDIR)/genbook $(BINDIR)/viewbook $(BINDIR)/condensebook $(BINDIR)/prove $(BINDIR)/play_proven
 
 # Python module
 python: dirs dtm_sampler$(PYTHON_EXT)
@@ -106,6 +106,12 @@ $(BINDIR)/prove: $(ALL_OBJS) $(OBJDIR)/prove.o
 	$(CXX) $(LDFLAGS) -o $@ $^
 
 $(OBJDIR)/prove.o: prove.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(BINDIR)/play_proven: $(ALL_OBJS) $(OBJDIR)/play_proven.o
+	$(CXX) $(LDFLAGS) -o $@ $^
+
+$(OBJDIR)/play_proven.o: play_proven.cpp
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 $(BINDIR)/test_prover: $(ALL_OBJS) $(OBJDIR)/test_prover.o

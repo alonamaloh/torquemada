@@ -918,7 +918,10 @@ SearchResult Searcher::search(const Board& board, int max_depth, const TimeContr
     // WDL win/loss score detected — switch to secondary search immediately
     // (proven draws are handled by depth reduction in probe_wdl, no secondary search needed)
     // Skip during pondering: secondary search is expensive and the result won't be used directly
-    if (wdl_probe_func_ && !ponder_mode_) {
+    // Skip when draw_value_ != 0 (Espada/Broquel mode): secondary search disables WDL probes,
+    // but in these modes WDL probes are essential because draws are remapped to wins/losses.
+    // Without them the search can't distinguish drawing from losing moves.
+    if (wdl_probe_func_ && !ponder_mode_ && draw_value_ == 0) {
       bool is_wdl_winloss = (result.score <= -SCORE_SPECIAL) ||
                              (result.score >= SCORE_SPECIAL && result.score <= SCORE_TB_WIN);
       if (is_wdl_winloss) {
