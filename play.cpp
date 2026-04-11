@@ -13,10 +13,12 @@
 #include "core/movegen.hpp"
 #include "core/notation.hpp"
 #include "search/search.hpp"
+#include "tablebase/compression.hpp"
 #include "tablebase/tb_probe.hpp"
 #include <atomic>
 #include <csignal>
 #include <iostream>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -241,6 +243,24 @@ int main(int argc, char** argv) {
   searcher.set_tt_size(64);
   searcher.set_verbose(true);
   searcher.set_stop_flag(&g_stop_requested);
+
+  // Wire up the CWDL tablebases so the search can set known-verdict states
+  // for 6-7 piece endgames. Without this, probe_wdl short-circuits to
+  // NOT_FOUND and the engine gets no verdict even at positions the TB covers.
+  CompressedTablebaseManager cwdl(tb_dir);
+  if (!tb_dir.empty()) {
+    std::cout << "  CWDL tablebases: " << tb_dir << " (up to 7 pieces)\n";
+    cwdl.preload(7);
+    searcher.set_wdl_probe([&cwdl](const Board& b) -> std::optional<int> {
+      Value v = cwdl.lookup_wdl_preloaded(b);
+      switch (v) {
+        case Value::WIN:  return 1;
+        case Value::LOSS: return -1;
+        case Value::DRAW: return 0;
+        default:          return std::nullopt;
+      }
+    }, 7);
+  }
   std::signal(SIGINT, sigint_handler);
   GameState state;
   state.nodes = nodes;
