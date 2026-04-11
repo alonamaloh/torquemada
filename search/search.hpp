@@ -54,6 +54,31 @@ inline int draw_eval(const Board& board) {
   return material + noise;
 }
 
+// Leaf eval inside a known-win subtree (side to move wins per WDL TB).
+// Weights are asymmetric — losing-side pieces are worth more than winning-side
+// pieces, so the engine strictly prefers capturing opponent material over
+// keeping its own (i.e., prefers simplification).
+// Range: SCORE_TB_WIN - ply + [-552, +372]. Stays inside (SCORE_SPECIAL, SCORE_MATE)
+// for any reasonable ply (MAX_PLY = 128 gives worst-case 28320 > 28000).
+inline int tb_win_score(const Board& board, int ply) {
+  int wp = std::popcount(board.whitePawns());
+  int wq = std::popcount(board.whiteQueens());
+  int bp = std::popcount(board.blackPawns());
+  int bq = std::popcount(board.blackQueens());
+  return SCORE_TB_WIN - ply + 10 * wp + 31 * wq - 15 * bp - 46 * bq;
+}
+
+// Leaf eval inside a known-loss subtree (side to move loses per WDL TB).
+// Symmetric to tb_win_score from the opponent's perspective, then negated
+// to express the score from the side-to-move's viewpoint.
+inline int tb_loss_score(const Board& board, int ply) {
+  int wp = std::popcount(board.whitePawns());
+  int wq = std::popcount(board.whiteQueens());
+  int bp = std::popcount(board.blackPawns());
+  int bq = std::popcount(board.blackQueens());
+  return -SCORE_TB_WIN + ply - 10 * bp - 31 * bq + 15 * wp + 46 * wq;
+}
+
 // Check if score is in the proven-draw range
 inline bool is_proven_draw(int score) {
   return score >= -SCORE_DRAW && score <= SCORE_DRAW;
@@ -87,6 +112,22 @@ inline int score_to_normalized(int score) {
   if (is_special_score(score)) return (score > 0) ? SCORE_DRAW : -SCORE_DRAW;
   // Undecided range: strip offset
   return (score > 0) ? score - SCORE_DRAW : score + SCORE_DRAW;
+}
+
+// Tablebase verdict carried down the search recursion.
+// Set by probe_wdl when the TB resolves a position; propagated to descendants
+// (negated for the side-to-move flip). Drives verdict-aware leaf eval,
+// depth-reduction inside known subtrees, and TT gating.
+enum class KnownVerdict { UNKNOWN, WIN, LOSS, DRAW };
+
+// Flip a verdict for the opposite side to move (negamax recursion).
+// WIN <-> LOSS; DRAW and UNKNOWN stay the same.
+constexpr KnownVerdict negate(KnownVerdict v) {
+  switch (v) {
+    case KnownVerdict::WIN:  return KnownVerdict::LOSS;
+    case KnownVerdict::LOSS: return KnownVerdict::WIN;
+    default:                 return v;
+  }
 }
 
 // Secondary search phase indicator
@@ -308,18 +349,35 @@ private:
   // Negamax alpha-beta search
   // Returns score from the perspective of the side to move (white, since board is always flipped)
   // Continues searching beyond depth 0 if captures are available (quiescence)
-  int negamax(const Board& board, int depth, int alpha, int beta, int ply);
+  // `verdict` carries the tablebase verdict for this subtree (from STM's perspective),
+  // set by the parent's probe_wdl. When non-UNKNOWN the search reduces depth,
+  // skips the WDL probe, skips the TT, and uses a verdict-specific leaf eval.
+  int negamax(const Board& board, int depth, int alpha, int beta, int ply,
+              KnownVerdict verdict);
 
   // Probe DTM tablebase if available
   // Returns true if position was found, sets score (adjusted for ply)
   bool probe_tb(const Board& board, int ply, int& score);
 
-  // WDL probe result for tri-state handling
-  enum class WDLProbeResult { NOT_FOUND, SCORE_READY, DRAW_REDUCE };
+  // WDL probe result.
+  //   NOT_FOUND    — no TB information for this position
+  //   SCORE_READY  — score is finalized (shallow draws, Espada/Broquel draws,
+  //                  window-cutoff draws); caller should return it immediately
+  //   WIN_VERDICT  — STM wins per WDL TB; caller enters known-win subtree
+  //   LOSS_VERDICT — STM loses per WDL TB; caller enters known-loss subtree
+  //   DRAW_VERDICT — proven draw, deep enough to keep searching; caller enters
+  //                  known-draw subtree
+  enum class WDLProbeResult {
+    NOT_FOUND,
+    SCORE_READY,
+    WIN_VERDICT,
+    LOSS_VERDICT,
+    DRAW_VERDICT
+  };
 
-  // Probe WDL tablebase if available (for 6-7 piece endgames)
-  // Returns NOT_FOUND if no data, SCORE_READY if score is set (wins/losses/shallow draws),
-  // or DRAW_REDUCE if caller should reduce depth by 3 and continue searching (deep draws)
+  // Probe WDL tablebase if available (for ≤7 piece endgames).
+  // `score` is written only on SCORE_READY; on all other results it is left
+  // untouched and the caller determines the value from the verdict itself.
   WDLProbeResult probe_wdl(const Board& board, int ply, int depth,
                             int alpha, int beta, int& score);
 

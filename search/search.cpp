@@ -150,8 +150,9 @@ bool Searcher::probe_tb(const Board& board, int ply, int& score) {
   if (dtm == tablebase::DTM_UNKNOWN) return false;
 
   if (dtm == tablebase::DTM_DRAW) {
-    // Don't short-circuit draws — let the search continue with
-    // draw_reduce (same as WDL draws) for better move selection.
+    // Don't short-circuit draws — let probe_wdl handle them (returning
+    // SCORE_READY with a heuristic draw score, or DRAW_VERDICT for a
+    // depth-reduced known-draw search) so move ordering stays useful.
     return false;
   }
 
@@ -169,14 +170,14 @@ Searcher::WDLProbeResult Searcher::probe_wdl(const Board& board, int ply, int de
 
   // DTM wins/losses are already handled by probe_tb (called before probe_wdl).
   // DTM draws return false from probe_tb so they fall through here for
-  // draw_reduce handling, same as WDL draws.
+  // draw-verdict handling, same as WDL draws.
   auto result = wdl_probe_func_(board);
   if (!result.has_value()) return WDLProbeResult::NOT_FOUND;
 
   int wdl = *result;
 
   if (wdl == 0) {
-    // DRAW: proven draw — handle with score range
+    // Proven draw.
     stats_.tb_hits++;
 
     // Espada/Broquel mode: draws are decisive
@@ -186,35 +187,46 @@ Searcher::WDLProbeResult Searcher::probe_wdl(const Board& board, int ply, int de
     }
 
     // Window cutoff: if the search needs something better than any draw,
-    // or any draw causes a cutoff, return immediately
+    // or any draw causes a cutoff, return immediately.
     if (alpha > SCORE_DRAW || beta < -SCORE_DRAW) {
       score = 0;
       return WDLProbeResult::SCORE_READY;
     }
 
-    // Shallow depth: use simple material eval for draw ordering
+    // Shallow depth: use simple material eval for draw ordering.
     if (depth <= 3) {
       score = draw_eval(board);
       return WDLProbeResult::SCORE_READY;
     }
 
-    // Deep: reduce depth and continue searching
-    return WDLProbeResult::DRAW_REDUCE;
+    // Deep: enter known-draw subtree and keep searching with reduced depth.
+    return WDLProbeResult::DRAW_VERDICT;
   }
 
-  // WIN/LOSS: only trust when n_reversible == 0
-  if (board.n_reversible != 0) return WDLProbeResult::NOT_FOUND;
+  // WIN/LOSS: only trust when we know we've made irreversible progress within
+  // the search itself. `n_reversible <= ply` holds either because an
+  // irreversible move was played during the search (resetting the counter),
+  // or because the root itself started at n_reversible == 0 and we haven't
+  // accumulated more reversible plies than we've descended. In both cases we
+  // have enough reversibility budget left that the WDL verdict is safe to
+  // trust — and the depth-reduced search inside the known subtree will
+  // actively verify convertibility before the soft horizon bites.
+  //
+  // Note: the underlying WDL tablebase does not model the 50-move rule, so a
+  // position with very high n_reversible could in principle be a draw even
+  // though WDL says WIN. At ≤7 pieces in damas this corner case is vanishingly
+  // rare in practice, and the depth-reduced in-tree search provides an
+  // additional sanity check via the material-weighted leaf score.
+  if (board.n_reversible > static_cast<unsigned>(ply)) {
+    return WDLProbeResult::NOT_FOUND;
+  }
 
   stats_.tb_hits++;
-  if (wdl > 0) {
-    score = SCORE_TB_WIN - ply;  // Prefer shorter paths to TB win
-  } else {
-    score = -SCORE_TB_WIN + ply;
-  }
-  return WDLProbeResult::SCORE_READY;
+  return (wdl > 0) ? WDLProbeResult::WIN_VERDICT : WDLProbeResult::LOSS_VERDICT;
 }
 
-int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int ply) {
+int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int ply,
+                      KnownVerdict verdict) {
   check_stop();  // Throws SearchInterrupted if we should stop
 
   stats_.nodes++;
@@ -238,31 +250,62 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     }
   }
 
-  // Check for tablebase hit (before TT to get exact values)
-  // DTM first (exact distance-to-mate), then WDL (game-theoretic value)
+  // Inside a known-verdict subtree (inherited from parent), reduce depth by 2
+  // before doing any further work. Combined with the natural `depth - 1` on
+  // recursion, this makes each known-endgame ply consume 3 effective plies of
+  // depth — the search peeks a few moves past the conversion boundary without
+  // spending as much effort as on undecided branches.
+  if (verdict != KnownVerdict::UNKNOWN && depth > 0) {
+    depth -= 2;
+  }
+
+  // Check for tablebase hit (before TT to get exact values).
+  // DTM first (exact distance-to-mate), then WDL (game-theoretic value).
   int tb_score;
   if (probe_tb(board, ply, tb_score)) {
     return tb_score;
   }
-  bool draw_reduce = false;
-  {
+
+  // WDL probe — only when verdict is still UNKNOWN. Once inside a known-verdict
+  // subtree we already have the answer; skipping the probe saves the lookup.
+  // On first entry into a known subtree we apply the same depth -= 2 reduction
+  // that inherited subtrees get at the top of negamax.
+  if (verdict == KnownVerdict::UNKNOWN) {
     auto wdl = probe_wdl(board, ply, depth, alpha, beta, tb_score);
-    if (wdl == WDLProbeResult::SCORE_READY) return tb_score;
-    if (wdl == WDLProbeResult::DRAW_REDUCE) {
-      depth -= (depth >= 4);
-      draw_reduce = true;
+    switch (wdl) {
+      case WDLProbeResult::NOT_FOUND:
+        break;
+      case WDLProbeResult::SCORE_READY:
+        return tb_score;
+      case WDLProbeResult::WIN_VERDICT:
+        verdict = KnownVerdict::WIN;
+        if (depth > 0) depth -= 2;
+        break;
+      case WDLProbeResult::LOSS_VERDICT:
+        verdict = KnownVerdict::LOSS;
+        if (depth > 0) depth -= 2;
+        break;
+      case WDLProbeResult::DRAW_VERDICT:
+        verdict = KnownVerdict::DRAW;
+        if (depth > 0) depth -= 2;
+        break;
     }
   }
 
   // Save original alpha for correct TT flag computation
   const int original_alpha = alpha;
 
-  // Probe transposition table (using position hash without n_reversible)
+  // Probe transposition table — only in UNKNOWN positions. The key is
+  // `pos_hash`, which is the position hash without n_reversible. Inside a
+  // known-verdict subtree we don't touch the TT at all: the leaf values are
+  // material-weighted and ply-adjusted, and the search depth is reduced per
+  // ply by the known-verdict clock, so a cached score would not generalize
+  // across different paths to the same position.
   std::uint64_t key = pos_hash;
   TTEntry tt_entry;
   CompactMove tt_compact_move = 0;
 
-  if (tt_.probe(key, tt_entry)) {
+  if (verdict == KnownVerdict::UNKNOWN && tt_.probe(key, tt_entry)) {
     stats_.tt_hits++;
     tt_compact_move = tt_entry.best_move;  // Always use best move for ordering
 
@@ -304,19 +347,36 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     return mated_score(ply);
   }
 
-  // Leaf node: only evaluate when depth <= 0 AND no captures available
-  // If captures exist, continue searching (quiescence)
+  // Leaf node: only evaluate when depth <= 0 AND no captures available.
+  // If captures exist, continue searching (quiescence).
   bool has_captures = moves[0].isCapture();
   if (depth <= 0 && !has_captures) {
-    int score = eval_(board, ply);
-    // Scale score towards draw based on n_reversible to encourage progress
-    // The more reversible moves without progress, the smaller the score
-    // Scale factor: (256 - n_reversible) / 256, capped at 50 reversible moves
-    if (board.n_reversible > 0 && !is_special_score(score)) {
-      int scale = std::max(256 - static_cast<int>(board.n_reversible) * 4, 56);  // Min 56/256 ~= 22%
-      score = score * scale / 256;
+    switch (verdict) {
+      case KnownVerdict::WIN:
+        return tb_win_score(board, ply);
+      case KnownVerdict::LOSS:
+        return tb_loss_score(board, ply);
+      case KnownVerdict::DRAW: {
+        // Inside a proven draw the game-theoretic value is 0, but we still
+        // want the engine to play the most practically difficult line (to
+        // give a blundering opponent the best chance to go wrong). The raw
+        // NN eval provides that ordering; we clamp it to the proven-draw
+        // range so no value leaks out of the draw subtree.
+        int score = eval_(board, ply);
+        return std::max(-SCORE_DRAW, std::min(SCORE_DRAW, score));
+      }
+      case KnownVerdict::UNKNOWN: {
+        int score = eval_(board, ply);
+        // Scale score towards draw based on n_reversible to encourage progress.
+        // The more reversible moves without progress, the smaller the score.
+        // Scale factor: (256 - n_reversible) / 256, capped at 50 reversible moves.
+        if (board.n_reversible > 0 && !is_special_score(score)) {
+          int scale = std::max(256 - static_cast<int>(board.n_reversible) * 4, 56);  // Min 56/256 ~= 22%
+          score = score * scale / 256;
+        }
+        return to_undecided(score);
+      }
     }
-    return to_undecided(score);
   }
 
   // Move ordering: TT move first, then killers
@@ -364,21 +424,22 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   Move first_move = moves[0];
   bool is_first = true;
 
+  const KnownVerdict child_verdict = negate(verdict);
   for (const Move& move : moves) {
     Board child = makeMove(board, move);
     int score;
 
     if (is_first) {
       // Search first move with full window
-      score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
+      score = -negamax(child, depth - 1, -beta, -alpha, ply + 1, child_verdict);
     } else {
       // LMR: reduce depth for late non-capture moves when depth is sufficient
       int reduction = (depth >= 3 && !move.isCapture()) ? 1 : 0;
       // PVS: try null-window search first, possibly at reduced depth
-      score = -negamax(child, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1);
+      score = -negamax(child, depth - 1 - reduction, -alpha - 1, -alpha, ply + 1, child_verdict);
       // If it fails high, re-search with full window and full depth
       if (score > alpha) {
-        score = -negamax(child, depth - 1, -beta, -alpha, ply + 1);
+        score = -negamax(child, depth - 1, -beta, -alpha, ply + 1, child_verdict);
       }
     }
 
@@ -419,34 +480,33 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     is_first = false;
   }
 
-  // Proven draw: clamp score to the draw range so undecided-range scores
-  // from leaf evaluations (to_undecided) or miscalibrated NNUE evals
-  // don't leak out of WDL-proven draw positions.
-  if (draw_reduce) {
-    best_score = std::max(-SCORE_DRAW, std::min(SCORE_DRAW, best_score));
-  }
+  // Store in transposition table — only in UNKNOWN positions. Known-verdict
+  // subtrees don't use the TT (their leaf scores are material-weighted and
+  // path-dependent via the depth-reduction clock, so a cached value would not
+  // generalize across paths).
+  if (verdict == KnownVerdict::UNKNOWN) {
+    // Compute TT flag from original alpha (before TT probe may have raised it)
+    TTFlag flag = best_score <= original_alpha ? TTFlag::UPPER_BOUND
+                : best_score >= beta           ? TTFlag::LOWER_BOUND
+                                               : TTFlag::EXACT;
 
-  // Compute TT flag from original alpha (before TT probe may have raised it)
-  TTFlag flag = best_score <= original_alpha ? TTFlag::UPPER_BOUND
-              : best_score >= beta           ? TTFlag::LOWER_BOUND
-                                             : TTFlag::EXACT;
-
-  // Store in transposition table
-  // When n_reversible > 0, store with a trivial bound (>= -INF) so the best move
-  // is preserved for ordering, but the score won't cause any cutoffs.
-  // This avoids search instability from history-dependent effects.
-  if (board.n_reversible == 0) {
-    // For special scores (mate/TB), only store bounds, not exact values,
-    // because these scores are relative to the root and may not be valid
-    // when accessed from a different search path.
-    TTFlag store_flag = flag;
-    if (is_special_score(best_score) && flag == TTFlag::EXACT) {
-      store_flag = (best_score > 0) ? TTFlag::LOWER_BOUND : TTFlag::UPPER_BOUND;
+    // When n_reversible > 0, store with a trivial bound (>= -INF) so the best move
+    // is preserved for ordering, but the score won't cause any cutoffs. This
+    // avoids search instability from history-dependent effects.
+    if (board.n_reversible == 0) {
+      // For special scores (mate propagating up from terminal mated_score or
+      // from a child's known subtree), only store bounds, not exact values,
+      // because these scores are relative to the root and may not be valid
+      // when accessed from a different search path.
+      TTFlag store_flag = flag;
+      if (is_special_score(best_score) && flag == TTFlag::EXACT) {
+        store_flag = (best_score > 0) ? TTFlag::LOWER_BOUND : TTFlag::UPPER_BOUND;
+      }
+      tt_.store(key, best_score, depth, store_flag, best_move);
+    } else {
+      // Store with trivial lower bound - preserves best move for ordering
+      tt_.store(key, -SCORE_INFINITE, depth, TTFlag::LOWER_BOUND, best_move);
     }
-    tt_.store(key, best_score, depth, store_flag, best_move);
-  } else {
-    // Store with trivial lower bound - preserves best move for ordering
-    tt_.store(key, -SCORE_INFINITE, depth, TTFlag::LOWER_BOUND, best_move);
   }
 
   return best_score;
@@ -502,7 +562,7 @@ SearchResult Searcher::search_root(const Board& board, MoveList& moves, int dept
   for (std::size_t i = 0; i < moves.size(); ++i) {
     const Move& move = moves[i];
     Board child = makeMove(board, move);
-    int score = -negamax(child, depth - 1, -beta, -alpha, 1);
+    int score = -negamax(child, depth - 1, -beta, -alpha, 1, KnownVerdict::UNKNOWN);
 
     if (score > alpha) {
       alpha = score;
@@ -553,7 +613,7 @@ int Searcher::search_root_all(const Board& board, MoveList& root_moves, int dept
     } else {
       cutoff = best_score - threshold - 1;
     }
-    scores[i] = -negamax(child, depth - 1, -SCORE_INFINITE, -cutoff, 1);
+    scores[i] = -negamax(child, depth - 1, -SCORE_INFINITE, -cutoff, 1, KnownVerdict::UNKNOWN);
 
     if (scores[i] > best_score) {
       best_score = scores[i];
