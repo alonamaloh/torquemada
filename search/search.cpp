@@ -238,77 +238,69 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     }
   }
 
-  // If we inherited a *_BEFORE verdict and the parent just played an
-  // irreversible move (n_reversible == 0 at this child), re-probe the WDL TB
-  // once to confirm the verdict for the new material configuration. The
-  // re-probe catches blundering captures — if our old verdict says LOSS_BEFORE
-  // but the irreversible move turned it into a WIN (or vice versa), the new
-  // probe returns the correct side-to-move verdict and we transition to PAST.
-  // Subsequent irreversible moves inside a *_PAST subtree are NOT re-probed.
-  int tb_score;
-  if ((verdict == KnownVerdict::WIN_BEFORE || verdict == KnownVerdict::LOSS_BEFORE)
-      && board.n_reversible == 0) {
-    auto wdl = probe_wdl(board, ply, depth, alpha, beta, tb_score);
-    switch (wdl) {
-      case WDLProbeResult::NOT_FOUND:
-        verdict = KnownVerdict::UNKNOWN;  // defensive; shouldn't happen in practice
-        break;
-      case WDLProbeResult::SCORE_READY:
-        return tb_score;
-      case WDLProbeResult::WIN_VERDICT:
-        verdict = KnownVerdict::WIN_PAST;
-        break;
-      case WDLProbeResult::LOSS_VERDICT:
-        verdict = KnownVerdict::LOSS_PAST;
-        break;
-      case WDLProbeResult::DRAW_VERDICT:
-        verdict = KnownVerdict::DRAW;
-        break;
-    }
-  }
-
-  // Inside a known-verdict subtree (inherited from parent, possibly refreshed
-  // above), reduce depth by 2 before doing any further work. Combined with the
-  // natural `depth - 1` on recursion, this makes each known-endgame ply consume
-  // 3 effective plies of depth — the search peeks a few moves past the
-  // conversion boundary without spending as much effort as on undecided
-  // branches.
+  // Inside a known-verdict subtree inherited from the parent, reduce depth by
+  // 2 before doing any further work. Combined with the natural `depth - 1` on
+  // recursion, this makes each known-endgame ply consume 3 effective plies of
+  // depth — the search peeks a few moves past the conversion boundary without
+  // spending as much effort as on undecided branches.
   if (verdict != KnownVerdict::UNKNOWN && depth > 0) {
     depth -= 2;
   }
 
   // Check for tablebase hit (before TT to get exact values).
   // DTM first (exact distance-to-mate), then WDL (game-theoretic value).
+  int tb_score;
   if (probe_tb(board, ply, tb_score)) {
     return tb_score;
   }
 
-  // WDL probe — only when verdict is still UNKNOWN. Once inside a known-verdict
-  // subtree we already have the answer; skipping the probe saves the lookup.
-  // On first entry into a known subtree we apply the same depth -= 2 reduction
-  // that inherited subtrees get at the top of negamax. The new verdict is the
-  // PAST flavor if the move that got us here was irreversible (n_reversible
-  // == 0), otherwise the BEFORE flavor.
-  if (verdict == KnownVerdict::UNKNOWN) {
+  // WDL probe policy — fire only where it's actually informative:
+  //
+  //   * At every root child (ply == 1), to establish the initial verdict for
+  //     the move under evaluation.
+  //   * At deeper plies, only when the parent just played an irreversible move
+  //     (n_reversible == 0) AND the verdict isn't already "settled". Settled
+  //     states — WIN_PAST, LOSS_PAST, and DRAW — have already been confirmed
+  //     and don't need to be re-verified.
+  //
+  // This skips probes at every interior reversible node, keeping NPS high.
+  // The upshot of the !settled check: *_BEFORE states get refreshed at the
+  // first irreversible move (transitioning to *_PAST and catching blundering
+  // captures that flip the verdict), and UNKNOWN subtrees get a chance to
+  // enter a known subtree after a material-changing move.
+  const bool is_settled = (verdict == KnownVerdict::WIN_PAST  ||
+                           verdict == KnownVerdict::LOSS_PAST ||
+                           verdict == KnownVerdict::DRAW);
+  const bool should_probe = (board.n_reversible == 0) ? !is_settled
+                                                       : (ply == 1);
+  if (should_probe) {
+    const bool was_unknown = (verdict == KnownVerdict::UNKNOWN);
     auto wdl = probe_wdl(board, ply, depth, alpha, beta, tb_score);
     switch (wdl) {
       case WDLProbeResult::NOT_FOUND:
+        // Fresh probe (UNKNOWN): leave verdict UNKNOWN and continue.
+        // Re-probe (*_BEFORE): defensive fallback — parent was in TB but this
+        // child isn't. Shouldn't happen in practice (piece count is monotone),
+        // but if it does, drop to UNKNOWN.
+        if (!was_unknown) verdict = KnownVerdict::UNKNOWN;
         break;
       case WDLProbeResult::SCORE_READY:
         return tb_score;
       case WDLProbeResult::WIN_VERDICT:
         verdict = (board.n_reversible == 0) ? KnownVerdict::WIN_PAST
                                              : KnownVerdict::WIN_BEFORE;
-        if (depth > 0) depth -= 2;
+        // Only fresh UNKNOWN->known transitions apply the entry reduction.
+        // Re-probes stay inside an already-reduced subtree.
+        if (was_unknown && depth > 0) depth -= 2;
         break;
       case WDLProbeResult::LOSS_VERDICT:
         verdict = (board.n_reversible == 0) ? KnownVerdict::LOSS_PAST
                                              : KnownVerdict::LOSS_BEFORE;
-        if (depth > 0) depth -= 2;
+        if (was_unknown && depth > 0) depth -= 2;
         break;
       case WDLProbeResult::DRAW_VERDICT:
         verdict = KnownVerdict::DRAW;
-        if (depth > 0) depth -= 2;
+        if (was_unknown && depth > 0) depth -= 2;
         break;
     }
   }
