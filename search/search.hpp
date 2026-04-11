@@ -58,25 +58,38 @@ inline int draw_eval(const Board& board) {
 // Weights are asymmetric — losing-side pieces are worth more than winning-side
 // pieces, so the engine strictly prefers capturing opponent material over
 // keeping its own (i.e., prefers simplification).
-// Range: SCORE_TB_WIN - ply + [-552, +372]. Stays inside (SCORE_SPECIAL, SCORE_MATE)
-// for any reasonable ply (MAX_PLY = 128 gives worst-case 28320 > 28000).
+//
+// The -500 offset on the base exists to keep the maximum strictly below
+// SCORE_TB_WIN. With max material adjustment +372 (12 winner queens vs 0
+// opponent pieces) the peak value is 28872 - ply, which satisfies
+// is_mate_score() == false. Without the offset the peak would reach
+// 29372 - ply > SCORE_TB_WIN, which would trip the iterative-deepening
+// "found a mate, stop here" break in Searcher::search and prevent the
+// depth-reduced in-tree search from looking further past the conversion
+// boundary.
+//
+// Range: 28500 - ply + [-552, +372]. The upper bound stays below
+// SCORE_TB_WIN for any ply. The lower bound dips below SCORE_SPECIAL only
+// for degenerate material imbalances (winner heavily out-materialled by
+// the loser) that don't correspond to real WDL=WIN positions, so
+// is_special_score() effectively remains true in practice.
 inline int tb_win_score(const Board& board, int ply) {
   int wp = std::popcount(board.whitePawns());
   int wq = std::popcount(board.whiteQueens());
   int bp = std::popcount(board.blackPawns());
   int bq = std::popcount(board.blackQueens());
-  return SCORE_TB_WIN - ply + 10 * wp + 31 * wq - 15 * bp - 46 * bq;
+  return SCORE_TB_WIN - 500 - ply + 10 * wp + 31 * wq - 15 * bp - 46 * bq;
 }
 
 // Leaf eval inside a known-loss subtree (side to move loses per WDL TB).
-// Symmetric to tb_win_score from the opponent's perspective, then negated
-// to express the score from the side-to-move's viewpoint.
+// Exact sign-flipped mirror of tb_win_score (see notes there), expressed
+// from the side-to-move's viewpoint.
 inline int tb_loss_score(const Board& board, int ply) {
   int wp = std::popcount(board.whitePawns());
   int wq = std::popcount(board.whiteQueens());
   int bp = std::popcount(board.blackPawns());
   int bq = std::popcount(board.blackQueens());
-  return -SCORE_TB_WIN + ply - 10 * bp - 31 * bq + 15 * wp + 46 * wq;
+  return -SCORE_TB_WIN + 500 + ply - 10 * bp - 31 * bq + 15 * wp + 46 * wq;
 }
 
 // Check if score is in the proven-draw range
