@@ -6190,10 +6190,10 @@ var CheckersEngine = (() => {
                 "za": __embind_register_emval,
                 "U": __embind_register_float,
                 "u": __embind_register_function,
-                "A": __embind_register_integer,
+                "z": __embind_register_integer,
                 "t": __embind_register_memory_view,
                 "T": __embind_register_std_string,
-                "M": __embind_register_std_wstring,
+                "N": __embind_register_std_wstring,
                 "Ba": __embind_register_void,
                 "ta": __emscripten_notify_thread_queue,
                 "Ma": __emval_as,
@@ -6206,11 +6206,11 @@ var CheckersEngine = (() => {
                 "Ja": __emval_incref,
                 "W": __emval_new_array,
                 "y": __emval_new_cstring,
-                "N": __emval_new_object,
+                "O": __emval_new_object,
                 "La": __emval_run_destructors,
                 "Ga": __emval_set_property,
                 "X": __emval_take_value,
-                "L": _abort,
+                "M": _abort,
                 "ma": _clock_gettime,
                 "ha": _emscripten_check_blocking_allowed,
                 "C": _emscripten_get_now,
@@ -6235,9 +6235,9 @@ var CheckersEngine = (() => {
                 "g": invoke_iii,
                 "k": invoke_iiii,
                 "m": invoke_iiiii,
-                "J": invoke_iiiiii,
-                "z": invoke_iiiiiii,
-                "O": invoke_iiiiiiii,
+                "K": invoke_iiiiii,
+                "A": invoke_iiiiiii,
+                "J": invoke_iiiiiiii,
                 "G": invoke_iiiiiiiiiiii,
                 "aa": invoke_iiiiij,
                 "ea": invoke_iij,
@@ -6256,7 +6256,7 @@ var CheckersEngine = (() => {
                 "F": invoke_viiiiiiiiiiiiiii,
                 "I": _llvm_eh_typeid_for,
                 "a": wasmMemory || Module["wasmMemory"],
-                "K": _setTempRet0,
+                "L": _setTempRet0,
                 "ia": _strftime_l
             };
             var asm = createWasm();
@@ -6493,10 +6493,10 @@ var CheckersEngine = (() => {
                 }
             }
 
-            function invoke_iiiii(index, a1, a2, a3, a4) {
+            function invoke_iiiiiiii(index, a1, a2, a3, a4, a5, a6, a7) {
                 var sp = stackSave();
                 try {
-                    return getWasmTableEntry(index)(a1, a2, a3, a4)
+                    return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7)
                 } catch (e) {
                     stackRestore(sp);
                     if (e !== e + 0 && e !== "longjmp") throw e;
@@ -6504,10 +6504,10 @@ var CheckersEngine = (() => {
                 }
             }
 
-            function invoke_iiiiiiii(index, a1, a2, a3, a4, a5, a6, a7) {
+            function invoke_iiiii(index, a1, a2, a3, a4) {
                 var sp = stackSave();
                 try {
-                    return getWasmTableEntry(index)(a1, a2, a3, a4, a5, a6, a7)
+                    return getWasmTableEntry(index)(a1, a2, a3, a4)
                 } catch (e) {
                     stackRestore(sp);
                     if (e !== e + 0 && e !== "longjmp") throw e;
