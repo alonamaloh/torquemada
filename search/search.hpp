@@ -128,18 +128,44 @@ inline int score_to_normalized(int score) {
 }
 
 // Tablebase verdict carried down the search recursion.
+//
 // Set by probe_wdl when the TB resolves a position; propagated to descendants
 // (negated for the side-to-move flip). Drives verdict-aware leaf eval,
 // depth-reduction inside known subtrees, and TT gating.
-enum class KnownVerdict { UNKNOWN, WIN, LOSS, DRAW };
+//
+// WIN and LOSS are split into BEFORE/PAST flavors tracking whether the path
+// from the search root has seen an irreversible move yet:
+//
+//   BEFORE — no irreversible move on the path; the verdict is inherited from
+//            an earlier WDL probe. Leaf score is biased 200 points toward
+//            zero, so the engine prefers branches that reach PAST.
+//   PAST   — an irreversible move has happened on the path and the verdict
+//            was confirmed by a re-probe at that point. Leaf score uses the
+//            unbiased base.
+//
+// DRAW doesn't need the split — material is fixed (the probe says draw) and
+// there's nothing to re-verify at an irreversible move, so there's a single
+// DRAW state.
+enum class KnownVerdict {
+  UNKNOWN,
+  WIN_BEFORE,
+  WIN_PAST,
+  LOSS_BEFORE,
+  LOSS_PAST,
+  DRAW,
+};
 
 // Flip a verdict for the opposite side to move (negamax recursion).
-// WIN <-> LOSS; DRAW and UNKNOWN stay the same.
+// WIN <-> LOSS within each BEFORE/PAST flavor; DRAW and UNKNOWN unchanged.
+// BEFORE-ness is a property of the path, not the position, so it survives
+// the sign flip: both sides agree on whether progress has been made.
 constexpr KnownVerdict negate(KnownVerdict v) {
   switch (v) {
-    case KnownVerdict::WIN:  return KnownVerdict::LOSS;
-    case KnownVerdict::LOSS: return KnownVerdict::WIN;
-    default:                 return v;
+    case KnownVerdict::WIN_BEFORE:  return KnownVerdict::LOSS_BEFORE;
+    case KnownVerdict::WIN_PAST:    return KnownVerdict::LOSS_PAST;
+    case KnownVerdict::LOSS_BEFORE: return KnownVerdict::WIN_BEFORE;
+    case KnownVerdict::LOSS_PAST:   return KnownVerdict::WIN_PAST;
+    default:                        return v;  // DRAW, UNKNOWN
   }
 }
 

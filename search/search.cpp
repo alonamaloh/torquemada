@@ -203,24 +203,12 @@ Searcher::WDLProbeResult Searcher::probe_wdl(const Board& board, int ply, int de
     return WDLProbeResult::DRAW_VERDICT;
   }
 
-  // WIN/LOSS: only trust when we know we've made irreversible progress within
-  // the search itself. `n_reversible <= ply` holds either because an
-  // irreversible move was played during the search (resetting the counter),
-  // or because the root itself started at n_reversible == 0 and we haven't
-  // accumulated more reversible plies than we've descended. In both cases we
-  // have enough reversibility budget left that the WDL verdict is safe to
-  // trust — and the depth-reduced search inside the known subtree will
-  // actively verify convertibility before the soft horizon bites.
-  //
-  // Note: the underlying WDL tablebase does not model the 50-move rule, so a
-  // position with very high n_reversible could in principle be a draw even
-  // though WDL says WIN. At ≤7 pieces in damas this corner case is vanishingly
-  // rare in practice, and the depth-reduced in-tree search provides an
-  // additional sanity check via the material-weighted leaf score.
-  if (board.n_reversible > static_cast<unsigned>(ply)) {
-    return WDLProbeResult::NOT_FOUND;
-  }
-
+  // WIN/LOSS: always trust when the TB has data. The caller (negamax) handles
+  // the "no progress yet" case by tagging the verdict as WIN_BEFORE/LOSS_BEFORE
+  // rather than WIN_PAST/LOSS_PAST — the 200-point BEFORE→PAST gap at the leaf
+  // biases the search toward finding an irreversible move rather than stalling.
+  // The underlying WDL tablebase doesn't model the 50-move rule, but the
+  // BEFORE/PAST gradient gives the engine a concrete incentive to convert.
   stats_.tb_hits++;
   return (wdl > 0) ? WDLProbeResult::WIN_VERDICT : WDLProbeResult::LOSS_VERDICT;
 }
@@ -250,18 +238,47 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
     }
   }
 
-  // Inside a known-verdict subtree (inherited from parent), reduce depth by 2
-  // before doing any further work. Combined with the natural `depth - 1` on
-  // recursion, this makes each known-endgame ply consume 3 effective plies of
-  // depth — the search peeks a few moves past the conversion boundary without
-  // spending as much effort as on undecided branches.
+  // If we inherited a *_BEFORE verdict and the parent just played an
+  // irreversible move (n_reversible == 0 at this child), re-probe the WDL TB
+  // once to confirm the verdict for the new material configuration. The
+  // re-probe catches blundering captures — if our old verdict says LOSS_BEFORE
+  // but the irreversible move turned it into a WIN (or vice versa), the new
+  // probe returns the correct side-to-move verdict and we transition to PAST.
+  // Subsequent irreversible moves inside a *_PAST subtree are NOT re-probed.
+  int tb_score;
+  if ((verdict == KnownVerdict::WIN_BEFORE || verdict == KnownVerdict::LOSS_BEFORE)
+      && board.n_reversible == 0) {
+    auto wdl = probe_wdl(board, ply, depth, alpha, beta, tb_score);
+    switch (wdl) {
+      case WDLProbeResult::NOT_FOUND:
+        verdict = KnownVerdict::UNKNOWN;  // defensive; shouldn't happen in practice
+        break;
+      case WDLProbeResult::SCORE_READY:
+        return tb_score;
+      case WDLProbeResult::WIN_VERDICT:
+        verdict = KnownVerdict::WIN_PAST;
+        break;
+      case WDLProbeResult::LOSS_VERDICT:
+        verdict = KnownVerdict::LOSS_PAST;
+        break;
+      case WDLProbeResult::DRAW_VERDICT:
+        verdict = KnownVerdict::DRAW;
+        break;
+    }
+  }
+
+  // Inside a known-verdict subtree (inherited from parent, possibly refreshed
+  // above), reduce depth by 2 before doing any further work. Combined with the
+  // natural `depth - 1` on recursion, this makes each known-endgame ply consume
+  // 3 effective plies of depth — the search peeks a few moves past the
+  // conversion boundary without spending as much effort as on undecided
+  // branches.
   if (verdict != KnownVerdict::UNKNOWN && depth > 0) {
     depth -= 2;
   }
 
   // Check for tablebase hit (before TT to get exact values).
   // DTM first (exact distance-to-mate), then WDL (game-theoretic value).
-  int tb_score;
   if (probe_tb(board, ply, tb_score)) {
     return tb_score;
   }
@@ -269,7 +286,9 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   // WDL probe — only when verdict is still UNKNOWN. Once inside a known-verdict
   // subtree we already have the answer; skipping the probe saves the lookup.
   // On first entry into a known subtree we apply the same depth -= 2 reduction
-  // that inherited subtrees get at the top of negamax.
+  // that inherited subtrees get at the top of negamax. The new verdict is the
+  // PAST flavor if the move that got us here was irreversible (n_reversible
+  // == 0), otherwise the BEFORE flavor.
   if (verdict == KnownVerdict::UNKNOWN) {
     auto wdl = probe_wdl(board, ply, depth, alpha, beta, tb_score);
     switch (wdl) {
@@ -278,11 +297,13 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
       case WDLProbeResult::SCORE_READY:
         return tb_score;
       case WDLProbeResult::WIN_VERDICT:
-        verdict = KnownVerdict::WIN;
+        verdict = (board.n_reversible == 0) ? KnownVerdict::WIN_PAST
+                                             : KnownVerdict::WIN_BEFORE;
         if (depth > 0) depth -= 2;
         break;
       case WDLProbeResult::LOSS_VERDICT:
-        verdict = KnownVerdict::LOSS;
+        verdict = (board.n_reversible == 0) ? KnownVerdict::LOSS_PAST
+                                             : KnownVerdict::LOSS_BEFORE;
         if (depth > 0) depth -= 2;
         break;
       case WDLProbeResult::DRAW_VERDICT:
@@ -352,10 +373,22 @@ int Searcher::negamax(const Board& board, int depth, int alpha, int beta, int pl
   bool has_captures = moves[0].isCapture();
   if (depth <= 0 && !has_captures) {
     switch (verdict) {
-      case KnownVerdict::WIN:
+      case KnownVerdict::WIN_PAST:
+        // We've confirmed a winning irreversible move on this branch.
         return tb_win_score(board, ply);
-      case KnownVerdict::LOSS:
+      case KnownVerdict::WIN_BEFORE:
+        // WDL says we win but the path from the root has been all reversible.
+        // Bias 200 points toward zero so branches that reach WIN_PAST (and
+        // therefore demonstrate concrete progress) are strictly preferred.
+        return tb_win_score(board, ply) - 200;
+      case KnownVerdict::LOSS_PAST:
         return tb_loss_score(board, ply);
+      case KnownVerdict::LOSS_BEFORE:
+        // Symmetric: bias 200 toward zero. From the losing side's own
+        // perspective this makes BEFORE less bad than PAST (stalling is
+        // preferable to marching toward a confirmed loss), and negamax
+        // propagation turns that into the winning side preferring PAST.
+        return tb_loss_score(board, ply) + 200;
       case KnownVerdict::DRAW: {
         // Inside a proven draw the game-theoretic value is 0, but we still
         // want the engine to play the most practically difficult line (to
