@@ -96,8 +96,6 @@ const DTM_FILES = [
     'dtm_301001.bin', 'dtm_301100.bin', 'dtm_310000.bin', 'dtm_310001.bin',
     'dtm_310010.bin', 'dtm_310100.bin', 'dtm_311000.bin', 'dtm_320000.bin',
     'dtm_400001.bin', 'dtm_400100.bin', 'dtm_410000.bin',
-    // Select 7-piece DTM files for long queen endgames
-    'dtm_111112.bin', 'dtm_111121.bin',
 ];
 
 // List of CWDL (compressed WDL) tablebase files (6-8 pieces, conjugate-selected)
@@ -363,9 +361,21 @@ export class TablebaseLoader {
 
         this.onProgress = onProgress;
 
-        // Check what's already stored
+        // Check what's already stored, then evict any cached dtm_ files that
+        // are no longer in the manifest (e.g. previously-downloaded 6/7-piece
+        // files after the engine DTM limit dropped to 5 pieces).
         const stored = await this.checkStoredTablebases();
-        const storedSet = new Set(stored);
+        const manifestSet = new Set(DTM_FILES);
+        for (const name of stored) {
+            if (!manifestSet.has(name)) {
+                try {
+                    await this.tbDirectory.removeEntry(name);
+                } catch (err) {
+                    console.warn(`Failed to remove stale tablebase ${name}:`, err);
+                }
+            }
+        }
+        const storedSet = new Set(stored.filter(f => manifestSet.has(f)));
 
         // Filter to only missing files
         const missing = DTM_FILES.filter(f => !storedSet.has(f));
@@ -375,7 +385,7 @@ export class TablebaseLoader {
             return { downloaded: 0, total: DTM_FILES.length };
         }
 
-        let downloaded = stored.length;
+        let downloaded = storedSet.size;
         const total = DTM_FILES.length;
 
         for (const filename of missing) {
@@ -403,7 +413,7 @@ export class TablebaseLoader {
         }
 
         if (onProgress) onProgress(downloaded, total, 'Complete');
-        return { downloaded: downloaded - stored.length, total };
+        return { downloaded: downloaded - storedSet.size, total };
     }
 
     /**
